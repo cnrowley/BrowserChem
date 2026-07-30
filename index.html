@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChemCanvas — 2D/3D structure editor</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">ChemCanvas</span>
+  </div>
+  <div class="smiles-input-group">
+    <input type="text" id="smiles-input" class="smiles-input" placeholder="Enter a SMILES string&hellip;" autocomplete="off" spellcheck="false">
+    <button class="btn btn-ghost" id="load-smiles-btn" title="Parse this SMILES and replace the canvas with it">Load SMILES</button>
+    <span class="smiles-input-status" id="smiles-input-status"></span>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost" id="open-btn" title="Open a .mol file">Open</button>
+    <button class="btn btn-ghost" id="save-btn" title="Save as a .mol file">Save</button>
+    <button class="btn btn-accent" disabled title="Not yet implemented">Export</button>
+    <input type="file" id="file-input" accept=".mol,.sdf,.txt" hidden>
+  </div>
+</header>
+
+<main class="app-body">
+
+  <!-- Left tool rail: drawing tools, all stubbed for now -->
+  <nav class="tool-rail" aria-label="Drawing tools">
+    <button class="tool-btn" data-tool="select" title="Select (1)">
+      <span class="tool-icon" aria-hidden="true">&#9650;</span>
+      <span class="tool-label">Select</span>
+    </button>
+    <button class="tool-btn" data-tool="atom" title="Atom (2)">
+      <span class="tool-icon" aria-hidden="true">&#9679;</span>
+      <span class="tool-label">Atom</span>
+    </button>
+    <div class="element-picker" aria-label="Element to place">
+      <button class="element-chip is-active" data-element="C">C</button>
+      <button class="element-chip" data-element="N">N</button>
+      <button class="element-chip" data-element="O">O</button>
+      <button class="element-chip" data-element="S">S</button>
+      <button class="element-chip" data-element="F">F</button>
+      <button class="element-chip" data-element="Cl">Cl</button>
+      <button class="element-chip" data-element="Br">Br</button>
+    </div>
+    <button class="tool-btn is-active" data-tool="bond" title="Bond (3) — click an existing bond to cycle its order">
+      <span class="tool-icon" aria-hidden="true">&#8212;</span>
+      <span class="tool-label">Bond</span>
+    </button>
+    <div class="bond-style-picker" aria-label="Bond style">
+      <button class="bond-style-chip is-active" data-bond-style="plain" title="Plain bond — click existing bonds to cycle single/double/triple">Plain</button>
+      <button class="bond-style-chip" data-bond-style="wedge" title="Wedge — solid, points out of the page toward the viewer">Wedge</button>
+      <button class="bond-style-chip" data-bond-style="hash" title="Hash — dashed, points behind the page away from the viewer">Hash</button>
+    </div>
+    <button class="tool-btn" data-tool="chain" title="Chain (4)">
+      <span class="tool-icon" aria-hidden="true">&#8776;</span>
+      <span class="tool-label">Chain</span>
+    </button>
+    <button class="tool-btn" data-tool="ring" title="Ring template (5)">
+      <span class="tool-icon" aria-hidden="true">&#11040;</span>
+      <span class="tool-label">Ring</span>
+    </button>
+    <div class="ring-size-picker" aria-label="Ring template size">
+      <button class="ring-size-chip" data-ring-size="3" title="Cyclopropane-sized ring">3</button>
+      <button class="ring-size-chip" data-ring-size="4" title="Cyclobutane-sized ring">4</button>
+      <button class="ring-size-chip" data-ring-size="5" title="Cyclopentane-sized ring">5</button>
+      <button class="ring-size-chip is-active" data-ring-size="6" title="Cyclohexane-sized ring">6</button>
+      <button class="ring-size-chip" data-ring-size="7" title="Cycloheptane-sized ring">7</button>
+      <button class="ring-size-chip" data-ring-size="6" data-ring-aromatic="true" title="Benzene ring (aromatic, alternating bonds)">Ar</button>
+    </div>
+    <button class="tool-btn" data-tool="charge" title="Charge (6)">
+      <span class="tool-icon" aria-hidden="true">&#177;</span>
+      <span class="tool-label">Charge</span>
+    </button>
+    <div class="tool-rail-divider"></div>
+    <button class="tool-btn" data-tool="erase" title="Erase (7)">
+      <span class="tool-icon" aria-hidden="true">&#10005;</span>
+      <span class="tool-label">Erase</span>
+    </button>
+  </nav>
+
+  <!-- Center: 2D drawing canvas placeholder -->
+  <section class="canvas-panel" aria-label="2D structure canvas">
+    <div class="canvas-toolbar">
+      <span class="canvas-toolbar-label">2D canvas</span>
+      <span class="pill pill-muted" id="canvas-stats">0 atoms &middot; 0 bonds</span>
+      <div class="canvas-toolbar-spacer"></div>
+      <button class="btn btn-ghost btn-small" id="fit-view-btn" title="Center and scale the view to fit the current structure (also: scroll to zoom)">Fit to view</button>
+      <button class="btn btn-ghost btn-small" id="cleanup-btn" title="Redraw with standard bond lengths/angles and recenter (shortcut: L)">Clean up</button>
+      <button class="btn btn-ghost btn-small" id="show-properties-btn" title="Jump to the Properties panel">View Properties</button>
+      <button class="btn btn-ghost btn-small" id="undo-btn" disabled title="Undo (Ctrl+Z)">Undo</button>
+      <button class="btn btn-ghost btn-small" id="redo-btn" disabled title="Redo (Ctrl+Shift+Z)">Redo</button>
+    </div>
+    <div class="canvas-surface" id="canvas-surface">
+      <svg id="structure-svg" viewBox="0 0 600 440" role="img" aria-label="Structure drawing area"></svg>
+    </div>
+  </section>
+
+  <!-- Right: tabbed panel for 3D view / properties -->
+  <aside class="side-panel" aria-label="3D view and properties">
+    <div class="side-panel-tabs" role="tablist">
+      <button class="side-tab is-active" role="tab" aria-selected="true" data-panel="view3d">3D view</button>
+      <button class="side-tab" role="tab" aria-selected="false" data-panel="properties">Properties</button>
+    </div>
+
+    <div class="side-panel-content" id="panel-view3d" role="tabpanel">
+      <div class="viewer3d-toolbar">
+        <button class="btn btn-accent btn-small" id="generate-3d-btn">Generate 3D structure</button>
+        <button class="btn btn-ghost btn-small" id="optimize-3d-btn" disabled title="Refine the current 3D structure with the force field (conformer search + minimization) — can take several seconds to tens of seconds on larger or more flexible molecules">Optimize geometry&hellip;</button>
+      </div>
+      <div class="viewer3d-container" id="viewer3d"></div>
+      <div class="viewer3d-progress" id="viewer3d-progress" style="display:none;">
+        <div class="viewer3d-progress-bar"><div class="viewer3d-progress-fill" id="viewer3d-progress-fill"></div></div>
+        <p class="side-panel-note" id="viewer3d-progress-note"></p>
+      </div>
+      <p class="side-panel-note" id="viewer3d-note">Draw a structure, then click "Generate 3D structure" for a quick initial layout (adds hydrogens, no optimization yet) — then "Optimize geometry…" to relax it with the force field.</p>
+    </div>
+
+    <div class="side-panel-content is-hidden" id="panel-properties" role="tabpanel">
+      <div class="properties-section">
+        <table class="descriptor-table">
+          <thead><tr><th colspan="2" class="properties-section-title">Structure</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Validity</td>
+              <td>
+                <span class="validity-indicator" id="validity-indicator">
+                  <span class="status-dot" id="validity-dot" aria-hidden="true"></span>
+                  <span id="validity-text">no structure yet</span>
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td>Canonical SMILES</td>
+              <td>
+                <div class="smiles-box">
+                  <code id="smiles-output">&mdash;</code>
+                  <button class="btn btn-ghost btn-small" id="copy-smiles-btn" disabled>Copy</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="properties-section">
+        <table class="descriptor-table">
+          <thead><tr><th colspan="2" class="properties-section-title">2D properties (RDKit)</th></tr></thead>
+          <tbody id="descriptor-table"></tbody>
+        </table>
+        <div class="export-toolbar">
+          <button class="btn btn-ghost btn-small" id="copy-properties-btn" disabled>Copy all</button>
+          <button class="btn btn-ghost btn-small" id="download-csv-btn" disabled>CSV</button>
+          <button class="btn btn-ghost btn-small" id="download-xlsx-btn" disabled>XLSX</button>
+          <button class="btn btn-ghost btn-small" id="download-pdf-btn" disabled>PDF</button>
+        </div>
+        <p class="side-panel-note" id="export-status"></p>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Property radar</h3>
+        <div id="radar-chart-container"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Mass spectrometry</h3>
+        <button class="btn btn-ghost btn-small" id="hrms-btn" disabled>Exact mass / HRMS adducts&hellip;</button>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Structural alerts</h3>
+        <button class="btn btn-ghost btn-small" id="smarts-filters-btn" disabled>Check medchem filters (PAINS, BMS, etc.)&hellip;</button>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">GNN prediction (D-MPNN)</h3>
+        <p class="side-panel-note gnn-caveat" id="gnn-caveat">Demo weights are random and untrained — numbers below are a plumbing test, not real chemistry, until you load a model trained elsewhere.</p>
+        <p class="side-panel-note compatibility-warning" id="compatibility-warning" style="display:none;"></p>
+        <p class="side-panel-note compatibility-warning" id="gnn-prediction-warnings" style="display:none;"></p>
+
+        <div id="model-registry-list" class="model-registry-list"></div>
+        <p class="side-panel-note" id="registry-status"></p>
+
+        <div class="gnn-controls">
+          <button class="btn btn-ghost btn-small" id="run-demo-gnn-btn">Run prediction</button>
+          <button class="btn btn-ghost btn-small" id="load-chemprop-btn">Load model from files&hellip;</button>
+          <input type="file" id="chemprop-file-input" accept=".json,.bin" multiple hidden>
+          <button class="btn btn-ghost btn-small" id="load-onnx-btn">Load ONNX model&hellip;</button>
+          <input type="file" id="onnx-file-input" accept=".onnx" hidden>
+        </div>
+        <p class="side-panel-note" id="chemprop-model-status"></p>
+        <p class="side-panel-note" id="onnx-model-status"></p>
+
+        <table class="descriptor-table" id="gnn-molecular-output-table" style="display:none;">
+          <thead><tr><th colspan="2" class="properties-section-title">Predictions</th></tr></thead>
+          <tbody id="gnn-molecular-output"></tbody>
+        </table>
+        <p class="side-panel-note" id="gnn-empty-note">Draw a structure, then click "Run prediction".</p>
+
+        <div class="properties-row" id="gnn-atom-heatmap-row" style="display:none;">
+          <span class="properties-label">Atom heatmap</span>
+          <div class="heatmap-controls">
+            <select id="heatmap-property-select"></select>
+            <label class="heatmap-text-toggle">
+              <input type="checkbox" id="heatmap-show-text">
+              Show values
+            </label>
+            <button class="btn btn-ghost btn-small" id="clear-heatmap-btn">Clear</button>
+          </div>
+        </div>
+        <div id="heatmap-legend-container"></div>
+      </div>
+    </div>
+  </aside>
+
+</main>
+
+<!-- Bottom status bar: reports load state of each JS engine -->
+<footer class="status-bar" id="status-bar">
+  <div class="status-item" id="status-rdkit">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span class="status-label">RDKit.js</span>
+    <span class="status-state">loading&hellip;</span>
+  </div>
+  <div class="status-item" id="status-ort">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span class="status-label">ONNX Runtime Web</span>
+    <span class="status-state">loading&hellip;</span>
+  </div>
+  <div class="status-item" id="status-3dmol">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span class="status-label">3Dmol.js</span>
+    <span class="status-state">loading&hellip;</span>
+  </div>
+  <div class="status-item status-item-right">
+    <span class="status-label">WebGPU</span>
+    <span class="status-state" id="status-webgpu">checking&hellip;</span>
+  </div>
+</footer>
+
+<!-- Third-party engines, loaded from CDN as UMD globals -->
+<script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/3dmol@2.5.2/build/3Dmol-min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<!-- App code -->
+<script src="js/lib-loader.js"></script>
+<script src="js/model-config.js"></script>
+<script src="js/molecule.js"></script>
+<script src="js/geometry.js"></script>
+<script src="js/history.js"></script>
+<script src="js/molfile.js"></script>
+<div class="modal-overlay" id="smarts-filters-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="smarts-filters-modal-title">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <h3 id="smarts-filters-modal-title">Structural alerts</h3>
+      <button class="modal-close-btn" id="smarts-filters-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="smarts-filters-modal-body"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="hrms-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="hrms-modal-title">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="hrms-modal-title">Exact mass / HRMS adducts</h3>
+      <button class="modal-close-btn" id="hrms-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="hrms-modal-body"></div>
+  </div>
+</div>
+
+<script src="js/qed.js"></script>
+<script src="js/chemistry.js"></script>
+<script src="js/radar-chart.js"></script>
+<script src="js/hrms.js"></script>
+<script src="js/smarts-filters.js"></script>
+<script src="js/vec3.js"></script>
+<script src="js/elements.js"></script>
+<script src="js/embed3d.js"></script>
+<script src="js/viewer3d.js"></script>
+<script src="js/atom-features.js"></script>
+<script src="js/bond-features.js"></script>
+<script src="js/chemprop-features.js"></script>
+<script src="js/graph-builder.js"></script>
+<script src="js/sascorer.js"></script>
+<script src="js/dmpnn.js"></script>
+<script src="js/pooling.js"></script>
+<script src="js/gnn-heads.js"></script>
+<script src="js/chemprop-model.js"></script>
+<script src="js/model-registry.js"></script>
+<script src="js/nagl-features.js"></script>
+<script src="js/nagl-model.js"></script>
+<script src="js/gnn-inference.js"></script>
+<script src="js/atom-heatmap.js"></script>
+<script src="js/export.js"></script>
+<script src="js/render.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

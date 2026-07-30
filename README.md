@@ -1,0 +1,75 @@
+# ChemCanvas
+
+A browser-based 2D/3D molecule editor with client-side machine-learning
+property prediction — no server, no Python runtime in the browser.
+Everything runs as WASM (RDKit.js) and hand-rolled JavaScript inference
+engines for the trained models.
+
+## What's in here
+
+- **2D structure editor** — ChemDraw-style drawing tools, ring templates,
+  keyboard shortcuts, standard-bond-length "clean up" via RDKit's own
+  coordinate generator.
+- **3D structure generation** — implicit hydrogens, a from-scratch
+  UFF/MMFF-*style* force field (harmonic bonds/angles, periodic torsions,
+  out-of-plane terms, 12-6 Lennard-Jones nonbonded, staged minimization,
+  real torsion-driven conformer search), rendered via 3Dmol.js.
+- **RDKit-backed 2D properties** — standard descriptors, a bit-exact
+  from-scratch port of RDKit's SA Score, and a from-scratch port of QED
+  validated against RDKit's own reference doctests.
+- **Client-side GNN property prediction** — a hand-rolled D-MPNN forward
+  pass (Chemprop-compatible, validated to <1e-6 against real PyTorch
+  output) for logP, logS, melting point, and a protein-reactivity
+  classifier, plus a from-scratch NAGL-MBIS port (GraphSAGE +
+  electronegativity equalization) for per-atom partial charges.
+- **Structural alerts** — ~1250 real medicinal-chemistry SMARTS filters
+  (PAINS, Glaxo, Dundee, BMS, SureChEMBL, MLSMR, Inpharmatica, LINT),
+  with substructure highlighting.
+- **Property radar, HRMS adduct calculator**, and more — see
+  `CHEMPROP_INTEGRATION.md` for the full technical writeup.
+
+## Running it
+
+No build step. Serve the directory with any static file server and open
+`index.html`:
+
+```bash
+python3 -m http.server 8000
+# then open http://localhost:8000
+```
+
+(Opening `index.html` directly via `file://` will not work — the WASM
+modules and JSON data files need to be fetched over HTTP.)
+
+## Project layout
+
+```
+index.html
+css/            stylesheet
+js/             all application logic (no build/bundle step)
+model/          converted model weights + registry.json
+data/           SMARTS filter data, etc.
+scripts/        Python conversion/validation tooling (checkpoint
+                converters, registry validator, dataset extraction) --
+                not needed to run the app, only to add/update models
+```
+
+## Adding a model
+
+See `scripts/convert_chemprop_checkpoint.py` and
+`scripts/convert_nagl_checkpoint.py` for converting a trained checkpoint
+into the browser-loadable manifest + weights format, and
+`scripts/validate_registry.py` for checking `model/registry.json` before
+shipping a change.
+
+## Status / honesty notes
+
+This project documents its own validation status throughout —
+`CHEMPROP_INTEGRATION.md` and the registry entries' `notes` fields say
+plainly what's been validated against real ground truth vs. what's a
+reasonable-but-unverified approximation. Worth reading before trusting
+any specific number out of it.
+
+## License
+
+See `LICENSE`.

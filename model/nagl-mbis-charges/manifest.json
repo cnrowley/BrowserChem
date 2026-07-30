@@ -1,0 +1,227 @@
+{
+  "task": "mbis-charges",
+  "architecture": "nagl-mbis-sageconv",
+  "atomFeatureDim": 19,
+  "convHiddenDim": 128,
+  "convLayers": [
+    {
+      "hiddenDim": 128
+    },
+    {
+      "hiddenDim": 128
+    },
+    {
+      "hiddenDim": 128
+    },
+    {
+      "hiddenDim": 128
+    },
+    {
+      "hiddenDim": 128
+    }
+  ],
+  "readoutLayers": [
+    {
+      "activation": "relu"
+    },
+    {
+      "activation": "relu"
+    },
+    {
+      "activation": "identity"
+    }
+  ],
+  "postprocess": "charges",
+  "atomFeaturesConfig": [
+    {
+      "type": "element",
+      "values": [
+        "H",
+        "C",
+        "N",
+        "O",
+        "F",
+        "P",
+        "S",
+        "Cl",
+        "Br"
+      ]
+    },
+    {
+      "type": "connectivity",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "type": "ringofsize"
+    }
+  ],
+  "tensors": {
+    "conv0_self_weight": {
+      "shape": [
+        128,
+        19
+      ],
+      "offset": 0,
+      "length": 2432
+    },
+    "conv0_self_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 2432,
+      "length": 128
+    },
+    "conv0_neigh_weight": {
+      "shape": [
+        128,
+        19
+      ],
+      "offset": 2560,
+      "length": 2432
+    },
+    "conv1_self_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 4992,
+      "length": 16384
+    },
+    "conv1_self_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 21376,
+      "length": 128
+    },
+    "conv1_neigh_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 21504,
+      "length": 16384
+    },
+    "conv2_self_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 37888,
+      "length": 16384
+    },
+    "conv2_self_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 54272,
+      "length": 128
+    },
+    "conv2_neigh_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 54400,
+      "length": 16384
+    },
+    "conv3_self_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 70784,
+      "length": 16384
+    },
+    "conv3_self_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 87168,
+      "length": 128
+    },
+    "conv3_neigh_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 87296,
+      "length": 16384
+    },
+    "conv4_self_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 103680,
+      "length": 16384
+    },
+    "conv4_self_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 120064,
+      "length": 128
+    },
+    "conv4_neigh_weight": {
+      "shape": [
+        128,
+        128
+      ],
+      "offset": 120192,
+      "length": 16384
+    },
+    "readout0_weight": {
+      "shape": [
+        64,
+        128
+      ],
+      "offset": 136576,
+      "length": 8192
+    },
+    "readout0_bias": {
+      "shape": [
+        64
+      ],
+      "offset": 144768,
+      "length": 64
+    },
+    "readout1_weight": {
+      "shape": [
+        64,
+        64
+      ],
+      "offset": 144832,
+      "length": 4096
+    },
+    "readout1_bias": {
+      "shape": [
+        64
+      ],
+      "offset": 148928,
+      "length": 64
+    },
+    "readout2_weight": {
+      "shape": [
+        2,
+        64
+      ],
+      "offset": 148992,
+      "length": 128
+    },
+    "readout2_bias": {
+      "shape": [
+        2
+      ],
+      "offset": 149120,
+      "length": 2
+    }
+  },
+  "byteLength": 596488,
+  "dtype": "float32"
+}

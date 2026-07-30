@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "models": [
+    {
+      "id": "logp-v1",
+      "displayName": "logP (octanol-water partition coefficient)",
+      "propertyKey": "logP",
+      "taskType": "regression",
+      "units": "log units",
+      "description": "Predicts logP, the log of the octanol-water partition coefficient -- a standard lipophilicity measure.",
+      "files": {
+        "manifest": "logp/manifest.json",
+        "weights": "logp/weights.bin"
+      },
+      "dataset": {
+        "name": null,
+        "citationKey": null,
+        "size": null,
+        "splitStrategy": null,
+        "sourceUrl": null
+      },
+      "metrics": null,
+      "training": {
+        "chempropVersion": "2.3.0",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "aggNorm": 100
+        },
+        "dateTrained": null
+      },
+      "notes": "First model wired through this pipeline (see CHEMPROP_INTEGRATION.md) -- this checkpoint was provided pre-trained without accompanying dataset/metrics documentation, so those fields are left null rather than guessed. Architecture and weight-loading were validated against a from-scratch PyTorch/Chemprop reconstruction of this exact checkpoint on 24 diverse test molecules (exact match). Fill in the dataset/metrics fields (or ask Claude to, given the training run details) once you have them -- see validate_registry.py.",
+      "tags": [
+        "physicochemical",
+        "lipophilicity"
+      ]
+    },
+    {
+      "id": "electrophile-reactivity-v1",
+      "displayName": "Protein reactivity (electrophile / covalent warhead)",
+      "propertyKey": "label",
+      "taskType": "classification",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule is protein-reactive (a covalent modifier / electrophilic warhead), trained as a DMPNN scaffold-split classifier.",
+      "files": {
+        "manifest": "electrophile-reactivity/manifest.json",
+        "weights": "electrophile-reactivity/weights.bin"
+      },
+      "dataset": {
+        "name": null,
+        "citationKey": null,
+        "size": 62686,
+        "positiveCount": null,
+        "splitStrategy": "scaffold-balanced split (Chemprop SCAFFOLD_BALANCED), 80/10/10 train/val/test (50150/6268/6268)",
+        "sourceUrl": null
+      },
+      "metrics": {
+        "validationSetSize": 6268,
+        "testSetSize": 6268,
+        "primary": {
+          "name": "Validation AUROC",
+          "value": 0.9964
+        },
+        "all": {
+          "validationAUROC_bestCheckpoint": 0.9964,
+          "validationLoss_bestCheckpoint": 0.0586
+        },
+        "note": "These are VALIDATION metrics at the checkpoint epoch (24, matching the 'val_loss=0.06' in the original checkpoint filename) -- not held-out test-set metrics, since test_predictions.csv doesn't include ground-truth labels (only SMILES + predicted probability, so real test-set AUROC/precision/recall/F1 can't be computed from it)."
+      },
+      "training": {
+        "chempropVersion": null,
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "aggNorm": 100,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2,
+          "batchNorm": false
+        },
+        "dateTrained": "2026-04-26 (inferred from checkpoint file timestamps, not explicitly recorded)"
+      },
+      "notes": "Target column was named 'label' in the training CSV (generic, not auto-descriptive) -- the UI shows this model's own displayName instead of the raw property key for that reason. JS port cross-validated against all 6,268 real test-set predictions in test_predictions.csv (not just a hand-picked sanity set): 99.0% match the original PyTorch model to <1e-6, mean abs error 0.00056 across the full set. This surfaced and fixed two real, previously-undetected bugs -- (1) the app's molblock round-trip was dropping the V2000 'either' bond stereo flag on double bonds with genuinely unspecified E/Z geometry (affected push-pull alkene/cyanoacrylamide warheads specifically, this model's own target chemotype, causing near-total prediction inversions on ~3% of the test set before the fix); (2) neutral trivalent boron (boronic acids, boronate esters) was defaulting to sp3 instead of the correct sp2 (boron's empty p-orbital makes it sp2 regardless of conjugation, unlike carbon/nitrogen). Both are fixed in molfile.js and chemprop-features.js respectively and apply to every model using this pipeline, not just this one. ~0.3% of the test set (21/6268) still shows moderate residual error (mean 0.03-0.7), concentrated in explicit chiral centers, defined E/Z double bonds, and boronic acids -- within the documented known-approximation scope (see CHEMPROP_INTEGRATION.md), not yet root-caused further.",
+      "tags": [
+        "safety",
+        "covalent",
+        "reactivity",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "logs-aqsoldb",
+      "displayName": "Aqueous solubility (logS)",
+      "propertyKey": "Solubility",
+      "taskType": "regression",
+      "units": "log10(mol/L)",
+      "description": "Predicts logS, the log10 of aqueous solubility in mol/L -- a standard solubility measure complementary to logP.",
+      "files": {
+        "manifest": "logs-aqsoldb/manifest.json",
+        "weights": "logs-aqsoldb/weights.bin"
+      },
+      "dataset": {
+        "name": "AqSolDB (likely -- not yet confirmed; see notes)",
+        "citationKey": null,
+        "size": null,
+        "positiveCount": null,
+        "splitStrategy": null,
+        "sourceUrl": null
+      },
+      "metrics": null,
+      "training": {
+        "chempropVersion": null,
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "aggNorm": 100
+        },
+        "dateTrained": null
+      },
+      "notes": "Directory name (AqSolDB) and file layout strongly suggest this is trained on Sorkun et al.'s AqSolDB (Sci Data, 2019), but this hasn't been explicitly confirmed yet, and the dataset went through a custom curation pipeline (data-curation.py, preprocess.py, merge.py) before training, so treat the citation as provisional until confirmed and the merge/curation logic is understood -- don't cite as plain AqSolDB without checking what the curation changed. Sanity-checked (not yet validated against ground truth or a real PyTorch reconstruction) on 10 molecules with well-known qualitative solubility: correct ordering throughout (small polar molecules, water, insoluble aromatics, insoluble long-chain alkane), and magnitudes broadly track literature values (benzene -1.50 vs lit. ~-1.64; naphthalene -3.20 vs lit. ~-3.6; hexadecane -7.40 vs lit. ~-8; anthracene -5.28 vs lit. ~-6.9 -- same ballpark and correct ordering, largest single gap of the set). Not yet cross-validated against real test-set predictions the way logP and electrophile-reactivity were -- send config.toml/hparams.yaml/splits.json/test_predictions.csv for that and for real dataset/metrics fields once available.",
+      "tags": [
+        "physicochemical",
+        "solubility",
+        "admet"
+      ]
+    },
+    {
+      "id": "melting-point",
+      "displayName": "Melting point",
+      "propertyKey": "mp",
+      "taskType": "regression",
+      "units": "K",
+      "description": "Predicts melting point in Kelvin. A genuinely hard QSPR target for a 2D-graph-only model -- real melting point depends heavily on crystal packing and polymorphism, which near-identical 2D graphs (e.g. positional isomers) can differ on wildly.",
+      "files": {
+        "manifest": "melting-point/manifest.json",
+        "weights": "melting-point/weights.bin"
+      },
+      "dataset": {
+        "name": "Jean-Claude Bradley Double Plus Good (Highly Curated and Validated) Melting Point Dataset",
+        "citationKey": "bradley2014meltingpoint",
+        "citationFull": "Bradley, Jean-Claude; Lang, Andrew; Williams, Antony (2014). Jean-Claude Bradley Double Plus Good (Highly Curated and Validated) Melting Point Dataset. figshare. Dataset. https://doi.org/10.6084/m9.figshare.1031638.v1",
+        "size": null,
+        "positiveCount": null,
+        "splitStrategy": "pre-defined train/test split provided with the dataset (train/test column); further internal 90/10 train/val split of the train partition during training",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.1031638.v1"
+      },
+      "metrics": {
+        "testSetSize": null,
+        "primary": {
+          "name": "Test RMSE",
+          "value": 36.88,
+          "units": "K"
+        },
+        "all": {
+          "testMSE": 1360.002197265625,
+          "testRMSE_K": 36.88
+        },
+        "note": "Real held-out test-set metric, taken directly from chemprop train's own logged output (test/mse), not derived or estimated. Best checkpoint at epoch 30 of 50 (val_loss=0.22, in chemprop's internal normalized-target units -- the test/mse above is already correctly inverse-transformed back to real K^2)."
+      },
+      "training": {
+        "chempropVersion": null,
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "aggNorm": 100,
+          "epochs": 50,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1
+        },
+        "dateTrained": "2026-07-25"
+      },
+      "notes": "Sanity-checked against 10 molecules with well-known literature melting points (not this dataset's own ground truth, just a plausibility check): mean abs error 41.4 K, broadly consistent with the real 36.9 K test RMSE above. Water was the largest single outlier (119 K error) -- consistent with the same pattern seen in the logP/logS models, where small inorganic-ish molecules are poorly represented in organic-compound training sets. Values in this dataset are in Kelvin (Celsius-derived, e.g. 450.15 K = 177.00 degC exactly), worth knowing if the UI ever offers a degC display option.",
+      "tags": [
+        "physicochemical",
+        "melting-point",
+        "solid-state"
+      ]
+    },
+    {
+      "id": "nagl-mbis-charges",
+      "displayName": "MBIS partial charges (per atom)",
+      "propertyKey": "mbis-charges",
+      "engine": "nagl",
+      "units": "e (elementary charge)",
+      "description": "Predicts per-atom MBIS (Minimal Basis Iterative Stockholder) partial charges via a graph-convolutional electronegativity-equalization model (jthorton/nagl-mbis, built on OpenFF's NAGL). Different architecture from the Chemprop models above -- see notes.",
+      "files": {
+        "manifest": "nagl-mbis-charges/manifest.json",
+        "weights": "nagl-mbis-charges/weights.bin"
+      },
+      "dataset": {
+        "name": null,
+        "citationKey": null,
+        "size": null,
+        "splitStrategy": null,
+        "sourceUrl": "https://github.com/jthorton/nagl-mbis"
+      },
+      "metrics": null,
+      "training": {
+        "chempropVersion": null,
+        "hyperparameters": {
+          "architecture": "5x SAGEConv (mean aggregation), hidden=128",
+          "readout": "128 -> 64 -> 64 -> 2 (electronegativity, hardness) per atom",
+          "postprocess": "closed-form electronegativity equalization (Gilson et al. 2003)"
+        },
+        "dateTrained": null
+      },
+      "notes": "This is jthorton/nagl-mbis's own pretrained checkpoint (nagl-v1-mbis-dipole.ckpt), not something trained as part of this project -- reused, not created. Despite the '-dipole' filename, inspected directly and confirmed single-readout (mbis-charges only). Genuinely different architecture from every other model in this registry: node-only GraphSAGE convolution (no bond features enter the convolution at all, confirmed from real NAGL/nagl-mbis source), 19-dim atom features (element/connectivity/ring-size), and a closed-form electronegativity-equalization postprocess that analytically guarantees predicted charges sum to the molecule's total formal charge -- not a plain regression head. Requires explicit hydrogens as real graph nodes (added internally, not something you need to draw) -- this app's other models work directly on the heavy-atom skeleton. VALIDATION: could not obtain real DGL ground truth directly -- DGL installs via pip but its precompiled graphbolt extension has no build matching available PyTorch versions in the dev sandbox (confirmed via direct install attempts, not assumed). Instead cross-validated by reimplementing the same forward pass independently in raw PyTorch tensor ops (no DGL, no shared code with the JS port) using these exact trained weights, on two structurally distinct real molecules (ethanol -- chain, O heteroatom; pyridine -- aromatic ring, N heteroatom, exercises the ring-size feature untested by ethanol): the JS port and this independent Python reimplementation agree to ~5e-8 (float32 rounding, not a discrepancy) on both. Charge conservation holds exactly on every test case. Predicted charges are chemically sensible on both (most electronegative atom most negative; O-H/N-H hydrogens most positive; pyridine's real C2v ring symmetry reproduced exactly -- equivalent ring positions get identical charges). This is strong internal-consistency and sanity evidence, not literal confirmation against DGL's own output -- flagged here plainly rather than glossed over.",
+      "tags": [
+        "physicochemical",
+        "partial-charges",
+        "atom-level",
+        "force-field-parameterization"
+      ]
+    }
+  ]
+}

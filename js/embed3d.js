@@ -1,0 +1,759 @@
+/**
+ * embed3d.js
+ *
+ * Turns a 2D Molecule into a 3D structure:
+ *   1. Add implicit hydrogens based on default valence.
+ *   2. Seed 3D coordinates from the 2D layout.
+ *   3. For each conformer attempt, randomize the dihedral angle of every
+ *      real rotatable bond (single, acyclic, both ends substituted) --
+ *      genuine conformer *search*, not just numerical noise -- then
+ *      relax with a UFF/MMFF-style force field: harmonic bond stretching,
+ *      harmonic angle bending, periodic torsion terms, and a proper
+ *      12-6 Lennard-Jones nonbonded potential (with 1-4 scaling) built
+ *      on real van der Waals radii.
+ *   4. Keep the lowest-energy conformer found across all attempts.
+ *
+ * This is NOT literally UFF or MMFF94 -- it doesn't use either force
+ * field's actual per-atom-type parameter tables (which are large,
+ * published, and not something to approximate from memory without
+ * risking silently-wrong numbers). It uses the same *functional form*
+ * every real force field of this style uses (harmonic bonds/angles,
+ * periodic torsions, 12-6 LJ with 1-4 scaling) with hand-tuned constants
+ * aimed at "produces a chemically sane, non-overlapping 3D structure,"
+ * not quantitative accuracy. If you need real UFF/MMFF94 energies (not
+ * just a reasonable-looking structure), that needs an actual
+ * cheminformatics toolkit's compiled force field code -- RDKit.js's
+ * browser build doesn't include one (checked directly: no 3D embedding
+ * or force-field method exists anywhere in its API, confirmed against
+ * the actual @rdkit/rdkit package, not assumed).
+ *
+ * The whole thing uses numeric (finite-difference) gradients rather than
+ * hand-derived analytic ones -- more compute per step, much easier to
+ * keep correct across four different energy terms, and still fast enough
+ * for editor-sized (including drug-sized) molecules given the time-budget
+ * approach below.
+ */
+
+window.CC = window.CC || {};
+
+(function () {
+  const DEG2RAD = Math.PI / 180;
+  const K_BOND = 300;
+  const K_ANGLE = 40;
+  const GRAD_H = 1e-4;
+
+  // Periodic torsion force constants -- see file header: hand-tuned for
+  // "chemically sane structure," not sourced from a published parameter
+  // table. Relative *ordering* is the chemically important part: a
+  // conjugated pi system should resist twisting much more strongly than
+  // a freely-rotating single bond, which these reflect.
+  const V_TORSION_CONJUGATED = 8; // double bond / aromatic -- strong planarity preference
+  const V_TORSION_SP3 = 1.2; // sp3-sp3 single bond -- staggered-preferring, real barrier
+  const V_TORSION_LOW = 0.3; // sp2-sp3 (e.g. exocyclic ring bond) -- nearly free rotation
+
+  const LJ_EPSILON = 0.15; // uniform well depth -- see file header, not per-element real data
+  const LJ_SCALE_14 = 0.5; // standard force-field convention: soften (don't exclude) 1-4 nonbonded pairs
+
+  const K_OOP = 60; // out-of-plane (improper) force constant -- real sp2 centers are quite
+                     // rigidly planar, comparable in stiffness to angle bending, not a soft preference
+
+  // Same lone-pair-conjugation check already validated in
+  // chemprop-features.js (ported here rather than shared, since
+  // embed3d.js works on the post-H-expansion bonds3d/index
+  // representation, not the app's own Molecule/atom-id model) --
+  // deliberately restricted to N/O, not S: RDKit itself doesn't extend
+  // this promotion to a singly-bonded exocyclic S (a thiophenol-type
+  // sulfur stays sp3 even attached straight to an aromatic ring), a real
+  // distinction found and confirmed against real RDKit output earlier in
+  // this project, not a simplification made here.
+  function hasConjugatedNeighbor3d(atoms3d, bonds3d, atomIndex, aromaticSet) {
+    const nbrs = neighborsOf(bonds3d, atomIndex);
+    return nbrs.some(function (n) {
+      if (aromaticSet.has(n)) return true;
+      const nNbrs = neighborsOf(bonds3d, n);
+      // A hypervalent neighbor's formal double bond (phosphate P=O,
+      // sulfonyl S=O -- anything with 4+ heavy-atom neighbors) isn't
+      // true pi-conjugation the way a carbonyl's is.
+      if (nNbrs.length >= 4) return false;
+      return bonds3d.some(function (b) {
+        if (b.order < 2) return false;
+        const isThisBond = (b.a1 === n && b.a2 === atomIndex) || (b.a2 === n && b.a1 === atomIndex);
+        if (isThisBond) return false;
+        return b.a1 === n || b.a2 === n;
+      });
+    });
+  }
+
+  // atomIndex here is always a heavy-atom index (0..numHeavyAtoms-1,
+  // withImplicitHydrogens always places heavy atoms first) -- aromaticSet
+  // and the lone-pair check are only meaningful/needed for those; a
+  // synthetic H node is never aromatic and never gets promoted by
+  // conjugation, so this is never called for one in practice (H's bond
+  // order is always 1, always sp3 via the plain bond-order path below).
+  function hybridizationOf(atoms3d, bonds3d, atomIndex, aromaticSet) {
+    const orders = bonds3d
+      .filter(function (b) { return b.a1 === atomIndex || b.a2 === atomIndex; })
+      .map(function (b) { return b.order; });
+    if (orders.indexOf(3) !== -1) return 'sp';
+    if (orders.indexOf(2) !== -1) return 'sp2';
+    if (aromaticSet && aromaticSet.has(atomIndex)) return 'sp2';
+
+    const element = atoms3d[atomIndex].element;
+    if ((element === 'N' || element === 'O') && aromaticSet &&
+        hasConjugatedNeighbor3d(atoms3d, bonds3d, atomIndex, aromaticSet)) {
+      return 'sp2';
+    }
+    return 'sp3';
+  }
+
+  function idealAngleForAtom(atoms3d, bonds3d, atomIndex, aromaticSet) {
+    const hyb = hybridizationOf(atoms3d, bonds3d, atomIndex, aromaticSet);
+    if (hyb === 'sp') return 180 * DEG2RAD;
+    if (hyb === 'sp2') return 120 * DEG2RAD;
+    return 109.5 * DEG2RAD;
+  }
+
+  function neighborsOf(bonds3d, atomIndex) {
+    const result = [];
+    bonds3d.forEach(function (b) {
+      if (b.a1 === atomIndex) result.push(b.a2);
+      else if (b.a2 === atomIndex) result.push(b.a1);
+    });
+    return result;
+  }
+
+  // ---------- step 1: implicit hydrogens ----------
+
+  function withImplicitHydrogens(molecule) {
+    const heavyAtoms = Array.from(molecule.atoms.values());
+    const idToIndex = new Map();
+    const atoms3d = [];
+    const bonds3d = [];
+
+    heavyAtoms.forEach(function (a, i) {
+      idToIndex.set(a.id, i);
+      atoms3d.push({
+        element: a.element,
+        x: a.x / CC.BOND_LENGTH,
+        y: -a.y / CC.BOND_LENGTH,
+        z: (Math.random() - 0.5) * 0.3,
+      });
+    });
+
+    molecule.bonds.forEach(function (b) {
+      bonds3d.push({ a1: idToIndex.get(b.a1), a2: idToIndex.get(b.a2), order: b.order });
+    });
+
+    heavyAtoms.forEach(function (a) {
+      const index = idToIndex.get(a.id);
+      const data = CC.elementData(a.element);
+      const bondedOrders = molecule.getBondsForAtom(a.id).map(function (b) { return b.order; });
+      const usedValence = bondedOrders.reduce(function (sum, o) { return sum + o; }, 0);
+      const implicitH = Math.max(0, data.valence - usedValence);
+
+      const neighborIds = molecule.getBondsForAtom(a.id).map(function (b) {
+        return b.a1 === a.id ? b.a2 : b.a1;
+      });
+      const neighborPositions = neighborIds.map(function (id) {
+        const n = molecule.atoms.get(id);
+        return { x: n.x / CC.BOND_LENGTH, y: -n.y / CC.BOND_LENGTH, z: 0 };
+      });
+
+      let baseDir = { x: 0, y: 0, z: 1 };
+      if (neighborPositions.length > 0) {
+        let sum = { x: 0, y: 0, z: 0 };
+        neighborPositions.forEach(function (p) {
+          sum = CC.vec3.add(sum, CC.vec3.normalize(CC.vec3.sub(atoms3d[index], p)));
+        });
+        if (CC.vec3.length(sum) > 1e-6) baseDir = CC.vec3.normalize(sum);
+      }
+
+      const rHX = CC.idealBondLength(a.element, 'H', 1);
+      for (let h = 0; h < implicitH; h++) {
+        const jitter = {
+          x: (Math.random() - 0.5) * 0.8,
+          y: (Math.random() - 0.5) * 0.8,
+          z: (Math.random() - 0.5) * 0.8 + 0.3,
+        };
+        const dir = CC.vec3.normalize(CC.vec3.add(baseDir, jitter));
+        const hPos = CC.vec3.add(atoms3d[index], CC.vec3.scale(dir, rHX));
+        const hIndex = atoms3d.length;
+        atoms3d.push({ element: 'H', x: hPos.x, y: hPos.y, z: hPos.z });
+        bonds3d.push({ a1: index, a2: hIndex, order: 1 });
+      }
+    });
+
+    return { atoms3d: atoms3d, bonds3d: bonds3d };
+  }
+
+  // ---------- step 2: angle / torsion / nonbonded topology ----------
+
+  function buildAngles(atoms3d, bonds3d, atomCount, aromaticSet) {
+    const angles = [];
+    for (let j = 0; j < atomCount; j++) {
+      const nbrs = neighborsOf(bonds3d, j);
+      const theta0 = idealAngleForAtom(atoms3d, bonds3d, j, aromaticSet);
+      for (let a = 0; a < nbrs.length; a++) {
+        for (let b = a + 1; b < nbrs.length; b++) {
+          angles.push({ i: nbrs[a], j: j, k: nbrs[b], theta0: theta0 });
+        }
+      }
+    }
+    return angles;
+  }
+
+  // Proper torsions i-j-k-l for every bond (j,k) that has substituents on
+  // both sides. Parameterized off the (j,k) bond order and hybridization
+  // -- see the V_TORSION_* constants' comment for what this is and isn't
+  // based on. Skipped entirely when either central atom is sp (linear --
+  // "dihedral around a linear center" isn't a meaningful constraint, the
+  // angle term already pins it straight).
+  function buildTorsions(atoms3d, bonds3d, atomCount, aromaticSet) {
+    const torsions = [];
+    bonds3d.forEach(function (centralBond) {
+      const j = centralBond.a1, k = centralBond.a2;
+      const hybJ = hybridizationOf(atoms3d, bonds3d, j, aromaticSet);
+      const hybK = hybridizationOf(atoms3d, bonds3d, k, aromaticSet);
+      if (hybJ === 'sp' || hybK === 'sp') return;
+
+      const isAtoms = neighborsOf(bonds3d, j).filter(function (n) { return n !== k; });
+      const lsAtoms = neighborsOf(bonds3d, k).filter(function (n) { return n !== j; });
+      if (isAtoms.length === 0 || lsAtoms.length === 0) return;
+
+      let n, phi0, V;
+      if (centralBond.order >= 2) {
+        n = 2; phi0 = Math.PI; V = V_TORSION_CONJUGATED; // planar minima at 0, 180
+      } else if (hybJ === 'sp3' && hybK === 'sp3') {
+        n = 3; phi0 = 0; V = V_TORSION_SP3; // staggered minima at 60, 180, 300
+      } else {
+        n = 6; phi0 = 0; V = V_TORSION_LOW; // near-free rotation
+      }
+
+      isAtoms.forEach(function (i) {
+        lsAtoms.forEach(function (l) {
+          if (i === l) return; // degenerate in a 3-membered ring
+          torsions.push({ i: i, j: j, k: k, l: l, n: n, phi0: phi0, V: V });
+        });
+      });
+    });
+    return torsions;
+  }
+
+  // Out-of-plane (improper) terms: one per sp2 atom with exactly 3
+  // neighbors -- a real aromatic ring or carbonyl carbon, not "any atom
+  // that happens to have 3 heavy neighbors" (a genuine sp3 atom can also
+  // have 3 heavy neighbors plus an implicit H; hybridizationOf already
+  // correctly excludes those, since it's driven by bond order/aromaticity/
+  // lone-pair conjugation, not neighbor count). Without this term the
+  // angle-bending energy alone can't prevent a planar sp2 center from
+  // pyramidalizing (three ~120 degree bond angles at an atom are
+  // satisfiable by many non-planar arrangements too, not just the flat
+  // one) -- this was a real reported bug (a phenyl ring, and separately a
+  // conjugated/amide-type nitrogen, coming out non-planar), not a
+  // hypothetical one. The nitrogen case specifically needed the
+  // lone-pair-conjugation check in hybridizationOf, not just this term --
+  // a plain bond-order check never marks an amide/aniline nitrogen sp2 at
+  // all (no double bond sits on the nitrogen itself), so it never even
+  // reached this loop before that fix.
+  function buildImproperTerms(atoms3d, bonds3d, atomCount, aromaticSet) {
+    const impropers = [];
+    for (let i = 0; i < atomCount; i++) {
+      if (hybridizationOf(atoms3d, bonds3d, i, aromaticSet) !== 'sp2') continue;
+      const nbrs = neighborsOf(bonds3d, i);
+      if (nbrs.length !== 3) continue;
+      impropers.push({ i: i, a: nbrs[0], b: nbrs[1], c: nbrs[2] });
+    }
+    return impropers;
+  }
+
+  function buildNonBondedPairs(bonds3d, angles, torsions, atomCount) {
+    const excluded = new Set();
+    function key(a, b) { return a < b ? a + '_' + b : b + '_' + a; }
+    bonds3d.forEach(function (b) { excluded.add(key(b.a1, b.a2)); });
+    angles.forEach(function (a) { excluded.add(key(a.i, a.k)); });
+
+    const pairs14 = new Set();
+    torsions.forEach(function (t) { pairs14.add(key(t.i, t.l)); });
+
+    const pairs = [];
+    for (let a = 0; a < atomCount; a++) {
+      for (let b = a + 1; b < atomCount; b++) {
+        const k = a + '_' + b;
+        if (excluded.has(k)) continue;
+        pairs.push({ a: a, b: b, scale: pairs14.has(k) ? LJ_SCALE_14 : 1.0 });
+      }
+    }
+    return pairs;
+  }
+
+  // ---------- step 3: energy ----------
+
+  function angleBetween(p1, p2, p3) {
+    const u = CC.vec3.sub(p1, p2);
+    const v = CC.vec3.sub(p3, p2);
+    const lu = CC.vec3.length(u);
+    const lv = CC.vec3.length(v);
+    if (lu < 1e-9 || lv < 1e-9) return 0;
+    let cosT = CC.vec3.dot(u, v) / (lu * lv);
+    cosT = Math.max(-1, Math.min(1, cosT));
+    return Math.acos(cosT);
+  }
+
+  // Standard atan2-based dihedral formula (robust near 0/180 degrees,
+  // unlike an acos-of-dot-product approach): angle of the i-j-k-l torsion
+  // around the j-k axis.
+  function dihedralAngle(pi, pj, pk, pl) {
+    const b1 = CC.vec3.sub(pj, pi);
+    const b2 = CC.vec3.sub(pk, pj);
+    const b3 = CC.vec3.sub(pl, pk);
+    const n1 = CC.vec3.cross(b1, b2);
+    const n2 = CC.vec3.cross(b2, b3);
+    const m1 = CC.vec3.cross(n1, CC.vec3.normalize(b2));
+    const x = CC.vec3.dot(n1, n2);
+    const y = CC.vec3.dot(m1, n2);
+    if (Math.abs(x) < 1e-12 && Math.abs(y) < 1e-12) return 0; // degenerate (collinear atoms)
+    return Math.atan2(y, x);
+  }
+
+  // Signed perpendicular distance of point p from the plane through
+  // (a, b, c). Used for the out-of-plane term: for a true sp2 center,
+  // the central atom should lie exactly in the plane of its three
+  // substituents, i.e. this should be ~0. Chosen over an "improper
+  // dihedral angle" formulation deliberately -- a plane-deviation
+  // distance is smooth and well-behaved right at the planar minimum
+  // (where a dihedral-angle-based measure would sit at a
+  // coordinate-singularity, the same atan2(0,0)-adjacent instability
+  // dihedralAngle() above already has to guard against for torsions).
+  function planeDeviation(p, a, b, c) {
+    const normal = CC.vec3.cross(CC.vec3.sub(b, a), CC.vec3.sub(c, a));
+    const normalLen = CC.vec3.length(normal);
+    if (normalLen < 1e-9) return 0; // a, b, c nearly collinear -- no well-defined plane
+    return CC.vec3.dot(CC.vec3.sub(p, a), normal) / normalLen;
+  }
+
+  function computeEnergy(positions, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage) {
+    let energy = 0;
+
+    for (let i = 0; i < bonds3d.length; i++) {
+      const b = bonds3d[i];
+      const r = CC.vec3.distance(positions[b.a1], positions[b.a2]);
+      const r0 = CC.idealBondLength(atoms3d[b.a1].element, atoms3d[b.a2].element, b.order);
+      const dr = r - r0;
+      energy += 0.5 * K_BOND * dr * dr;
+    }
+
+    for (let i = 0; i < angles.length; i++) {
+      const a = angles[i];
+      const theta = angleBetween(positions[a.i], positions[a.j], positions[a.k]);
+      const dTheta = theta - a.theta0;
+      energy += 0.5 * K_ANGLE * dTheta * dTheta;
+    }
+
+    if (stage.torsion) {
+      for (let i = 0; i < torsions.length; i++) {
+        const t = torsions[i];
+        const phi = dihedralAngle(positions[t.i], positions[t.j], positions[t.k], positions[t.l]);
+        energy += 0.5 * t.V * (1 + Math.cos(t.n * phi - t.phi0));
+      }
+      for (let i = 0; i < impropers.length; i++) {
+        const imp = impropers[i];
+        const dev = planeDeviation(positions[imp.i], positions[imp.a], positions[imp.b], positions[imp.c]);
+        energy += 0.5 * K_OOP * dev * dev;
+      }
+    }
+
+    if (stage.lj > 0) {
+      for (let i = 0; i < pairs.length; i++) {
+        const p = pairs[i];
+        const rm = CC.VDW_RADIUS[atoms3d[p.a].element] + CC.VDW_RADIUS[atoms3d[p.b].element];
+        // Floor relative to rm (not an absolute distance) -- (rm/r) must
+        // never be allowed to grow arbitrarily large or the r^-12 term
+        // produces a pathologically stiff energy landscape that a simple
+        // gradient-descent optimizer can't navigate.
+        const r = Math.max(CC.vec3.distance(positions[p.a], positions[p.b]), 0.85 * rm);
+        const sr6 = Math.pow(rm / r, 6);
+        // stage.lj ramps 0->1 over the first several iterations of the
+        // nonbonded stage (see minimizeStaged) -- introducing the
+        // stiffest term gradually rather than at full strength against
+        // whatever (possibly clashy) structure the previous stage left,
+        // same "soft start" principle real minimization protocols use.
+        energy += stage.lj * p.scale * LJ_EPSILON * (sr6 * sr6 - 2 * sr6); // AMBER-style 12-6: minimum (-eps) exactly at r=rm
+      }
+    }
+
+    return energy;
+  }
+
+  function yieldToUI() {
+    return new Promise(function (resolve) { setTimeout(resolve, 0); });
+  }
+
+  function flatten(positions) {
+    const flat = new Float64Array(positions.length * 3);
+    for (let i = 0; i < positions.length; i++) {
+      flat[i * 3] = positions[i].x;
+      flat[i * 3 + 1] = positions[i].y;
+      flat[i * 3 + 2] = positions[i].z;
+    }
+    return flat;
+  }
+
+  function unflatten(flat) {
+    const positions = [];
+    for (let i = 0; i < flat.length; i += 3) {
+      positions.push({ x: flat[i], y: flat[i + 1], z: flat[i + 2] });
+    }
+    return positions;
+  }
+
+  function numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage) {
+    const grad = new Float64Array(flat.length);
+    for (let i = 0; i < flat.length; i++) {
+      const original = flat[i];
+
+      flat[i] = original + GRAD_H;
+      const ePlus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+
+      flat[i] = original - GRAD_H;
+      const eMinus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+
+      flat[i] = original;
+      grad[i] = (ePlus - eMinus) / (2 * GRAD_H);
+    }
+    return grad;
+  }
+
+  async function minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, stage, startFlat, onProgress) {
+    let flat = startFlat || flatten(atoms3d);
+    let energy = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+    let step = 0.02;
+    let lastGradNorm = Infinity;
+    // What actually stopped the loop -- the honest signal for whether
+    // this settled on its own or got cut off while still improving.
+    // 'gradient-converged' / 'energy-plateau' mean the optimizer decided
+    // it was done; 'iteration-limit' / 'deadline' / 'step-too-small'
+    // mean it was interrupted. A raw final gradient norm doesn't
+    // generalize well across molecules of different size/complexity
+    // (measured directly: ethanol's gradient norm at a clearly
+    // well-converged structure was ~0.03, nowhere near a naive 1e-3
+    // "converged" cutoff) -- the exit reason is what's actually honest.
+    let exitReason = 'iteration-limit';
+
+    for (let iter = 0; iter < iterations; iter++) {
+      if (deadline && performance.now() > deadline) { exitReason = 'deadline'; break; }
+
+      // Yield every ~15 iterations so the browser can repaint (a progress
+      // bar, a "still working" indicator) instead of freezing the tab for
+      // the whole multi-second optimization -- this used to run as one
+      // long synchronous call with zero feedback, which was a real
+      // regression once the force field got expensive enough to take
+      // several seconds to tens of seconds on bigger molecules.
+      if (iter > 0 && iter % 15 === 0) {
+        await yieldToUI();
+        if (onProgress) onProgress();
+      }
+
+      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+      const gradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
+      lastGradNorm = gradNorm;
+      if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
+
+      const trial = new Float64Array(flat.length);
+      for (let i = 0; i < flat.length; i++) trial[i] = flat[i] - step * grad[i];
+
+      const trialEnergy = computeEnergy(unflatten(trial), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+
+      if (trialEnergy < energy) {
+        flat = trial;
+        const improvement = energy - trialEnergy;
+        energy = trialEnergy;
+        step *= 1.2;
+        if (improvement < 1e-7) { exitReason = 'energy-plateau'; break; }
+      } else {
+        step *= 0.5;
+        if (step < 1e-7) { exitReason = 'step-too-small'; break; }
+      }
+    }
+
+    // If the loop above never actually ran (deadline already passed on
+    // entry, or iterations=0), report a real gradient norm rather than
+    // the Infinity placeholder -- one extra evaluation is cheap.
+    if (!isFinite(lastGradNorm)) {
+      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+      lastGradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
+    }
+
+    return {
+      positions: unflatten(flat), energy: energy, flat: flat, gradNorm: lastGradNorm,
+      exitReason: exitReason,
+      settled: exitReason === 'gradient-converged' || exitReason === 'energy-plateau',
+    };
+  }
+
+  /**
+   * Staged minimization: bonds+angles only -> add torsions -> ramp in
+   * full nonbonded LJ. A real, standard technique (not something
+   * specific to this project) -- throwing every energy term at a simple
+   * gradient-descent optimizer simultaneously from a cold (especially a
+   * freshly torsion-randomized) start makes for a very stiff, poorly
+   * conditioned landscape; relaxing the cheap/well-behaved terms first
+   * gives the expensive/stiff ones a much saner structure to start from.
+   */
+  async function minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, totalIterations, deadline, onProgress) {
+    const stage1Iters = Math.round(totalIterations * 0.25);
+    const stage2Iters = Math.round(totalIterations * 0.15);
+    const rampSteps = 6;
+    const rampItersEach = Math.max(3, Math.round(totalIterations * 0.05));
+    let remainingIters = totalIterations - stage1Iters - stage2Iters - rampSteps * rampItersEach;
+    if (remainingIters < 0) remainingIters = Math.round(totalIterations * 0.1);
+
+    function report(label) { if (onProgress) onProgress(label); }
+
+    // Stage 1: bonds + angles only.
+    report('bonds & angles');
+    let result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage1Iters, deadline, { torsion: false, lj: 0 }, undefined, function () { report('bonds & angles'); });
+
+    // Stage 2: bring in torsions (bounded gradients, well-behaved).
+    report('torsions & ring planarity');
+    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage2Iters, deadline, { torsion: true, lj: 0 }, result.flat, function () { report('torsions & ring planarity'); });
+
+    // Stage 3: ramp LJ in gradually rather than switching it on at full
+    // strength in one step.
+    for (let r = 1; r <= rampSteps; r++) {
+      if (deadline && performance.now() > deadline) break;
+      report('steric relaxation');
+      const ljStrength = r / rampSteps;
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function () { report('steric relaxation'); });
+    }
+
+    // Stage 4: full-strength final polish with whatever time remains.
+    report('final polish');
+    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function () { report('final polish'); });
+
+    // Only the *final* stage's outcome speaks to real convergence --
+    // earlier stages are expected to hand off to the next one, not fully
+    // settle on their own (stage 1's "converged" bond+angle-only
+    // structure isn't the real answer once torsions/LJ are added).
+    result.converged = result.settled;
+    return result;
+  }
+
+  // ---------- conformer seeding: real torsion-driven search ----------
+
+  // A bond is "rotatable" for conformer-search purposes using the
+  // standard cheminformatics definition: a single bond, not in any ring,
+  // with a real substituent on each side to actually rotate. Ring
+  // membership comes from RDKit's own ring perception (same pipeline
+  // chemprop-features.js and sascorer.js already use) rather than
+  // reimplementing ring detection here -- reusing an already-validated
+  // source beats a second, possibly-inconsistent one.
+  function findRotatableBonds(molecule, ringBondPairs, idToIndex) {
+    const rotatable = [];
+    molecule.bonds.forEach(function (b) {
+      if (b.order !== 1) return;
+      const i = idToIndex.get(b.a1), j = idToIndex.get(b.a2);
+      const key = i < j ? i + '_' + j : j + '_' + i;
+      if (ringBondPairs.has(key)) return;
+      if (molecule.getDegree(b.a1) < 2 || molecule.getDegree(b.a2) < 2) return; // terminal bond, nothing to rotate
+      rotatable.push({ j: i, k: j });
+    });
+    return rotatable;
+  }
+
+  // All atoms on the "k side" of a rotatable bond (j,k) -- BFS from k
+  // without crossing back over the (j,k) edge. Safe (splits the graph
+  // into exactly two pieces) specifically because rotatable bonds are
+  // pre-filtered to non-ring bonds -- a ring bond wouldn't have this
+  // property and must never be passed in here.
+  function sideAtoms(bonds3d, atomCount, j, k) {
+    const adjacency = Array.from({ length: atomCount }, function () { return []; });
+    bonds3d.forEach(function (b) {
+      if ((b.a1 === j && b.a2 === k) || (b.a1 === k && b.a2 === j)) return; // exclude the pivot bond itself
+      adjacency[b.a1].push(b.a2);
+      adjacency[b.a2].push(b.a1);
+    });
+    const visited = new Set([k]);
+    const queue = [k];
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      adjacency[cur].forEach(function (n) {
+        if (!visited.has(n)) { visited.add(n); queue.push(n); }
+      });
+    }
+    return visited;
+  }
+
+  // Rotate every atom on the "k side" of each rotatable bond by an angle
+  // sampled from the real staggered minima (60/180/300 degrees) most
+  // sp3-sp3 single bonds actually prefer -- not a fully continuous
+  // uniform draw. This is the actual conformer *search* part: different
+  // attempts start from genuinely different rotamer combinations, not
+  // just numerical jitter, and seeding at physically sensible minima
+  // (rather than arbitrary angles the optimizer then has to discover on
+  // its own) matters a lot for molecules with many rotatable bonds at
+  // once -- a long alkyl chain's low-energy conformers are overwhelmingly
+  // at or near all-staggered states, not scattered uniformly across
+  // rotamer space, so seeding there directly is a much better-informed
+  // starting guess than pure randomness, not just a smaller search space.
+  const STAGGERED_ANGLES = [60 * Math.PI / 180, 180 * Math.PI / 180, 300 * Math.PI / 180];
+
+  function randomizeRotatableBonds(atoms3d, bonds3d, rotatableBonds) {
+    rotatableBonds.forEach(function (rb) {
+      const moving = sideAtoms(bonds3d, atoms3d.length, rb.j, rb.k);
+      const angle = STAGGERED_ANGLES[Math.floor(Math.random() * STAGGERED_ANGLES.length)];
+      const origin = atoms3d[rb.j];
+      const axis = CC.vec3.sub(atoms3d[rb.k], atoms3d[rb.j]);
+      moving.forEach(function (idx) {
+        const rotated = CC.vec3.rotateAroundAxis(atoms3d[idx], origin, axis, angle);
+        atoms3d[idx].x = rotated.x; atoms3d[idx].y = rotated.y; atoms3d[idx].z = rotated.z;
+      });
+    });
+  }
+
+  // ---------- entry points ----------
+
+  /**
+   * Fast, synchronous phase: adds implicit hydrogens, seeds 3D
+   * coordinates from the 2D layout, and works out which bonds are
+   * rotatable (needs a quick RDKit ring-perception call, but that's the
+   * only non-trivial cost here -- no force field optimization at all).
+   * Meant to give an instant "here's a rough 3D structure" result before
+   * the separate, potentially many-second CC.optimize3D() pass.
+   */
+  CC.buildInitial3D = function (molecule) {
+    if (molecule.isEmpty()) {
+      return { atoms: [], bonds: [], molecule: molecule, rotatableBonds: [] };
+    }
+
+    const heavyAtoms = Array.from(molecule.atoms.values());
+    const idToIndex = new Map();
+    heavyAtoms.forEach(function (a, i) { idToIndex.set(a.id, i); });
+
+    let ringBondPairs = new Set();
+    let aromaticSet = new Set();
+    try {
+      const RDKit = window.chemCanvasLibs && window.chemCanvasLibs.RDKit;
+      if (RDKit) {
+        const molblock = CC.moleculeToMolblock(molecule);
+        const annotations = CC.GNN.getRDKitAnnotations(molblock);
+        ringBondPairs = annotations.ringBondPairs;
+        aromaticSet = annotations.aromaticAtomIndices;
+      }
+    } catch (err) {
+      // Ring/aromaticity info is a real-structure-quality input (correct
+      // planarity, better conformer seeding), not a correctness
+      // requirement for 3D generation to run at all -- if RDKit isn't
+      // ready yet or the structure can't be parsed, fall back to "no
+      // bonds treated as rotatable, no atoms treated as aromatic" rather
+      // than failing 3D generation entirely.
+    }
+    const rotatableBonds = findRotatableBonds(molecule, ringBondPairs, idToIndex);
+
+    const built = withImplicitHydrogens(molecule);
+
+    return {
+      atoms: built.atoms3d.map(function (a) { return { element: a.element, x: a.x, y: a.y, z: a.z }; }),
+      bonds: built.bonds3d,
+      molecule: molecule,
+      rotatableBonds: rotatableBonds,
+      aromaticSet: aromaticSet,
+      energy: null,
+      converged: null,
+    };
+  };
+
+  /**
+   * The slow part: multi-attempt conformer search + staged force-field
+   * minimization (see CC.buildInitial3D for the fast/cheap phase this
+   * continues from). Async and yields periodically (see minimize()) so
+   * the UI can show real progress instead of freezing for however many
+   * seconds this takes on a bigger or more flexible molecule.
+   *
+   * opts.onProgress, if given, is called as
+   *   onProgress({ attempt, totalAttempts, stage, bestEnergySoFar })
+   * roughly every 15 optimizer iterations.
+   *
+   * Result includes `converged` (true if the best attempt's final
+   * gradient norm was actually small, not just "ran out of time/
+   * iterations") -- real information, not just "here's a structure,
+   * trust it."
+   */
+  CC.optimize3D = async function (initial, opts) {
+    opts = opts || {};
+    const molecule = initial.molecule;
+    const rotatableBonds = initial.rotatableBonds || [];
+    const aromaticSet = initial.aromaticSet || new Set();
+
+    if (!molecule || molecule.isEmpty()) {
+      return { atoms: [], bonds: [], energy: 0, converged: true };
+    }
+
+    const heavyAtomCount = molecule.atoms.size;
+    const totalBudgetMs = opts.timeBudgetMs || Math.min(25000, Math.max(5000, heavyAtomCount * 900));
+    const attempts = opts.attempts || Math.max(3, Math.min(8, 3 + rotatableBonds.length));
+    const perAttemptBudgetMs = Math.max(3500, totalBudgetMs / attempts);
+    const iterations = opts.iterations || 400;
+
+    let best = null;
+    const overallDeadline = performance.now() + totalBudgetMs;
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (performance.now() > overallDeadline) break;
+
+      const built = withImplicitHydrogens(molecule);
+      const atoms3d = built.atoms3d;
+      const bonds3d = built.bonds3d;
+
+      // First attempt keeps the 2D-seeded layout as-is (a good starting
+      // point on its own for many molecules); later attempts randomize
+      // rotamer state for real conformer diversity.
+      if (attempt > 0) randomizeRotatableBonds(atoms3d, bonds3d, rotatableBonds);
+
+      const angles = buildAngles(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+      const torsions = buildTorsions(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+      const impropers = buildImproperTerms(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+      const pairs = buildNonBondedPairs(bonds3d, angles, torsions, atoms3d.length);
+
+      const attemptDeadline = Math.min(overallDeadline, performance.now() + perAttemptBudgetMs);
+      const result = await minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, attemptDeadline, function (stage) {
+        if (opts.onProgress) {
+          opts.onProgress({
+            attempt: attempt + 1,
+            totalAttempts: attempts,
+            stage: stage,
+            bestEnergySoFar: best ? best.energy : null,
+          });
+        }
+      });
+
+      if (!best || result.energy < best.energy) {
+        best = {
+          energy: result.energy,
+          converged: result.converged,
+          gradNorm: result.gradNorm,
+          exitReason: result.exitReason,
+          atoms: atoms3d.map(function (a, i) {
+            return { element: a.element, x: result.positions[i].x, y: result.positions[i].y, z: result.positions[i].z };
+          }),
+          bonds: bonds3d,
+        };
+      }
+    }
+
+    return best;
+  };
+
+  /**
+   * Convenience wrapper for anything that just wants a finished, fully
+   * optimized structure in one call (runs both phases back to back).
+   * The app's own 3D panel UI calls buildInitial3D/optimize3D
+   * separately instead, specifically so "see a rough structure" and
+   * "spend several/tens of seconds refining it" are two distinct,
+   * separately-triggered actions rather than one long blocking call.
+   */
+  CC.embed3D = async function (molecule, opts) {
+    const initial = CC.buildInitial3D(molecule);
+    if (initial.atoms.length === 0) return { atoms: [], bonds: [], energy: 0, converged: true };
+    return CC.optimize3D(initial, opts);
+  };
+})();
