@@ -211,12 +211,287 @@
         },
         "dateTrained": null
       },
-      "notes": "This is jthorton/nagl-mbis's own pretrained checkpoint (nagl-v1-mbis-dipole.ckpt), not something trained as part of this project -- reused, not created. Despite the '-dipole' filename, inspected directly and confirmed single-readout (mbis-charges only). Genuinely different architecture from every other model in this registry: node-only GraphSAGE convolution (no bond features enter the convolution at all, confirmed from real NAGL/nagl-mbis source), 19-dim atom features (element/connectivity/ring-size), and a closed-form electronegativity-equalization postprocess that analytically guarantees predicted charges sum to the molecule's total formal charge -- not a plain regression head. Requires explicit hydrogens as real graph nodes (added internally, not something you need to draw) -- this app's other models work directly on the heavy-atom skeleton. VALIDATION: could not obtain real DGL ground truth directly -- DGL installs via pip but its precompiled graphbolt extension has no build matching available PyTorch versions in the dev sandbox (confirmed via direct install attempts, not assumed). Instead cross-validated by reimplementing the same forward pass independently in raw PyTorch tensor ops (no DGL, no shared code with the JS port) using these exact trained weights, on two structurally distinct real molecules (ethanol -- chain, O heteroatom; pyridine -- aromatic ring, N heteroatom, exercises the ring-size feature untested by ethanol): the JS port and this independent Python reimplementation agree to ~5e-8 (float32 rounding, not a discrepancy) on both. Charge conservation holds exactly on every test case. Predicted charges are chemically sensible on both (most electronegative atom most negative; O-H/N-H hydrogens most positive; pyridine's real C2v ring symmetry reproduced exactly -- equivalent ring positions get identical charges). This is strong internal-consistency and sanity evidence, not literal confirmation against DGL's own output -- flagged here plainly rather than glossed over.",
+      "notes": "This is jthorton/nagl-mbis's own pretrained checkpoint (nagl-v1-mbis-dipole.ckpt), not something trained as part of this project -- reused, not created. Despite the '-dipole' filename, inspected directly and confirmed single-readout (mbis-charges only). Genuinely different architecture from every other model in this registry: node-only GraphSAGE convolution (no bond features enter the convolution at all, confirmed from real NAGL/nagl-mbis source), 19-dim atom features (element/connectivity/ring-size), and a closed-form electronegativity-equalization postprocess that analytically guarantees predicted charges sum to the molecule's total formal charge -- not a plain regression head. Requires explicit hydrogens as real graph nodes (added internally, not something you need to draw) -- this app's other models work directly on the heavy-atom skeleton. VALIDATION: bit-exact confirmed against the real reference implementation. A conda env with a working DGL + naglmbis install was later found on the dev machine, making it possible to run jthorton/nagl-mbis's actual MBISGraphModel.compute_properties() (real DGL SAGEConv, not a reimplementation) directly and diff its output against this project's JS port across 28 molecules -- every element in the trained vocabulary, charged species ([NH4+], carboxylate anion), fused rings, ring sizes 3-6, and degree 1-4 edge cases. Max per-atom charge discrepancy was ~2e-7 (float32 rounding noise), and this same diffing process is what surfaced the '-dipole' checkpoint identity fact above (confirmed by comparing raw state_dict tensors, not assumed).",
       "tags": [
         "physicochemical",
         "partial-charges",
         "atom-level",
         "force-field-parameterization"
+      ]
+    },
+    {
+      "id": "pka-ch-nagl",
+      "displayName": "Carbon acid pKa, C-H bonds (per atom)",
+      "propertyKey": "pka-ch",
+      "engine": "pka",
+      "units": "pKa",
+      "description": "Predicts the pKa of C-H bonds (deprotonation to a stabilized carbanion) per candidate carbon site -- a from-scratch LightGBM/DART regressor trained on jensengroup/pKalculator's published training data (Ree et al., 'pKalculator: A pKa predictor for C-H bonds', ChemRxiv 2024, 10.26434/chemrxiv-2024-56h5h), reproducing their graph-charge-shell descriptor construction but using this app's own NAGL-MBIS partial charges instead of the original method's CM5/GFN1-xTB charges (CM5 needs a real xtb binary subprocess, which has no WASM build and cannot run client-side). See notes for the honest accuracy comparison against the original CM5-based model.",
+      "files": {
+        "manifest": "pka-ch-nagl/manifest.json",
+        "weights": "pka-ch-nagl/weights.bin"
+      },
+      "dataset": {
+        "name": "pKalculator training set (Ree et al. 2024)",
+        "citationKey": "ree2024pkalculator",
+        "size": "759 of 775 molecules (16 dropped: contain Se, Si, or I, outside NAGL-MBIS's trained element vocabulary), 3675 of 4132 candidate C-H sites (outlier=True rows and sites with null/inf QM-derived targets dropped), same molecule-level train(620)/test(155) split the paper itself defines",
+        "splitStrategy": "paper-defined molecule-level train/test split (dataset_full.pkl's own train_test column) -- not re-split here",
+        "sourceUrl": "https://github.com/jensengroup/pKalculator"
+      },
+      "metrics": {
+        "testSetSize": 754,
+        "primary": {
+          "name": "MAE",
+          "value": 1.4
+        },
+        "all": {
+          "MAE": 1.4,
+          "RMSE": 2.49
+        }
+      },
+      "training": {
+        "chempropVersion": null,
+        "hyperparameters": {
+          "architecture": "LightGBM, DART boosting, 1439 trees (round count picked from a fold1 train/val curve, then retrained on the full official train split)",
+          "descriptor": "graph charge shell (n_shells=6, CIP-priority + charge tiebreak sort), 1457 features, built from NAGL-MBIS charges over the full heavy+explicit-H atom graph",
+          "lightgbmParams": "num_leaves=868, max_depth=8, learning_rate=0.168, min_data_in_leaf=52, feature_fraction=0.548, bagging_fraction=0.756, bagging_freq=5, max_bin=476, lambda_l1=0.0107, lambda_l2=6.07e-06 -- reused directly from the original paper's own Optuna-tuned DART hyperparameters (params_optuna_dart_reg.pkl), not re-tuned for NAGL charges"
+        },
+        "dateTrained": null
+      },
+      "notes": "NOT the original paper's model or weights -- retrained from scratch by this project on the paper's own published dataset (jensengroup/pKalculator's dataset_full.pkl, downloaded from its ERDA sharelink with the user's explicit permission), reusing their descriptor-construction METHOD (graph charge shell, same shell count and CIP-priority sort logic) and their tuned LightGBM/DART hyperparameters, but substituting NAGL-MBIS partial charges for CM5/GFN1-xTB charges because CM5 requires a real xtb binary subprocess (no WASM build exists, cannot run client-side) -- explicitly requested by the project owner after this constraint was identified. HONEST ACCURACY COMPARISON: this model scores MAE=1.40/RMSE=2.49 on the paper's own held-out test split (754 of 789 published test sites -- the gap is sites this conversion had to drop, see dataset size note); the original paper's real CM5/GFN1-xTB-based model reports MAE=1.24/RMSE=2.15 on the same nominal split (789 sites) per the published paper. So this NAGL-based version is measurably (~13-16%) less accurate than the original -- a real, expected cost of swapping a semiempirical-QM-derived charge for a GNN-predicted approximation of one, not a training or porting bug. One intentional algorithmic deviation from upstream's own descriptor code, made because it was a cleaner and equally-arbitrary choice for a freshly-trained model: upstream's CIP-tiebreak code has an indirect index-remapping step that (a) crashes on every currently-installable RDKit version when a block contains 2+ dummy-padding atoms (confirmed by running their unmodified code), and (b) even when it doesn't crash, applies a confusing, seemingly-unintended permutation to charge-tied groups -- this implementation instead does a plain stable-sort-by-charge within each tied-priority run, applied identically in both the Python training pipeline (scripts/convert_pka_lightgbm.py's source pipeline) and the JS inference path (pka-descriptor.js), cross-validated to produce bit-identical descriptors across all 4290 real training sites before training. Requires model/nagl-mbis-charges to be loaded first (pka-model.js throws a clear error naming it if not) -- this is a genuine dependency, not a bug. Only scores carbon atoms bearing at least one hydrogen (implicit or explicit); molecules containing Se, Si, or I cannot be scored at all (NAGL-MBIS's trained element vocabulary is H/C/N/O/F/P/S/Cl/Br). This predicts C-H acidity only -- NOT a general titratable-group (O-H/N-H/etc.) pKa predictor, which is a separate, not-yet-built feature.",
+      "tags": [
+        "physicochemical",
+        "pka",
+        "acidity",
+        "atom-level",
+        "reactivity"
+      ]
+    },
+    {
+      "id": "nmr-13c",
+      "displayName": "13C NMR chemical shift (per atom)",
+      "propertyKey": "shift_13c",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "atom",
+      "units": "ppm",
+      "description": "Predicts 13C NMR chemical shift per carbon atom. Trained from scratch by this project on NMRShiftDB2's real experimental, atom-indexed shift data -- not a reused/published checkpoint. Only carbon atoms are annotated (applicableElement gating in chemprop-model.js).",
+      "files": {
+        "manifest": "nmr-13c/shift_13c-manifest.json",
+        "weights": "nmr-13c/shift_13c.bin"
+      },
+      "dataset": {
+        "name": "NMRShiftDB2 (nmrshiftdb.nmr.uni-koeln.de)",
+        "citationKey": null,
+        "size": "30322 molecules, 311760 atom-level 13C shift labels",
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://sourceforge.net/projects/nmrshiftdb2/"
+      },
+      "metrics": {
+        "testSetSize": null,
+        "primary": {
+          "name": "Test RMSE",
+          "value": 3.98,
+          "units": "ppm"
+        },
+        "all": {
+          "testMSE": 15.867088317871094,
+          "testRMSE_ppm": 3.98
+        },
+        "note": "Real held-out test-set metric from chemprop train's own logged test/atom/mse, 50 epochs, no hyperparameter tuning beyond this project's usual hiddenSize=300/depth=3 convention -- a reasonable first-pass result, not optimized further."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50
+        },
+        "dateTrained": "2026-08-04"
+      },
+      "notes": "One of three NMR shift checkpoints (13C/19F/1H) trained together -- see scripts/prepare_nmr_training_data.py and scripts/train_nmr_chemprop.sh for the full data-preparation/training pipeline, and each script's own header comments for two real RDKit round-trip bugs that pipeline's own atom-order self-check caught and fixed (Chem.MolToSmiles(canonical=False) does NOT preserve input atom order on re-parse; default SMILES-parse sanitization silently strips explicit H atoms). A fourth nucleus, 15N, was also trained but deliberately NOT shipped -- NMRShiftDB2 only has 84 15N spectra total (vs. 43258 for 13C), and the resulting checkpoint's real test RMSE was ~164 ppm, unusable.",
+      "tags": [
+        "physicochemical",
+        "nmr",
+        "atom-level",
+        "spectroscopy"
+      ]
+    },
+    {
+      "id": "nmr-19f",
+      "displayName": "19F NMR chemical shift (per atom)",
+      "propertyKey": "shift_19f",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "atom",
+      "units": "ppm",
+      "description": "Predicts 19F NMR chemical shift per fluorine atom. Trained from scratch by this project, combining NMRShiftDB2's own (small) native 19F records with NMRexp's much larger literature-mined database, restricted to molecules with exactly one reported fluorine shift (unambiguous atom assignment -- see notes). Only fluorine atoms are annotated.",
+      "files": {
+        "manifest": "nmr-19f/shift_19f-manifest.json",
+        "weights": "nmr-19f/shift_19f.bin"
+      },
+      "dataset": {
+        "name": "NMRShiftDB2 (969 native records) + NMRexp (Zenodo 10.5281/zenodo.17296666, single-F molecules only)",
+        "citationKey": null,
+        "size": "49738 molecules, 53402 atom-level 19F shift labels",
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.5281/zenodo.17296666"
+      },
+      "metrics": {
+        "testSetSize": null,
+        "primary": {
+          "name": "Test RMSE",
+          "value": 27.5,
+          "units": "ppm"
+        },
+        "all": {
+          "testMSE": 756.484130859375,
+          "testRMSE_ppm": 27.5
+        },
+        "note": "Real held-out test-set metric from chemprop train's own logged test/atom/mse. Notably worse than 13C/1H -- NMRexp is LLM-extracted from paper text (not a curated/reviewed database like NMRShiftDB2), and combining two heterogeneous sources (different solvents/referencing conventions not accounted for) likely adds real label noise beyond what a bigger dataset alone would fix."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50
+        },
+        "dateTrained": "2026-08-04"
+      },
+      "notes": "One of three NMR shift checkpoints (13C/19F/1H) trained together -- see nmr-13c's own notes field for the shared pipeline/caveats. NMRexp rows were only used when the paper reported exactly one 19F shift value for the whole molecule (single distinguishable fluorine environment) -- multi-fluorine molecules with several reported shifts were dropped rather than guessing which shift belongs to which F atom (NMRexp's own format doesn't map shifts to specific atoms the way NMRShiftDB2's does).",
+      "tags": [
+        "physicochemical",
+        "nmr",
+        "atom-level",
+        "spectroscopy"
+      ]
+    },
+    {
+      "id": "nmr-1h",
+      "displayName": "1H NMR chemical shift (per atom, aggregated)",
+      "propertyKey": "shift_1h",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "atom",
+      "units": "ppm",
+      "description": "Predicts 1H NMR chemical shift, one value per HEAVY atom bearing at least one hydrogen -- the mean of that atom's own attached-proton predictions (see notes: the underlying model genuinely predicts a distinct value per hydrogen atom via an explicit-hydrogen graph, but this app's atom-heatmap UI colors real drawn heavy atoms only, so per-heavy-atom values are aggregated for display). Only heavy atoms with at least one hydrogen are annotated.",
+      "files": {
+        "manifest": "nmr-1h/shift_1h-manifest.json",
+        "weights": "nmr-1h/shift_1h.bin"
+      },
+      "dataset": {
+        "name": "NMRShiftDB2 (nmrshiftdb.nmr.uni-koeln.de)",
+        "citationKey": null,
+        "size": "13085 molecules, 137926 atom-level (explicit-H) 1H shift labels",
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://sourceforge.net/projects/nmrshiftdb2/"
+      },
+      "metrics": {
+        "testSetSize": null,
+        "primary": {
+          "name": "Test RMSE",
+          "value": 0.65,
+          "units": "ppm"
+        },
+        "all": {
+          "testMSE": 0.42601048946380615,
+          "testRMSE_ppm": 0.65
+        },
+        "note": "Real held-out test-set metric from chemprop train's own logged test/atom/mse, on the underlying per-hydrogen-atom predictions (not the heavy-atom-aggregated display values this app shows) -- a genuinely good result for a first-pass, untuned model."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "addH": true
+        },
+        "dateTrained": "2026-08-04"
+      },
+      "notes": "One of three NMR shift checkpoints (13C/19F/1H) trained together -- see nmr-13c's own notes field for the shared pipeline/caveats. This is the only checkpoint trained with chemprop's --add-h (explicit hydrogen graph nodes) and the only one requiring js/chemprop-features-explicit-h.js's separate graph builder at inference time (manifest.graphType='explicit-h'). Training labels were built by broadcasting NMRShiftDB2's heavy-atom-indexed 1H shifts onto each heavy atom's real attached-H nodes -- chemically equivalent protons (e.g. a CH3's three H's) genuinely share one true shift, so this is exact for the common case; diastereotopic (inequivalent) protons reported at different values on the same heavy atom get averaged into one approximate shared label instead of their true distinct values, a real bounded limitation of NMRShiftDB2's atom-indexing convention, not something this pipeline could resolve further. The app's own display then re-aggregates (mean) back down to one value per heavy atom for the same reason, compounding this same approximation, not a new one.",
+      "tags": [
+        "physicochemical",
+        "nmr",
+        "atom-level",
+        "spectroscopy"
+      ]
+    },
+    {
+      "id": "ani2x-v1",
+      "displayName": "ANI-2x (neural network potential)",
+      "propertyKey": "aniEnergy",
+      "engine": "ani2x",
+      "units": "Hartree",
+      "description": "Total molecular energy from the ANI-2x neural network potential (an 8-model ensemble of atomic-environment-vector + per-element neural networks), for driving 3D geometry optimization. Only supports neutral molecules built from H, C, N, O, F, S, Cl -- not a Chemprop/NAGL-style 2D property prediction, this feeds the 3D viewer's optimizer instead of the properties table.",
+      "files": {
+        "manifest": "ani2x/manifest.json",
+        "weights": "ani2x/ani2x.bin"
+      },
+      "dataset": {
+        "name": null,
+        "citationKey": "Devereux et al., J. Chem. Theory Comput. 2020, 16, 7, 4192-4202",
+        "size": null,
+        "splitStrategy": null,
+        "sourceUrl": "https://github.com/aiqm/torchani"
+      },
+      "metrics": null,
+      "training": {
+        "chempropVersion": null,
+        "hyperparameters": {
+          "architecture": "8-model ensemble, per-element AtomicNetwork (Linear+TightCELU stacks, element-specific widths), 1008-dim AEV (112 radial + 896 angular)",
+          "aev": "ANIRadial (eta=19.7, 16 shifts, cutoff=5.1 A) + ANIAngular (eta=12.5, zeta=14.1, 8x4 shifts, cutoff=3.5 A), cosine cutoff function",
+          "combination": "mean of the 8 members' summed-over-atoms energy, plus a per-element self-energy correction"
+        },
+        "dateTrained": null
+      },
+      "notes": "This is the standard public ANI-2x release bundled in the torchani Python package (torchani.models.ANI2x()), not something trained as part of this project -- reused, not created. Every numeric constant (AEV cutoffs/eta/shifts, per-element layer shapes, species order, self energies, the species-pair index table) was read directly off the live loaded torchani model by convert_ani2x_checkpoint.py, not transcribed from memory or a paper. VALIDATION: real torchani (same installed package) was run on 10 structurally diverse test molecules spanning all 7 supported elements (alkane/ring, alcohol, amine, sulfide, aromatic-F, aromatic-Cl, thiophene, carboxylic acid, a combined N/O/F/Cl amide, a tert-thiol), computing both total energy and per-atom forces (via torch.autograd.grad) as ground truth, then compared against this JS port's CC.ANI.energyAndForces on the identical coordinates: max energy error 8.7e-5 Hartree (~0.05 kcal/mol) and max force-component error 4.7e-7 Hartree/Angstrom across all 10 -- consistent with float32 weight-storage rounding, not a bug (weights are stored as float32; the reference PyTorch run is also float32 internally). This confirms both the AEV forward pass and the from-scratch analytic backprop (through the AEV formulas and the per-element networks) used to compute forces for geometry optimization, not just the forward energy. See ANI2X_INTEGRATION.md for the full validation writeup and known limitations.",
+      "tags": [
+        "physicochemical",
+        "neural-network-potential",
+        "geometry-optimization",
+        "3d"
+      ]
+    },
+    {
+      "id": "geomol-drugs-v1",
+      "displayName": "GeoMol (learned 3D conformer generator)",
+      "propertyKey": "geomolConformer",
+      "engine": "geomol",
+      "units": null,
+      "description": "Predicts a 3D conformer directly from the 2D molecular graph in a single forward pass -- a message-passing GNN encodes the graph, then per-atom local geometry and per-rotatable-bond torsion angles are predicted and assembled into a full structure, without any classical force field. An alternative 3D generation method to the hand-tuned classical force field, selectable from the 3D view panel.",
+      "files": {
+        "manifest": "geomol-drugs/manifest.json",
+        "weights": "geomol-drugs/geomol.bin"
+      },
+      "dataset": {
+        "name": "GEOM-Drugs",
+        "citationKey": "Ganea, Pattanaik et al., NeurIPS 2021 (GeoMol) -- github.com/PattanaikL/GeoMol",
+        "size": null,
+        "splitStrategy": null,
+        "sourceUrl": "https://github.com/PattanaikL/GeoMol"
+      },
+      "metrics": null,
+      "training": {
+        "chempropVersion": null,
+        "hyperparameters": {
+          "architecture": "two weight-tied 3-round message-passing GNNs (model_dim=50), a per-neighborhood 2-head Transformer encoder for local structure prediction, and per-dihedral-pair MLPs (alpha_mlp/c_mlp) for torsion prediction",
+          "assembly": "sequential fragment placement with a gamma-fitted rotation per dihedral pair; rings closed via multi-start traversal + Kabsch-averaging"
+        },
+        "dateTrained": null
+      },
+      "notes": "The official drugs checkpoint bundled in the GeoMol repo (trained_models/drugs/best_model.pt), not something trained as part of this project -- reused, not created. Every tensor name/shape/hyperparameter was read directly off the live checkpoint by convert_geomol_checkpoint.py, not transcribed from memory. VALIDATION: run against a live PyTorch instance of the same checkpoint, with the same injected noise vectors, on both a simple acyclic molecule and a 46-atom molecule with two fused aromatic rings and a stereocenter. GNN encoder and local-structure prediction: RMSE ~0.1-1% relative to each tensor's own typical magnitude (consistent with float32 rounding). Torsion prediction: v_star matches to ~2e-9, c_ij to ~0.1% relative. Full assembly (including ring closure): all 48 bonds match ground truth's own bond-length range almost exactly with zero outliers, zero nonbonded clashes, and the aromatic ring came out genuinely planar (not enforced anywhere -- it falls out of correct predictions). See GEOMOL_INTEGRATION.md for the full validation writeup and known limitations (only the drugs checkpoint is converted, not qm9; global_transformer=true checkpoints unsupported).",
+      "tags": [
+        "3d",
+        "geometry-generation",
+        "graph-neural-network",
+        "conformer-generation"
       ]
     }
   ]

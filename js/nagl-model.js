@@ -47,20 +47,29 @@
  *    This needs the molecule's total formal charge as an extra input,
  *    unlike a plain per-atom regression head.
  *
- * VALIDATION STATUS -- read before trusting this over the real model:
- * unlike every other model-execution file in this project, this one
- * could NOT be validated against real NAGL/DGL output directly. DGL is
- * pip-installable (unlike naglmbis's full conda-only environment), but
- * its precompiled C++ extension didn't have a build matching this
- * sandbox's PyTorch version, and downgrading risked destabilizing the
- * already-validated Chemprop pipeline sharing this environment. Every
- * formula above is transcribed directly from NAGL's and nagl-mbis's own
- * source with high confidence, and the state_dict shapes it was checked
- * against are consistent with it (right bias pattern, right dims) -- but
- * "consistent with" isn't "bit-exact confirmed" the way every Chemprop
- * model in this project was. Treat this as implemented-but-not-yet-
- * fully-validated until real reference values (see the accompanying
- * probe script) are diffed against it.
+ * VALIDATION STATUS -- bit-exact confirmed. A conda env with a working
+ * DGL + naglmbis install was found on this machine (env "nagl"), which
+ * made it possible to run the real jthorton/nagl-mbis
+ * MBISGraphModel.compute_properties() directly and diff its output
+ * against this file's forward pass across 28 test molecules (charged
+ * species, every element in the trained vocabulary, fused rings, ring
+ * sizes 3-6, degree 1-4 edge cases). Max per-atom charge discrepancy:
+ * ~2e-7, consistent with float32 rounding alone -- the SAGEConv stack,
+ * readout MLP, and electronegativity-equalization postprocess above are
+ * all confirmed correct.
+ *
+ * One real finding from that process, worth recording: the checkpoint
+ * actually baked into model/nagl-mbis-charges/manifest.json+weights.bin
+ * is "nagl-v1-mbis-dipole.ckpt" (trained with an auxiliary dipole-moment
+ * loss term), not the plain "nagl-v1-mbis.ckpt" its id and filenames
+ * suggest -- confirmed by diffing raw state_dict tensors from both
+ * checkpoints against the shipped weights.bin (the dipole checkpoint's
+ * conv0_self_weight matched byte-for-byte; the plain checkpoint's did
+ * not). Both are genuine trained NAGL-MBIS charge models from the same
+ * nagl-mbis release, so this isn't a correctness bug in the predictions
+ * themselves, but re-running convert_nagl_checkpoint.py should point at
+ * nagl-v1-mbis-dipole.ckpt specifically if this model is ever
+ * regenerated, to keep reproducing the same weights.
  */
 
 window.CC = window.CC || {};
@@ -297,5 +306,59 @@ CC.NAGL = window.CC.NAGL || {};
     });
 
     return { atomProperties: atomProperties, atomIds: graph.atomIds, backend: 'nagl', modelId: id };
+  };
+
+  /**
+   * Like predict() above, but returns charges for EVERY graph node,
+   * including the synthetic explicit-H nodes predict() truncates away
+   * (see buildExpandedGraph's header) -- needed by consumers that build
+   * their own descriptor over the full heavy+H graph (e.g.
+   * pka-descriptor.js's graph-charge-shell construction, which needs a
+   * hydrogen's own charge when it's a shell neighbor). Returns
+   * { elements, charges, adjacency, numHeavyAtoms, atomIds }, all
+   * length-numNodes except atomIds (numHeavyAtoms only, as in predict()).
+   * elements[i] is heavy atoms' real element symbol for i < numHeavyAtoms,
+   * 'H' after that -- same node ordering as predict()/buildExpandedGraph
+   * (heavy atoms in molecule.atoms order, then synthetic Hs grouped by
+   * parent heavy atom).
+   */
+  CC.NAGL.predictAll = function (molecule, id) {
+    const model = models.get(id);
+    if (!model) throw new Error('No NAGL model loaded under id "' + id + '"');
+
+    if (molecule.atoms.size === 0) {
+      return { elements: [], charges: [], adjacency: [], numHeavyAtoms: 0, atomIds: [] };
+    }
+
+    const molblock = CC.moleculeToMolblock(molecule);
+    const annotations = CC.GNN.getRDKitAnnotations(molblock);
+    const graph = CC.NAGL.buildExpandedGraph(molecule, annotations);
+
+    if (graph.unsupportedAtoms.length > 0) {
+      const reasons = graph.unsupportedAtoms.map(function (u) { return u.reason; }).join('; ');
+      throw new Error('This structure has atoms outside what this NAGL-MBIS model supports: ' + reasons);
+    }
+
+    let features = graph.rows;
+    model.convLayers.forEach(function (layer) {
+      features = sageConvLayer(layer, graph.adjacency, features);
+    });
+
+    const heavyAtoms = Array.from(molecule.atoms.values());
+    const totalCharge = heavyAtoms.reduce(function (sum, a) { return sum + a.charge; }, 0);
+
+    const enegHardness = features.map(function (embedding) { return applyReadout(model, embedding); });
+    const allCharges = equalizeCharges(enegHardness, totalCharge);
+
+    const elements = heavyAtoms.map(function (a) { return a.element; });
+    for (let i = heavyAtoms.length; i < allCharges.length; i++) elements.push('H');
+
+    return {
+      elements: elements,
+      charges: allCharges,
+      adjacency: graph.adjacency,
+      numHeavyAtoms: graph.numHeavyAtoms,
+      atomIds: graph.atomIds,
+    };
   };
 })();

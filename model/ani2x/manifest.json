@@ -1,0 +1,3576 @@
+{
+  "architecture": "ani2x-ensemble",
+  "task": "aniEnergy",
+  "species": [
+    "H",
+    "C",
+    "N",
+    "O",
+    "S",
+    "F",
+    "Cl"
+  ],
+  "atomicNumbers": [
+    1,
+    6,
+    7,
+    8,
+    16,
+    9,
+    17
+  ],
+  "selfEnergies": [
+    -0.5978583693504333,
+    -38.08934020996094,
+    -54.71196746826172,
+    -75.19107055664062,
+    -398.15771484375,
+    -99.80348205566406,
+    -460.1681823730469
+  ],
+  "ensembleSize": 8,
+  "networks": {
+    "H": {
+      "layerDims": [
+        1008,
+        256,
+        192,
+        160,
+        1
+      ]
+    },
+    "C": {
+      "layerDims": [
+        1008,
+        224,
+        192,
+        160,
+        1
+      ]
+    },
+    "N": {
+      "layerDims": [
+        1008,
+        192,
+        160,
+        128,
+        1
+      ]
+    },
+    "O": {
+      "layerDims": [
+        1008,
+        192,
+        160,
+        128,
+        1
+      ]
+    },
+    "S": {
+      "layerDims": [
+        1008,
+        160,
+        128,
+        96,
+        1
+      ]
+    },
+    "F": {
+      "layerDims": [
+        1008,
+        160,
+        128,
+        96,
+        1
+      ]
+    },
+    "Cl": {
+      "layerDims": [
+        1008,
+        160,
+        128,
+        96,
+        1
+      ]
+    }
+  },
+  "aev": {
+    "radial": {
+      "eta": 19.700000762939453,
+      "shifts": [
+        0.800000011920929,
+        1.068750023841858,
+        1.337499976158142,
+        1.6062500476837158,
+        1.875,
+        2.143749952316284,
+        2.4124999046325684,
+        2.6812500953674316,
+        2.950000047683716,
+        3.21875,
+        3.487499952316284,
+        3.7562499046325684,
+        4.025000095367432,
+        4.293749809265137,
+        4.5625,
+        4.831250190734863
+      ],
+      "cutoff": 5.1
+    },
+    "angular": {
+      "eta": 12.5,
+      "zeta": 14.100000381469727,
+      "shifts": [
+        0.800000011920929,
+        1.1375000476837158,
+        1.475000023841858,
+        1.8125,
+        2.1500000953674316,
+        2.487499952316284,
+        2.825000047683716,
+        3.1624999046325684
+      ],
+      "sections": [
+        0.39269909262657166,
+        1.1780972480773926,
+        1.9634953737258911,
+        2.7488934993743896
+      ],
+      "cutoff": 3.5
+    },
+    "numSpecies": 7,
+    "numSpeciesPairs": 28,
+    "radialLen": 112,
+    "angularLen": 896,
+    "aevLen": 1008,
+    "speciesPairIndex": [
+      [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      [
+        1,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      [
+        2,
+        8,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      [
+        3,
+        9,
+        14,
+        18,
+        19,
+        20,
+        21
+      ],
+      [
+        4,
+        10,
+        15,
+        19,
+        22,
+        23,
+        24
+      ],
+      [
+        5,
+        11,
+        16,
+        20,
+        23,
+        25,
+        26
+      ],
+      [
+        6,
+        12,
+        17,
+        21,
+        24,
+        26,
+        27
+      ]
+    ]
+  },
+  "tensors": {
+    "m0_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 0,
+      "length": 258048
+    },
+    "m0_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 258048,
+      "length": 256
+    },
+    "m0_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 258304,
+      "length": 49152
+    },
+    "m0_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 307456,
+      "length": 192
+    },
+    "m0_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 307648,
+      "length": 30720
+    },
+    "m0_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 338368,
+      "length": 160
+    },
+    "m0_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 338528,
+      "length": 160
+    },
+    "m0_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 338688,
+      "length": 1
+    },
+    "m0_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 338689,
+      "length": 225792
+    },
+    "m0_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 564481,
+      "length": 224
+    },
+    "m0_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 564705,
+      "length": 43008
+    },
+    "m0_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 607713,
+      "length": 192
+    },
+    "m0_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 607905,
+      "length": 30720
+    },
+    "m0_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 638625,
+      "length": 160
+    },
+    "m0_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 638785,
+      "length": 160
+    },
+    "m0_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 638945,
+      "length": 1
+    },
+    "m0_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 638946,
+      "length": 193536
+    },
+    "m0_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 832482,
+      "length": 192
+    },
+    "m0_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 832674,
+      "length": 30720
+    },
+    "m0_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 863394,
+      "length": 160
+    },
+    "m0_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 863554,
+      "length": 20480
+    },
+    "m0_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 884034,
+      "length": 128
+    },
+    "m0_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 884162,
+      "length": 128
+    },
+    "m0_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 884290,
+      "length": 1
+    },
+    "m0_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 884291,
+      "length": 193536
+    },
+    "m0_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 1077827,
+      "length": 192
+    },
+    "m0_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 1078019,
+      "length": 30720
+    },
+    "m0_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 1108739,
+      "length": 160
+    },
+    "m0_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 1108899,
+      "length": 20480
+    },
+    "m0_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 1129379,
+      "length": 128
+    },
+    "m0_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 1129507,
+      "length": 128
+    },
+    "m0_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 1129635,
+      "length": 1
+    },
+    "m0_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 1129636,
+      "length": 161280
+    },
+    "m0_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 1290916,
+      "length": 160
+    },
+    "m0_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 1291076,
+      "length": 20480
+    },
+    "m0_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 1311556,
+      "length": 128
+    },
+    "m0_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 1311684,
+      "length": 12288
+    },
+    "m0_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 1323972,
+      "length": 96
+    },
+    "m0_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 1324068,
+      "length": 96
+    },
+    "m0_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 1324164,
+      "length": 1
+    },
+    "m0_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 1324165,
+      "length": 161280
+    },
+    "m0_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 1485445,
+      "length": 160
+    },
+    "m0_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 1485605,
+      "length": 20480
+    },
+    "m0_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 1506085,
+      "length": 128
+    },
+    "m0_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 1506213,
+      "length": 12288
+    },
+    "m0_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 1518501,
+      "length": 96
+    },
+    "m0_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 1518597,
+      "length": 96
+    },
+    "m0_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 1518693,
+      "length": 1
+    },
+    "m0_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 1518694,
+      "length": 161280
+    },
+    "m0_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 1679974,
+      "length": 160
+    },
+    "m0_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 1680134,
+      "length": 20480
+    },
+    "m0_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 1700614,
+      "length": 128
+    },
+    "m0_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 1700742,
+      "length": 12288
+    },
+    "m0_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 1713030,
+      "length": 96
+    },
+    "m0_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 1713126,
+      "length": 96
+    },
+    "m0_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 1713222,
+      "length": 1
+    },
+    "m1_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 1713223,
+      "length": 258048
+    },
+    "m1_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 1971271,
+      "length": 256
+    },
+    "m1_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 1971527,
+      "length": 49152
+    },
+    "m1_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 2020679,
+      "length": 192
+    },
+    "m1_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 2020871,
+      "length": 30720
+    },
+    "m1_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 2051591,
+      "length": 160
+    },
+    "m1_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 2051751,
+      "length": 160
+    },
+    "m1_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 2051911,
+      "length": 1
+    },
+    "m1_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 2051912,
+      "length": 225792
+    },
+    "m1_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 2277704,
+      "length": 224
+    },
+    "m1_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 2277928,
+      "length": 43008
+    },
+    "m1_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 2320936,
+      "length": 192
+    },
+    "m1_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 2321128,
+      "length": 30720
+    },
+    "m1_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 2351848,
+      "length": 160
+    },
+    "m1_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 2352008,
+      "length": 160
+    },
+    "m1_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 2352168,
+      "length": 1
+    },
+    "m1_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 2352169,
+      "length": 193536
+    },
+    "m1_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 2545705,
+      "length": 192
+    },
+    "m1_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 2545897,
+      "length": 30720
+    },
+    "m1_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 2576617,
+      "length": 160
+    },
+    "m1_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 2576777,
+      "length": 20480
+    },
+    "m1_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 2597257,
+      "length": 128
+    },
+    "m1_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 2597385,
+      "length": 128
+    },
+    "m1_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 2597513,
+      "length": 1
+    },
+    "m1_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 2597514,
+      "length": 193536
+    },
+    "m1_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 2791050,
+      "length": 192
+    },
+    "m1_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 2791242,
+      "length": 30720
+    },
+    "m1_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 2821962,
+      "length": 160
+    },
+    "m1_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 2822122,
+      "length": 20480
+    },
+    "m1_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 2842602,
+      "length": 128
+    },
+    "m1_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 2842730,
+      "length": 128
+    },
+    "m1_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 2842858,
+      "length": 1
+    },
+    "m1_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 2842859,
+      "length": 161280
+    },
+    "m1_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 3004139,
+      "length": 160
+    },
+    "m1_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 3004299,
+      "length": 20480
+    },
+    "m1_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 3024779,
+      "length": 128
+    },
+    "m1_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 3024907,
+      "length": 12288
+    },
+    "m1_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 3037195,
+      "length": 96
+    },
+    "m1_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 3037291,
+      "length": 96
+    },
+    "m1_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 3037387,
+      "length": 1
+    },
+    "m1_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 3037388,
+      "length": 161280
+    },
+    "m1_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 3198668,
+      "length": 160
+    },
+    "m1_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 3198828,
+      "length": 20480
+    },
+    "m1_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 3219308,
+      "length": 128
+    },
+    "m1_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 3219436,
+      "length": 12288
+    },
+    "m1_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 3231724,
+      "length": 96
+    },
+    "m1_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 3231820,
+      "length": 96
+    },
+    "m1_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 3231916,
+      "length": 1
+    },
+    "m1_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 3231917,
+      "length": 161280
+    },
+    "m1_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 3393197,
+      "length": 160
+    },
+    "m1_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 3393357,
+      "length": 20480
+    },
+    "m1_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 3413837,
+      "length": 128
+    },
+    "m1_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 3413965,
+      "length": 12288
+    },
+    "m1_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 3426253,
+      "length": 96
+    },
+    "m1_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 3426349,
+      "length": 96
+    },
+    "m1_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 3426445,
+      "length": 1
+    },
+    "m2_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 3426446,
+      "length": 258048
+    },
+    "m2_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 3684494,
+      "length": 256
+    },
+    "m2_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 3684750,
+      "length": 49152
+    },
+    "m2_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 3733902,
+      "length": 192
+    },
+    "m2_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 3734094,
+      "length": 30720
+    },
+    "m2_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 3764814,
+      "length": 160
+    },
+    "m2_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 3764974,
+      "length": 160
+    },
+    "m2_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 3765134,
+      "length": 1
+    },
+    "m2_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 3765135,
+      "length": 225792
+    },
+    "m2_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 3990927,
+      "length": 224
+    },
+    "m2_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 3991151,
+      "length": 43008
+    },
+    "m2_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 4034159,
+      "length": 192
+    },
+    "m2_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 4034351,
+      "length": 30720
+    },
+    "m2_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 4065071,
+      "length": 160
+    },
+    "m2_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 4065231,
+      "length": 160
+    },
+    "m2_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 4065391,
+      "length": 1
+    },
+    "m2_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 4065392,
+      "length": 193536
+    },
+    "m2_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 4258928,
+      "length": 192
+    },
+    "m2_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 4259120,
+      "length": 30720
+    },
+    "m2_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 4289840,
+      "length": 160
+    },
+    "m2_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 4290000,
+      "length": 20480
+    },
+    "m2_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 4310480,
+      "length": 128
+    },
+    "m2_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 4310608,
+      "length": 128
+    },
+    "m2_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 4310736,
+      "length": 1
+    },
+    "m2_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 4310737,
+      "length": 193536
+    },
+    "m2_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 4504273,
+      "length": 192
+    },
+    "m2_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 4504465,
+      "length": 30720
+    },
+    "m2_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 4535185,
+      "length": 160
+    },
+    "m2_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 4535345,
+      "length": 20480
+    },
+    "m2_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 4555825,
+      "length": 128
+    },
+    "m2_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 4555953,
+      "length": 128
+    },
+    "m2_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 4556081,
+      "length": 1
+    },
+    "m2_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 4556082,
+      "length": 161280
+    },
+    "m2_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 4717362,
+      "length": 160
+    },
+    "m2_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 4717522,
+      "length": 20480
+    },
+    "m2_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 4738002,
+      "length": 128
+    },
+    "m2_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 4738130,
+      "length": 12288
+    },
+    "m2_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 4750418,
+      "length": 96
+    },
+    "m2_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 4750514,
+      "length": 96
+    },
+    "m2_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 4750610,
+      "length": 1
+    },
+    "m2_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 4750611,
+      "length": 161280
+    },
+    "m2_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 4911891,
+      "length": 160
+    },
+    "m2_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 4912051,
+      "length": 20480
+    },
+    "m2_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 4932531,
+      "length": 128
+    },
+    "m2_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 4932659,
+      "length": 12288
+    },
+    "m2_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 4944947,
+      "length": 96
+    },
+    "m2_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 4945043,
+      "length": 96
+    },
+    "m2_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 4945139,
+      "length": 1
+    },
+    "m2_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 4945140,
+      "length": 161280
+    },
+    "m2_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 5106420,
+      "length": 160
+    },
+    "m2_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 5106580,
+      "length": 20480
+    },
+    "m2_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 5127060,
+      "length": 128
+    },
+    "m2_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 5127188,
+      "length": 12288
+    },
+    "m2_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 5139476,
+      "length": 96
+    },
+    "m2_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 5139572,
+      "length": 96
+    },
+    "m2_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 5139668,
+      "length": 1
+    },
+    "m3_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 5139669,
+      "length": 258048
+    },
+    "m3_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 5397717,
+      "length": 256
+    },
+    "m3_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 5397973,
+      "length": 49152
+    },
+    "m3_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 5447125,
+      "length": 192
+    },
+    "m3_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 5447317,
+      "length": 30720
+    },
+    "m3_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 5478037,
+      "length": 160
+    },
+    "m3_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 5478197,
+      "length": 160
+    },
+    "m3_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 5478357,
+      "length": 1
+    },
+    "m3_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 5478358,
+      "length": 225792
+    },
+    "m3_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 5704150,
+      "length": 224
+    },
+    "m3_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 5704374,
+      "length": 43008
+    },
+    "m3_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 5747382,
+      "length": 192
+    },
+    "m3_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 5747574,
+      "length": 30720
+    },
+    "m3_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 5778294,
+      "length": 160
+    },
+    "m3_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 5778454,
+      "length": 160
+    },
+    "m3_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 5778614,
+      "length": 1
+    },
+    "m3_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 5778615,
+      "length": 193536
+    },
+    "m3_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 5972151,
+      "length": 192
+    },
+    "m3_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 5972343,
+      "length": 30720
+    },
+    "m3_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 6003063,
+      "length": 160
+    },
+    "m3_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 6003223,
+      "length": 20480
+    },
+    "m3_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 6023703,
+      "length": 128
+    },
+    "m3_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 6023831,
+      "length": 128
+    },
+    "m3_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 6023959,
+      "length": 1
+    },
+    "m3_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 6023960,
+      "length": 193536
+    },
+    "m3_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 6217496,
+      "length": 192
+    },
+    "m3_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 6217688,
+      "length": 30720
+    },
+    "m3_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 6248408,
+      "length": 160
+    },
+    "m3_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 6248568,
+      "length": 20480
+    },
+    "m3_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 6269048,
+      "length": 128
+    },
+    "m3_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 6269176,
+      "length": 128
+    },
+    "m3_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 6269304,
+      "length": 1
+    },
+    "m3_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 6269305,
+      "length": 161280
+    },
+    "m3_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 6430585,
+      "length": 160
+    },
+    "m3_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 6430745,
+      "length": 20480
+    },
+    "m3_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 6451225,
+      "length": 128
+    },
+    "m3_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 6451353,
+      "length": 12288
+    },
+    "m3_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 6463641,
+      "length": 96
+    },
+    "m3_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 6463737,
+      "length": 96
+    },
+    "m3_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 6463833,
+      "length": 1
+    },
+    "m3_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 6463834,
+      "length": 161280
+    },
+    "m3_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 6625114,
+      "length": 160
+    },
+    "m3_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 6625274,
+      "length": 20480
+    },
+    "m3_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 6645754,
+      "length": 128
+    },
+    "m3_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 6645882,
+      "length": 12288
+    },
+    "m3_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 6658170,
+      "length": 96
+    },
+    "m3_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 6658266,
+      "length": 96
+    },
+    "m3_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 6658362,
+      "length": 1
+    },
+    "m3_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 6658363,
+      "length": 161280
+    },
+    "m3_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 6819643,
+      "length": 160
+    },
+    "m3_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 6819803,
+      "length": 20480
+    },
+    "m3_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 6840283,
+      "length": 128
+    },
+    "m3_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 6840411,
+      "length": 12288
+    },
+    "m3_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 6852699,
+      "length": 96
+    },
+    "m3_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 6852795,
+      "length": 96
+    },
+    "m3_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 6852891,
+      "length": 1
+    },
+    "m4_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 6852892,
+      "length": 258048
+    },
+    "m4_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 7110940,
+      "length": 256
+    },
+    "m4_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 7111196,
+      "length": 49152
+    },
+    "m4_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 7160348,
+      "length": 192
+    },
+    "m4_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 7160540,
+      "length": 30720
+    },
+    "m4_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 7191260,
+      "length": 160
+    },
+    "m4_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 7191420,
+      "length": 160
+    },
+    "m4_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 7191580,
+      "length": 1
+    },
+    "m4_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 7191581,
+      "length": 225792
+    },
+    "m4_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 7417373,
+      "length": 224
+    },
+    "m4_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 7417597,
+      "length": 43008
+    },
+    "m4_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 7460605,
+      "length": 192
+    },
+    "m4_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 7460797,
+      "length": 30720
+    },
+    "m4_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 7491517,
+      "length": 160
+    },
+    "m4_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 7491677,
+      "length": 160
+    },
+    "m4_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 7491837,
+      "length": 1
+    },
+    "m4_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 7491838,
+      "length": 193536
+    },
+    "m4_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 7685374,
+      "length": 192
+    },
+    "m4_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 7685566,
+      "length": 30720
+    },
+    "m4_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 7716286,
+      "length": 160
+    },
+    "m4_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 7716446,
+      "length": 20480
+    },
+    "m4_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 7736926,
+      "length": 128
+    },
+    "m4_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 7737054,
+      "length": 128
+    },
+    "m4_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 7737182,
+      "length": 1
+    },
+    "m4_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 7737183,
+      "length": 193536
+    },
+    "m4_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 7930719,
+      "length": 192
+    },
+    "m4_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 7930911,
+      "length": 30720
+    },
+    "m4_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 7961631,
+      "length": 160
+    },
+    "m4_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 7961791,
+      "length": 20480
+    },
+    "m4_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 7982271,
+      "length": 128
+    },
+    "m4_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 7982399,
+      "length": 128
+    },
+    "m4_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 7982527,
+      "length": 1
+    },
+    "m4_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 7982528,
+      "length": 161280
+    },
+    "m4_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 8143808,
+      "length": 160
+    },
+    "m4_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 8143968,
+      "length": 20480
+    },
+    "m4_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 8164448,
+      "length": 128
+    },
+    "m4_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 8164576,
+      "length": 12288
+    },
+    "m4_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 8176864,
+      "length": 96
+    },
+    "m4_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 8176960,
+      "length": 96
+    },
+    "m4_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 8177056,
+      "length": 1
+    },
+    "m4_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 8177057,
+      "length": 161280
+    },
+    "m4_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 8338337,
+      "length": 160
+    },
+    "m4_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 8338497,
+      "length": 20480
+    },
+    "m4_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 8358977,
+      "length": 128
+    },
+    "m4_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 8359105,
+      "length": 12288
+    },
+    "m4_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 8371393,
+      "length": 96
+    },
+    "m4_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 8371489,
+      "length": 96
+    },
+    "m4_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 8371585,
+      "length": 1
+    },
+    "m4_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 8371586,
+      "length": 161280
+    },
+    "m4_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 8532866,
+      "length": 160
+    },
+    "m4_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 8533026,
+      "length": 20480
+    },
+    "m4_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 8553506,
+      "length": 128
+    },
+    "m4_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 8553634,
+      "length": 12288
+    },
+    "m4_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 8565922,
+      "length": 96
+    },
+    "m4_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 8566018,
+      "length": 96
+    },
+    "m4_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 8566114,
+      "length": 1
+    },
+    "m5_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 8566115,
+      "length": 258048
+    },
+    "m5_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 8824163,
+      "length": 256
+    },
+    "m5_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 8824419,
+      "length": 49152
+    },
+    "m5_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 8873571,
+      "length": 192
+    },
+    "m5_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 8873763,
+      "length": 30720
+    },
+    "m5_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 8904483,
+      "length": 160
+    },
+    "m5_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 8904643,
+      "length": 160
+    },
+    "m5_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 8904803,
+      "length": 1
+    },
+    "m5_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 8904804,
+      "length": 225792
+    },
+    "m5_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 9130596,
+      "length": 224
+    },
+    "m5_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 9130820,
+      "length": 43008
+    },
+    "m5_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 9173828,
+      "length": 192
+    },
+    "m5_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 9174020,
+      "length": 30720
+    },
+    "m5_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 9204740,
+      "length": 160
+    },
+    "m5_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 9204900,
+      "length": 160
+    },
+    "m5_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 9205060,
+      "length": 1
+    },
+    "m5_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 9205061,
+      "length": 193536
+    },
+    "m5_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 9398597,
+      "length": 192
+    },
+    "m5_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 9398789,
+      "length": 30720
+    },
+    "m5_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 9429509,
+      "length": 160
+    },
+    "m5_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 9429669,
+      "length": 20480
+    },
+    "m5_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 9450149,
+      "length": 128
+    },
+    "m5_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 9450277,
+      "length": 128
+    },
+    "m5_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 9450405,
+      "length": 1
+    },
+    "m5_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 9450406,
+      "length": 193536
+    },
+    "m5_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 9643942,
+      "length": 192
+    },
+    "m5_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 9644134,
+      "length": 30720
+    },
+    "m5_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 9674854,
+      "length": 160
+    },
+    "m5_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 9675014,
+      "length": 20480
+    },
+    "m5_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 9695494,
+      "length": 128
+    },
+    "m5_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 9695622,
+      "length": 128
+    },
+    "m5_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 9695750,
+      "length": 1
+    },
+    "m5_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 9695751,
+      "length": 161280
+    },
+    "m5_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 9857031,
+      "length": 160
+    },
+    "m5_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 9857191,
+      "length": 20480
+    },
+    "m5_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 9877671,
+      "length": 128
+    },
+    "m5_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 9877799,
+      "length": 12288
+    },
+    "m5_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 9890087,
+      "length": 96
+    },
+    "m5_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 9890183,
+      "length": 96
+    },
+    "m5_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 9890279,
+      "length": 1
+    },
+    "m5_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 9890280,
+      "length": 161280
+    },
+    "m5_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 10051560,
+      "length": 160
+    },
+    "m5_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 10051720,
+      "length": 20480
+    },
+    "m5_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 10072200,
+      "length": 128
+    },
+    "m5_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 10072328,
+      "length": 12288
+    },
+    "m5_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 10084616,
+      "length": 96
+    },
+    "m5_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 10084712,
+      "length": 96
+    },
+    "m5_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 10084808,
+      "length": 1
+    },
+    "m5_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 10084809,
+      "length": 161280
+    },
+    "m5_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 10246089,
+      "length": 160
+    },
+    "m5_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 10246249,
+      "length": 20480
+    },
+    "m5_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 10266729,
+      "length": 128
+    },
+    "m5_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 10266857,
+      "length": 12288
+    },
+    "m5_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 10279145,
+      "length": 96
+    },
+    "m5_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 10279241,
+      "length": 96
+    },
+    "m5_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 10279337,
+      "length": 1
+    },
+    "m6_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 10279338,
+      "length": 258048
+    },
+    "m6_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 10537386,
+      "length": 256
+    },
+    "m6_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 10537642,
+      "length": 49152
+    },
+    "m6_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 10586794,
+      "length": 192
+    },
+    "m6_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 10586986,
+      "length": 30720
+    },
+    "m6_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 10617706,
+      "length": 160
+    },
+    "m6_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 10617866,
+      "length": 160
+    },
+    "m6_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 10618026,
+      "length": 1
+    },
+    "m6_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 10618027,
+      "length": 225792
+    },
+    "m6_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 10843819,
+      "length": 224
+    },
+    "m6_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 10844043,
+      "length": 43008
+    },
+    "m6_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 10887051,
+      "length": 192
+    },
+    "m6_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 10887243,
+      "length": 30720
+    },
+    "m6_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 10917963,
+      "length": 160
+    },
+    "m6_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 10918123,
+      "length": 160
+    },
+    "m6_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 10918283,
+      "length": 1
+    },
+    "m6_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 10918284,
+      "length": 193536
+    },
+    "m6_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 11111820,
+      "length": 192
+    },
+    "m6_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 11112012,
+      "length": 30720
+    },
+    "m6_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 11142732,
+      "length": 160
+    },
+    "m6_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 11142892,
+      "length": 20480
+    },
+    "m6_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 11163372,
+      "length": 128
+    },
+    "m6_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 11163500,
+      "length": 128
+    },
+    "m6_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 11163628,
+      "length": 1
+    },
+    "m6_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 11163629,
+      "length": 193536
+    },
+    "m6_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 11357165,
+      "length": 192
+    },
+    "m6_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 11357357,
+      "length": 30720
+    },
+    "m6_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 11388077,
+      "length": 160
+    },
+    "m6_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 11388237,
+      "length": 20480
+    },
+    "m6_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 11408717,
+      "length": 128
+    },
+    "m6_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 11408845,
+      "length": 128
+    },
+    "m6_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 11408973,
+      "length": 1
+    },
+    "m6_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 11408974,
+      "length": 161280
+    },
+    "m6_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 11570254,
+      "length": 160
+    },
+    "m6_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 11570414,
+      "length": 20480
+    },
+    "m6_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 11590894,
+      "length": 128
+    },
+    "m6_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 11591022,
+      "length": 12288
+    },
+    "m6_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 11603310,
+      "length": 96
+    },
+    "m6_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 11603406,
+      "length": 96
+    },
+    "m6_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 11603502,
+      "length": 1
+    },
+    "m6_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 11603503,
+      "length": 161280
+    },
+    "m6_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 11764783,
+      "length": 160
+    },
+    "m6_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 11764943,
+      "length": 20480
+    },
+    "m6_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 11785423,
+      "length": 128
+    },
+    "m6_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 11785551,
+      "length": 12288
+    },
+    "m6_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 11797839,
+      "length": 96
+    },
+    "m6_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 11797935,
+      "length": 96
+    },
+    "m6_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 11798031,
+      "length": 1
+    },
+    "m6_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 11798032,
+      "length": 161280
+    },
+    "m6_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 11959312,
+      "length": 160
+    },
+    "m6_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 11959472,
+      "length": 20480
+    },
+    "m6_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 11979952,
+      "length": 128
+    },
+    "m6_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 11980080,
+      "length": 12288
+    },
+    "m6_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 11992368,
+      "length": 96
+    },
+    "m6_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 11992464,
+      "length": 96
+    },
+    "m6_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 11992560,
+      "length": 1
+    },
+    "m7_H_layer0_weight": {
+      "shape": [
+        256,
+        1008
+      ],
+      "offset": 11992561,
+      "length": 258048
+    },
+    "m7_H_layer0_bias": {
+      "shape": [
+        256
+      ],
+      "offset": 12250609,
+      "length": 256
+    },
+    "m7_H_layer1_weight": {
+      "shape": [
+        192,
+        256
+      ],
+      "offset": 12250865,
+      "length": 49152
+    },
+    "m7_H_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 12300017,
+      "length": 192
+    },
+    "m7_H_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 12300209,
+      "length": 30720
+    },
+    "m7_H_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 12330929,
+      "length": 160
+    },
+    "m7_H_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 12331089,
+      "length": 160
+    },
+    "m7_H_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 12331249,
+      "length": 1
+    },
+    "m7_C_layer0_weight": {
+      "shape": [
+        224,
+        1008
+      ],
+      "offset": 12331250,
+      "length": 225792
+    },
+    "m7_C_layer0_bias": {
+      "shape": [
+        224
+      ],
+      "offset": 12557042,
+      "length": 224
+    },
+    "m7_C_layer1_weight": {
+      "shape": [
+        192,
+        224
+      ],
+      "offset": 12557266,
+      "length": 43008
+    },
+    "m7_C_layer1_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 12600274,
+      "length": 192
+    },
+    "m7_C_layer2_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 12600466,
+      "length": 30720
+    },
+    "m7_C_layer2_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 12631186,
+      "length": 160
+    },
+    "m7_C_final_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 12631346,
+      "length": 160
+    },
+    "m7_C_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 12631506,
+      "length": 1
+    },
+    "m7_N_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 12631507,
+      "length": 193536
+    },
+    "m7_N_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 12825043,
+      "length": 192
+    },
+    "m7_N_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 12825235,
+      "length": 30720
+    },
+    "m7_N_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 12855955,
+      "length": 160
+    },
+    "m7_N_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 12856115,
+      "length": 20480
+    },
+    "m7_N_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 12876595,
+      "length": 128
+    },
+    "m7_N_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 12876723,
+      "length": 128
+    },
+    "m7_N_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 12876851,
+      "length": 1
+    },
+    "m7_O_layer0_weight": {
+      "shape": [
+        192,
+        1008
+      ],
+      "offset": 12876852,
+      "length": 193536
+    },
+    "m7_O_layer0_bias": {
+      "shape": [
+        192
+      ],
+      "offset": 13070388,
+      "length": 192
+    },
+    "m7_O_layer1_weight": {
+      "shape": [
+        160,
+        192
+      ],
+      "offset": 13070580,
+      "length": 30720
+    },
+    "m7_O_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 13101300,
+      "length": 160
+    },
+    "m7_O_layer2_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 13101460,
+      "length": 20480
+    },
+    "m7_O_layer2_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 13121940,
+      "length": 128
+    },
+    "m7_O_final_weight": {
+      "shape": [
+        1,
+        128
+      ],
+      "offset": 13122068,
+      "length": 128
+    },
+    "m7_O_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 13122196,
+      "length": 1
+    },
+    "m7_S_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 13122197,
+      "length": 161280
+    },
+    "m7_S_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 13283477,
+      "length": 160
+    },
+    "m7_S_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 13283637,
+      "length": 20480
+    },
+    "m7_S_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 13304117,
+      "length": 128
+    },
+    "m7_S_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 13304245,
+      "length": 12288
+    },
+    "m7_S_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 13316533,
+      "length": 96
+    },
+    "m7_S_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 13316629,
+      "length": 96
+    },
+    "m7_S_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 13316725,
+      "length": 1
+    },
+    "m7_F_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 13316726,
+      "length": 161280
+    },
+    "m7_F_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 13478006,
+      "length": 160
+    },
+    "m7_F_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 13478166,
+      "length": 20480
+    },
+    "m7_F_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 13498646,
+      "length": 128
+    },
+    "m7_F_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 13498774,
+      "length": 12288
+    },
+    "m7_F_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 13511062,
+      "length": 96
+    },
+    "m7_F_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 13511158,
+      "length": 96
+    },
+    "m7_F_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 13511254,
+      "length": 1
+    },
+    "m7_Cl_layer0_weight": {
+      "shape": [
+        160,
+        1008
+      ],
+      "offset": 13511255,
+      "length": 161280
+    },
+    "m7_Cl_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 13672535,
+      "length": 160
+    },
+    "m7_Cl_layer1_weight": {
+      "shape": [
+        128,
+        160
+      ],
+      "offset": 13672695,
+      "length": 20480
+    },
+    "m7_Cl_layer1_bias": {
+      "shape": [
+        128
+      ],
+      "offset": 13693175,
+      "length": 128
+    },
+    "m7_Cl_layer2_weight": {
+      "shape": [
+        96,
+        128
+      ],
+      "offset": 13693303,
+      "length": 12288
+    },
+    "m7_Cl_layer2_bias": {
+      "shape": [
+        96
+      ],
+      "offset": 13705591,
+      "length": 96
+    },
+    "m7_Cl_final_weight": {
+      "shape": [
+        1,
+        96
+      ],
+      "offset": 13705687,
+      "length": 96
+    },
+    "m7_Cl_final_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 13705783,
+      "length": 1
+    }
+  },
+  "byteLength": 54823136,
+  "dtype": "float32"
+}

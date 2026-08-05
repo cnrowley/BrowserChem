@@ -9,8 +9,11 @@ taskType matches what's actually baked into its technical manifest.json
 (the one convert_chemprop_checkpoint.py produces) -- catching the
 specific, easy-to-make mistake of hand-editing registry.json to say
 "regression" for what's actually a classification checkpoint, or vice
-versa. "nagl"-engine entries (convert_nagl_checkpoint.py output) get
-their own, differently-shaped manifest cross-check instead.
+versa. "nagl"-engine entries (convert_nagl_checkpoint.py output),
+"ani2x"-engine entries (convert_ani2x_checkpoint.py output),
+"geomol"-engine entries (convert_geomol_checkpoint.py output), and
+"pka"-engine entries (convert_pka_lightgbm.py output) each get their
+own, differently-shaped manifest cross-check instead.
 
 Usage:
     python3 validate_registry.py model/registry.json
@@ -23,7 +26,7 @@ from pathlib import Path
 
 REQUIRED_FIELDS = ["id", "displayName", "propertyKey", "files"]
 VALID_TASK_TYPES = {"regression", "classification"}
-VALID_ENGINES = {"chemprop", "nagl"}
+VALID_ENGINES = {"chemprop", "nagl", "ani2x", "geomol", "pka"}
 
 
 def main():
@@ -71,8 +74,9 @@ def main():
             if task_type not in VALID_TASK_TYPES:
                 errors.append(f"[{label}] taskType must be one of {VALID_TASK_TYPES}, got {task_type!r}")
         elif task_type is not None:
-            warnings.append(f"[{label}] taskType is ignored for engine='nagl' entries (always atom-level "
-                             f"regression by construction) -- remove it, or leave it out, to avoid confusion")
+            warnings.append(f"[{label}] taskType is ignored for engine={engine!r} entries "
+                             f"(not a chemprop regression/classification head) -- remove it, or leave it "
+                             f"out, to avoid confusion")
 
         files = entry.get("files") or {}
         manifest_rel = files.get("manifest")
@@ -104,6 +108,32 @@ def main():
                             f"[{label}] registry says taskType={task_type!r} but "
                             f"{manifest_path} says taskType={tech_task_type!r}"
                         )
+                    # Same cross-check for outputLevel -- a registry entry that
+                    # says "atom" for what's actually a molecule-level checkpoint
+                    # (or vice versa) would render into the wrong UI panel
+                    # entirely (properties table vs. atom heatmap).
+                    registry_output_level = entry.get("outputLevel", "molecule")
+                    tech_output_level = tech_manifest.get("outputLevel", "molecule")
+                    if registry_output_level != tech_output_level:
+                        errors.append(
+                            f"[{label}] registry says outputLevel={registry_output_level!r} but "
+                            f"{manifest_path} says outputLevel={tech_output_level!r}"
+                        )
+                    if tech_output_level == "atom":
+                        # graphType/applicableElement only matter for atom-level
+                        # models -- graphType='explicit-h' needs
+                        # chemprop-features-explicit-h.js's graph builder
+                        # (chemprop-model.js), not just the normal heavy-atom one.
+                        graph_type = tech_manifest.get("graphType", "heavy")
+                        if graph_type not in ("heavy", "explicit-h"):
+                            errors.append(f"[{label}] manifest graphType={graph_type!r}, expected 'heavy' or 'explicit-h'")
+                        if not tech_manifest.get("applicableElement"):
+                            warnings.append(
+                                f"[{label}] atom-level chemprop model has no 'applicableElement' set -- "
+                                f"it will annotate every atom regardless of element, which is only correct "
+                                f"if that's genuinely intended (e.g. a per-atom property meaningful for any "
+                                f"element, unlike a nucleus-specific NMR shift model)."
+                            )
                     tech_task = tech_manifest.get("task")
                 elif engine == "nagl":
                     # nagl-model.js currently only implements the "charges"
@@ -116,6 +146,76 @@ def main():
                             f"[{label}] manifest postprocess={postprocess!r}, but nagl-model.js only "
                             f"implements 'charges' (electronegativity-equalization) -- this model "
                             f"would fail (or silently mispredict) at runtime."
+                        )
+                    tech_task = tech_manifest.get("task")
+                elif engine == "ani2x":
+                    # ani2x-model.js/ani2x-features.js only implement ANIRadial/
+                    # ANIAngular AEV terms and the cosine cutoff function -- both
+                    # are the only values convert_ani2x_checkpoint.py ever writes
+                    # (it already refuses to export anything else), so this is
+                    # really just confirming the manifest wasn't hand-edited into
+                    # something the converter itself would never have produced.
+                    species = tech_manifest.get("species") or []
+                    if len(species) != 7 or set(species) != {"H", "C", "N", "O", "F", "S", "Cl"}:
+                        errors.append(
+                            f"[{label}] manifest species={species!r}, expected exactly "
+                            f"['H','C','N','O','F','S','Cl'] -- ani2x-model.js's compatibility "
+                            f"check and AEV species-pair table assume exactly these 7 elements."
+                        )
+                    if not tech_manifest.get("ensembleSize"):
+                        errors.append(f"[{label}] manifest is missing 'ensembleSize'")
+                    aev = tech_manifest.get("aev") or {}
+                    if not aev.get("speciesPairIndex"):
+                        errors.append(f"[{label}] manifest is missing 'aev.speciesPairIndex'")
+                    tech_task = tech_manifest.get("task")
+                elif engine == "geomol":
+                    # geomol-model.js only implements the global_transformer=false
+                    # path -- convert_geomol_checkpoint.py already refuses to export
+                    # a global_transformer=true checkpoint, so this is really just
+                    # confirming the manifest wasn't hand-edited afterward into
+                    # something the converter itself would never have produced.
+                    if tech_manifest.get("architecture") != "geomol":
+                        errors.append(
+                            f"[{label}] manifest architecture={tech_manifest.get('architecture')!r}, "
+                            f"expected 'geomol'."
+                        )
+                    for required_key in ("gnn1", "gnn2", "encoder", "coordPredDims", "dMlpDims",
+                                         "hMolMlpDims", "alphaMlpDims", "cMlpDims"):
+                        if not tech_manifest.get(required_key):
+                            errors.append(f"[{label}] manifest is missing '{required_key}'")
+                    encoder = tech_manifest.get("encoder") or {}
+                    if encoder.get("dModel") != 2 * (tech_manifest.get("modelDim") or -1):
+                        errors.append(
+                            f"[{label}] manifest encoder.dModel={encoder.get('dModel')!r} doesn't "
+                            f"equal 2*modelDim={tech_manifest.get('modelDim')!r} -- geomol-model.js's "
+                            f"local-structure Transformer assumes the encoder operates on "
+                            f"concat(neighbor, center) pairs, i.e. exactly 2x modelDim wide."
+                        )
+                    tech_task = tech_manifest.get("task")
+                elif engine == "pka":
+                    # pka-model.js only implements the flat-tree-array
+                    # "lightgbm-gbdt" format scripts/convert_pka_lightgbm.py
+                    # produces, and needs its descriptor.chargeSource NAGL
+                    # model to exist somewhere else in this same registry
+                    # (pka-model.js checks it's actually LOADED at predict
+                    # time, not just registered -- that's a runtime check
+                    # this static validator can't do).
+                    if tech_manifest.get("architecture") != "lightgbm-gbdt":
+                        errors.append(
+                            f"[{label}] manifest architecture={tech_manifest.get('architecture')!r}, "
+                            f"expected 'lightgbm-gbdt'."
+                        )
+                    if not tech_manifest.get("numTrees"):
+                        errors.append(f"[{label}] manifest is missing 'numTrees'")
+                    descriptor = tech_manifest.get("descriptor") or {}
+                    charge_source = descriptor.get("chargeSource")
+                    if not charge_source:
+                        errors.append(f"[{label}] manifest is missing 'descriptor.chargeSource'")
+                    elif charge_source not in seen_ids:
+                        warnings.append(
+                            f"[{label}] descriptor.chargeSource={charge_source!r} doesn't match any "
+                            f"registry entry id seen so far -- if it's defined later in registry.json "
+                            f"this warning is a false positive, but double check the id is right."
                         )
                     tech_task = tech_manifest.get("task")
 
