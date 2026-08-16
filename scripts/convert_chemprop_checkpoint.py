@@ -49,6 +49,17 @@ def main():
     parser.add_argument("checkpoint", help="path to a Chemprop best.pt")
     parser.add_argument("output_dir", help="directory to write manifest.json + weights.bin into")
     parser.add_argument("--name", default=None, help="base filename (default: the task name from the checkpoint)")
+    parser.add_argument("--graph-type", choices=["heavy", "explicit-h"], default="heavy",
+                         help="'explicit-h' if this checkpoint was trained with chemprop's --add-h flag "
+                              "(every hydrogen is its own graph node -- e.g. a per-atom 1H NMR shift model). "
+                              "Not auto-detected: the checkpoint doesn't reliably record whether --add-h was "
+                              "used, so pass this explicitly based on how you trained it. Only meaningful for "
+                              "outputLevel=atom; ignored for molecule-level checkpoints.")
+    parser.add_argument("--applicable-element", default=None,
+                         help="restrict this atom-level checkpoint's predictions to one element, e.g. 'C' for "
+                              "a 13C shift model -- chemprop-model.js will only annotate atoms of this element "
+                              "and leave others blank, the same masking pattern pka-model.js uses for its own "
+                              "candidate-site gating. Only meaningful for outputLevel=atom.")
     args = parser.parse_args()
 
     import torch
@@ -111,6 +122,14 @@ def main():
                   "only BondMessagePassing/MABBondMessagePassing are implemented in dmpnn.js.")
     if mp_hp["bias"]:
         sys.exit("Unsupported message-passing bias=True -- expected bias=False (W_i/W_h have no bias).")
+    if mp_hp["d_v"] != 72 or mp_hp["d_e"] != 14:
+        sys.exit(f"This checkpoint's featurizer dims (d_v={mp_hp['d_v']}, d_e={mp_hp['d_e']}) don't match "
+                  "chemprop-features.js's fixed 72-dim atom / 14-dim bond featurizer (MultiHotAtomFeaturizer.v2 "
+                  "+ the default MultiHotBondFeaturizer) -- it was trained with a different/custom featurizer "
+                  "this project's JS port doesn't implement. Converting anyway would silently feed the JS "
+                  "forward pass wrong-shaped input rather than fail loudly, so this aborts instead.")
+    if args.graph_type == "explicit-h" and (hp.get("atom_predictor") if is_mol_atom_bond else None) is None:
+        sys.exit("--graph-type explicit-h only makes sense for an atom-level (--atom-target-columns) checkpoint.")
     if output_level == "molecule":
         if agg_hp is None or agg_hp["cls"].__name__ != "NormAggregation":
             sys.exit("Unsupported aggregation -- expected NormAggregation for a molecule-level model.")
@@ -174,6 +193,8 @@ def main():
         "task": task_names[0],
         "taskType": task_type,
         "outputLevel": output_level,  # "molecule" (default/omitted in older manifests) or "atom"
+        "graphType": args.graph_type if output_level == "atom" else "heavy",
+        "applicableElement": args.applicable_element if output_level == "atom" else None,
         "architecture": "chemprop-dmpnn-v2",
         "dims": {
             "d_v": mp_hp["d_v"],
@@ -201,6 +222,7 @@ def main():
     print(f"wrote {bin_path} ({len(blob) / 1024:.1f} KB)")
     print(f"wrote {manifest_path}")
     print(f"task: {manifest['task']!r}, outputLevel: {output_level!r}, "
+          f"graphType: {manifest['graphType']!r}, applicableElement: {manifest['applicableElement']!r}, "
           f"d_h={manifest['dims']['d_h']}, depth={manifest['dims']['depth']}")
 
 

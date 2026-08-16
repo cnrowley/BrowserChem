@@ -31,14 +31,21 @@
  *                                   checkpoint's own manifest.task, but
  *                                   not force-checked at load time --
  *                                   validate_registry.py checks it offline)
- *         "engine": "chemprop" | "nagl",  optional, defaults to "chemprop"
- *                                   for backward compatibility. Decides
- *                                   which loader/predictor
- *                                   (chemprop-model.js vs nagl-model.js)
- *                                   this entry's files get handed to --
- *                                   the two are genuinely different
- *                                   architectures/manifest shapes, not
- *                                   just different weights.
+ *         "engine": "chemprop" | "nagl" | "ani2x" | "geomol" | "pka",  optional,
+ *                                   defaults to "chemprop" for backward
+ *                                   compatibility. Decides which loader/
+ *                                   predictor (chemprop-model.js /
+ *                                   nagl-model.js / ani2x-model.js /
+ *                                   geomol-model.js / pka-model.js) this
+ *                                   entry's files get handed to -- each
+ *                                   is a genuinely different
+ *                                   architecture/manifest shape, not
+ *                                   just different weights. "pka" models
+ *                                   additionally require their
+ *                                   descriptor.chargeSource NAGL model
+ *                                   (baked into their own manifest.json,
+ *                                   not this registry entry) to already
+ *                                   be loaded before predicting.
  *         "taskType": "regression" | "classification",  required for
  *                      "chemprop" entries; ignored for "nagl" (NAGL-MBIS
  *                      is always atom-level regression by construction)
@@ -90,8 +97,8 @@ CC.GNN = window.CC.GNN || {};
       if (!raw.displayName) problems.push('missing "displayName"');
       if (!raw.propertyKey) problems.push('missing "propertyKey"');
       const engine = raw.engine || 'chemprop';
-      if (engine !== 'chemprop' && engine !== 'nagl') {
-        problems.push('"engine" must be "chemprop" or "nagl", got ' + JSON.stringify(raw.engine));
+      if (engine !== 'chemprop' && engine !== 'nagl' && engine !== 'ani2x' && engine !== 'geomol' && engine !== 'pka') {
+        problems.push('"engine" must be "chemprop", "nagl", "ani2x", "geomol", or "pka", got ' + JSON.stringify(raw.engine));
       }
       if (engine === 'chemprop' && raw.taskType !== 'regression' && raw.taskType !== 'classification') {
         problems.push('"taskType" must be "regression" or "classification", got ' + JSON.stringify(raw.taskType));
@@ -151,8 +158,10 @@ CC.GNN = window.CC.GNN || {};
     const weightsUrl = resolveUrl(registryBaseUrl, entry.files.weights);
     const engine = entry.engine || 'chemprop';
 
-    const loadPromise = engine === 'nagl'
-      ? CC.NAGL.loadModel(id, manifestUrl, weightsUrl)
+    const loadPromise = engine === 'nagl' ? CC.NAGL.loadModel(id, manifestUrl, weightsUrl)
+      : engine === 'ani2x' ? CC.ANI.loadModel(id, manifestUrl, weightsUrl)
+      : engine === 'geomol' ? CC.GeoMol.loadModel(id, manifestUrl, weightsUrl)
+      : engine === 'pka' ? CC.PKA.loadModel(id, manifestUrl, weightsUrl)
       : CC.GNN.loadChempropModel(id, manifestUrl, weightsUrl);
 
     return loadPromise.then(function (info) {
@@ -165,6 +174,9 @@ CC.GNN = window.CC.GNN || {};
     const entry = entriesById.get(id);
     const engine = entry ? (entry.engine || 'chemprop') : 'chemprop';
     if (engine === 'nagl') CC.NAGL.clearModel(id);
+    else if (engine === 'ani2x') CC.ANI.clearModel(id);
+    else if (engine === 'geomol') CC.GeoMol.clearModel(id);
+    else if (engine === 'pka') CC.PKA.clearModel(id);
     else CC.GNN.clearChempropModel(id);
     loadedIds.delete(id);
   };

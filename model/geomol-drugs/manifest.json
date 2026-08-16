@@ -1,0 +1,920 @@
+{
+  "architecture": "geomol",
+  "task": "geomolConformer",
+  "modelDim": 50,
+  "randomVecDim": 10,
+  "randomVecStd": 1.0,
+  "randomAlpha": true,
+  "numNodeFeatures": 74,
+  "numEdgeFeatures": 4,
+  "gnn1Depth": 3,
+  "gnn2Depth": 3,
+  "gnn1": {
+    "nodeInitDims": [
+      84,
+      50,
+      50,
+      50
+    ],
+    "edgeInitDims": [
+      14,
+      50,
+      50,
+      50
+    ],
+    "edgeModelMlpDims": [
+      50,
+      50,
+      50,
+      50
+    ],
+    "nodeModelMlp1Dims": [
+      50,
+      50,
+      50,
+      50
+    ],
+    "nodeModelMlp2Dims": [
+      50,
+      50,
+      50,
+      50
+    ]
+  },
+  "gnn2": {
+    "nodeInitDims": [
+      84,
+      50,
+      50,
+      50
+    ],
+    "edgeInitDims": [
+      14,
+      50,
+      50,
+      50
+    ],
+    "edgeModelMlpDims": [
+      50,
+      50,
+      50,
+      50
+    ],
+    "nodeModelMlp1Dims": [
+      50,
+      50,
+      50,
+      50
+    ],
+    "nodeModelMlp2Dims": [
+      50,
+      50,
+      50,
+      50
+    ]
+  },
+  "encoder": {
+    "dModel": 100,
+    "nHead": 2,
+    "dimFeedforward": 150
+  },
+  "coordPredDims": [
+    100,
+    100,
+    100,
+    3
+  ],
+  "dMlpDims": [
+    100,
+    100,
+    1
+  ],
+  "hMolMlpDims": [
+    50,
+    50,
+    50
+  ],
+  "alphaMlpDims": [
+    160,
+    160,
+    160,
+    1
+  ],
+  "cMlpDims": [
+    200,
+    200,
+    1
+  ],
+  "tensors": {
+    "gnn1_node_init_layer0_weight": {
+      "shape": [
+        50,
+        84
+      ],
+      "offset": 0,
+      "length": 4200
+    },
+    "gnn1_node_init_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 4200,
+      "length": 50
+    },
+    "gnn1_node_init_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 4250,
+      "length": 2500
+    },
+    "gnn1_node_init_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 6750,
+      "length": 50
+    },
+    "gnn1_node_init_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 6800,
+      "length": 2500
+    },
+    "gnn1_node_init_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 9300,
+      "length": 50
+    },
+    "gnn1_edge_init_layer0_weight": {
+      "shape": [
+        50,
+        14
+      ],
+      "offset": 9350,
+      "length": 700
+    },
+    "gnn1_edge_init_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 10050,
+      "length": 50
+    },
+    "gnn1_edge_init_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 10100,
+      "length": 2500
+    },
+    "gnn1_edge_init_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 12600,
+      "length": 50
+    },
+    "gnn1_edge_init_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 12650,
+      "length": 2500
+    },
+    "gnn1_edge_init_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 15150,
+      "length": 50
+    },
+    "gnn1_edge_eps": {
+      "shape": [
+        1
+      ],
+      "offset": 15200,
+      "length": 1
+    },
+    "gnn1_node_eps": {
+      "shape": [
+        1
+      ],
+      "offset": 15201,
+      "length": 1
+    },
+    "gnn1_edgemodel_edge_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 15202,
+      "length": 2500
+    },
+    "gnn1_edgemodel_edge_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 17702,
+      "length": 50
+    },
+    "gnn1_edgemodel_node_in_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 17752,
+      "length": 2500
+    },
+    "gnn1_edgemodel_node_out_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 20252,
+      "length": 2500
+    },
+    "gnn1_edgemodel_mlp_layer0_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 22752,
+      "length": 2500
+    },
+    "gnn1_edgemodel_mlp_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 25252,
+      "length": 50
+    },
+    "gnn1_edgemodel_mlp_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 25302,
+      "length": 2500
+    },
+    "gnn1_edgemodel_mlp_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 27802,
+      "length": 50
+    },
+    "gnn1_edgemodel_mlp_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 27852,
+      "length": 2500
+    },
+    "gnn1_edgemodel_mlp_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 30352,
+      "length": 50
+    },
+    "gnn1_nodemodel_mlp1_layer0_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 30402,
+      "length": 2500
+    },
+    "gnn1_nodemodel_mlp1_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 32902,
+      "length": 50
+    },
+    "gnn1_nodemodel_mlp1_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 32952,
+      "length": 2500
+    },
+    "gnn1_nodemodel_mlp1_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 35452,
+      "length": 50
+    },
+    "gnn1_nodemodel_mlp1_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 35502,
+      "length": 2500
+    },
+    "gnn1_nodemodel_mlp1_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 38002,
+      "length": 50
+    },
+    "gnn1_nodemodel_mlp2_layer0_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 38052,
+      "length": 2500
+    },
+    "gnn1_nodemodel_mlp2_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 40552,
+      "length": 50
+    },
+    "gnn1_nodemodel_mlp2_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 40602,
+      "length": 2500
+    },
+    "gnn1_nodemodel_mlp2_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 43102,
+      "length": 50
+    },
+    "gnn1_nodemodel_mlp2_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 43152,
+      "length": 2500
+    },
+    "gnn1_nodemodel_mlp2_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 45652,
+      "length": 50
+    },
+    "gnn2_node_init_layer0_weight": {
+      "shape": [
+        50,
+        84
+      ],
+      "offset": 45702,
+      "length": 4200
+    },
+    "gnn2_node_init_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 49902,
+      "length": 50
+    },
+    "gnn2_node_init_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 49952,
+      "length": 2500
+    },
+    "gnn2_node_init_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 52452,
+      "length": 50
+    },
+    "gnn2_node_init_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 52502,
+      "length": 2500
+    },
+    "gnn2_node_init_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 55002,
+      "length": 50
+    },
+    "gnn2_edge_init_layer0_weight": {
+      "shape": [
+        50,
+        14
+      ],
+      "offset": 55052,
+      "length": 700
+    },
+    "gnn2_edge_init_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 55752,
+      "length": 50
+    },
+    "gnn2_edge_init_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 55802,
+      "length": 2500
+    },
+    "gnn2_edge_init_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 58302,
+      "length": 50
+    },
+    "gnn2_edge_init_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 58352,
+      "length": 2500
+    },
+    "gnn2_edge_init_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 60852,
+      "length": 50
+    },
+    "gnn2_edge_eps": {
+      "shape": [
+        1
+      ],
+      "offset": 60902,
+      "length": 1
+    },
+    "gnn2_node_eps": {
+      "shape": [
+        1
+      ],
+      "offset": 60903,
+      "length": 1
+    },
+    "gnn2_edgemodel_edge_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 60904,
+      "length": 2500
+    },
+    "gnn2_edgemodel_edge_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 63404,
+      "length": 50
+    },
+    "gnn2_edgemodel_node_in_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 63454,
+      "length": 2500
+    },
+    "gnn2_edgemodel_node_out_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 65954,
+      "length": 2500
+    },
+    "gnn2_edgemodel_mlp_layer0_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 68454,
+      "length": 2500
+    },
+    "gnn2_edgemodel_mlp_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 70954,
+      "length": 50
+    },
+    "gnn2_edgemodel_mlp_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 71004,
+      "length": 2500
+    },
+    "gnn2_edgemodel_mlp_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 73504,
+      "length": 50
+    },
+    "gnn2_edgemodel_mlp_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 73554,
+      "length": 2500
+    },
+    "gnn2_edgemodel_mlp_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 76054,
+      "length": 50
+    },
+    "gnn2_nodemodel_mlp1_layer0_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 76104,
+      "length": 2500
+    },
+    "gnn2_nodemodel_mlp1_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 78604,
+      "length": 50
+    },
+    "gnn2_nodemodel_mlp1_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 78654,
+      "length": 2500
+    },
+    "gnn2_nodemodel_mlp1_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 81154,
+      "length": 50
+    },
+    "gnn2_nodemodel_mlp1_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 81204,
+      "length": 2500
+    },
+    "gnn2_nodemodel_mlp1_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 83704,
+      "length": 50
+    },
+    "gnn2_nodemodel_mlp2_layer0_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 83754,
+      "length": 2500
+    },
+    "gnn2_nodemodel_mlp2_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 86254,
+      "length": 50
+    },
+    "gnn2_nodemodel_mlp2_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 86304,
+      "length": 2500
+    },
+    "gnn2_nodemodel_mlp2_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 88804,
+      "length": 50
+    },
+    "gnn2_nodemodel_mlp2_layer2_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 88854,
+      "length": 2500
+    },
+    "gnn2_nodemodel_mlp2_layer2_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 91354,
+      "length": 50
+    },
+    "encoder_in_proj_weight": {
+      "shape": [
+        300,
+        100
+      ],
+      "offset": 91404,
+      "length": 30000
+    },
+    "encoder_in_proj_bias": {
+      "shape": [
+        300
+      ],
+      "offset": 121404,
+      "length": 300
+    },
+    "encoder_out_proj_weight": {
+      "shape": [
+        100,
+        100
+      ],
+      "offset": 121704,
+      "length": 10000
+    },
+    "encoder_out_proj_bias": {
+      "shape": [
+        100
+      ],
+      "offset": 131704,
+      "length": 100
+    },
+    "encoder_linear1_weight": {
+      "shape": [
+        150,
+        100
+      ],
+      "offset": 131804,
+      "length": 15000
+    },
+    "encoder_linear1_bias": {
+      "shape": [
+        150
+      ],
+      "offset": 146804,
+      "length": 150
+    },
+    "encoder_linear2_weight": {
+      "shape": [
+        100,
+        150
+      ],
+      "offset": 146954,
+      "length": 15000
+    },
+    "encoder_linear2_bias": {
+      "shape": [
+        100
+      ],
+      "offset": 161954,
+      "length": 100
+    },
+    "encoder_norm1_weight": {
+      "shape": [
+        100
+      ],
+      "offset": 162054,
+      "length": 100
+    },
+    "encoder_norm1_bias": {
+      "shape": [
+        100
+      ],
+      "offset": 162154,
+      "length": 100
+    },
+    "encoder_norm2_weight": {
+      "shape": [
+        100
+      ],
+      "offset": 162254,
+      "length": 100
+    },
+    "encoder_norm2_bias": {
+      "shape": [
+        100
+      ],
+      "offset": 162354,
+      "length": 100
+    },
+    "coord_pred_layer0_weight": {
+      "shape": [
+        100,
+        100
+      ],
+      "offset": 162454,
+      "length": 10000
+    },
+    "coord_pred_layer0_bias": {
+      "shape": [
+        100
+      ],
+      "offset": 172454,
+      "length": 100
+    },
+    "coord_pred_layer1_weight": {
+      "shape": [
+        100,
+        100
+      ],
+      "offset": 172554,
+      "length": 10000
+    },
+    "coord_pred_layer1_bias": {
+      "shape": [
+        100
+      ],
+      "offset": 182554,
+      "length": 100
+    },
+    "coord_pred_layer2_weight": {
+      "shape": [
+        3,
+        100
+      ],
+      "offset": 182654,
+      "length": 300
+    },
+    "coord_pred_layer2_bias": {
+      "shape": [
+        3
+      ],
+      "offset": 182954,
+      "length": 3
+    },
+    "d_mlp_layer0_weight": {
+      "shape": [
+        100,
+        100
+      ],
+      "offset": 182957,
+      "length": 10000
+    },
+    "d_mlp_layer0_bias": {
+      "shape": [
+        100
+      ],
+      "offset": 192957,
+      "length": 100
+    },
+    "d_mlp_layer1_weight": {
+      "shape": [
+        1,
+        100
+      ],
+      "offset": 193057,
+      "length": 100
+    },
+    "d_mlp_layer1_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 193157,
+      "length": 1
+    },
+    "h_mol_mlp_layer0_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 193158,
+      "length": 2500
+    },
+    "h_mol_mlp_layer0_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 195658,
+      "length": 50
+    },
+    "h_mol_mlp_layer1_weight": {
+      "shape": [
+        50,
+        50
+      ],
+      "offset": 195708,
+      "length": 2500
+    },
+    "h_mol_mlp_layer1_bias": {
+      "shape": [
+        50
+      ],
+      "offset": 198208,
+      "length": 50
+    },
+    "alpha_mlp_layer0_weight": {
+      "shape": [
+        160,
+        160
+      ],
+      "offset": 198258,
+      "length": 25600
+    },
+    "alpha_mlp_layer0_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 223858,
+      "length": 160
+    },
+    "alpha_mlp_layer1_weight": {
+      "shape": [
+        160,
+        160
+      ],
+      "offset": 224018,
+      "length": 25600
+    },
+    "alpha_mlp_layer1_bias": {
+      "shape": [
+        160
+      ],
+      "offset": 249618,
+      "length": 160
+    },
+    "alpha_mlp_layer2_weight": {
+      "shape": [
+        1,
+        160
+      ],
+      "offset": 249778,
+      "length": 160
+    },
+    "alpha_mlp_layer2_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 249938,
+      "length": 1
+    },
+    "c_mlp_layer0_weight": {
+      "shape": [
+        200,
+        200
+      ],
+      "offset": 249939,
+      "length": 40000
+    },
+    "c_mlp_layer0_bias": {
+      "shape": [
+        200
+      ],
+      "offset": 289939,
+      "length": 200
+    },
+    "c_mlp_layer1_weight": {
+      "shape": [
+        1,
+        200
+      ],
+      "offset": 290139,
+      "length": 200
+    },
+    "c_mlp_layer1_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 290339,
+      "length": 1
+    }
+  },
+  "byteLength": 1161360,
+  "dtype": "float32"
+}

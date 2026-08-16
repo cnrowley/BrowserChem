@@ -22,6 +22,13 @@ engines for the trained models.
   output) for logP, logS, melting point, and a protein-reactivity
   classifier, plus a from-scratch NAGL-MBIS port (GraphSAGE +
   electronegativity equalization) for per-atom partial charges.
+- **Per-atom prediction** — NAGL-MBIS partial charges, a from-scratch C-H
+  pKa predictor (`PKA_INTEGRATION.md`), and 13C/19F/1H NMR chemical shift
+  (`NMR_INTEGRATION.md`), all via the same atom-heatmap UI.
+- **ANI-2x neural network potential** — a from-scratch AEV + per-element
+  ensemble-network forward pass, with analytic backprop for forces, to
+  drive 3D geometry optimization and report total energy (H/C/N/O/F/S/Cl,
+  neutral molecules only) — see `ANI2X_INTEGRATION.md`.
 - **Structural alerts** — ~1250 real medicinal-chemistry SMARTS filters
   (PAINS, Glaxo, Dundee, BMS, SureChEMBL, MLSMR, Inpharmatica, LINT),
   with substructure highlighting.
@@ -58,7 +65,9 @@ scripts/        Python conversion/validation tooling (checkpoint
 
 See `scripts/convert_chemprop_checkpoint.py` and
 `scripts/convert_nagl_checkpoint.py` for converting a trained checkpoint
-into the browser-loadable manifest + weights format, and
+into the browser-loadable manifest + weights format,
+`scripts/convert_ani2x_checkpoint.py` for re-exporting the ANI-2x neural
+network potential (see `ANI2X_INTEGRATION.md`), and
 `scripts/validate_registry.py` for checking `model/registry.json` before
 shipping a change.
 

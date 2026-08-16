@@ -47,6 +47,21 @@
  * Expected checkpoint shape (what the conversion script must produce):
  *   manifest.taskType = "regression" | "classification"
  *   manifest.outputLevel = "molecule" | "atom" (default "molecule")
+ *   manifest.graphType = "heavy" | "explicit-h" (default "heavy",
+ *                    atom-level only) — "explicit-h" means the checkpoint
+ *                    was trained with chemprop's --add-h (every hydrogen
+ *                    is its own graph node, e.g. a per-atom 1H NMR shift
+ *                    checkpoint) and needs
+ *                    chemprop-features-explicit-h.js's graph builder
+ *                    instead of the normal heavy-atom-only one.
+ *   manifest.applicableElement = an element symbol, e.g. "C" (atom-level
+ *                    only, optional) — if set, only atoms of this element
+ *                    get a value in the returned atomProperties (others
+ *                    are left as {}), the same pattern pka-model.js uses
+ *                    for its own candidate-site gating. For an
+ *                    "explicit-h" model this also selects which heavy
+ *                    atoms' attached-H predictions get aggregated and
+ *                    surfaced (see runOneAtomLevelExplicitH()).
  *   manifest.dims = { d_v: 72, d_e: 14, d_h, depth, aggNorm }
  *                    — aggNorm is null/unused for an atom-level model,
  *                      since there's no pooling step to normalize.
@@ -120,6 +135,8 @@ CC.GNN = window.CC.GNN || {};
       task: manifest.task || 'prediction',
       taskType: manifest.taskType || 'regression', // older manifests predate this field
       outputLevel: manifest.outputLevel || 'molecule', // older manifests predate this field too, always meant molecule-level
+      graphType: manifest.graphType || 'heavy',
+      applicableElement: manifest.applicableElement || null,
       dims: manifest.dims,
       Wi: toRows(tensor('W_i'), tensorShape('W_i')), WiBias: null,
       Wh: toRows(tensor('W_h'), tensorShape('W_h')), WhBias: null,
@@ -145,12 +162,12 @@ CC.GNN = window.CC.GNN || {};
   };
   CC.GNN.getChempropModelInfo = function (id) {
     const m = models.get(id);
-    return m ? { id: m.id, task: m.task, taskType: m.taskType, outputLevel: m.outputLevel, dims: m.dims } : null;
+    return m ? { id: m.id, task: m.task, taskType: m.taskType, outputLevel: m.outputLevel, graphType: m.graphType, applicableElement: m.applicableElement, dims: m.dims } : null;
   };
   CC.GNN.getLoadedChempropModelIds = function () { return Array.from(models.keys()); };
   CC.GNN.getLoadedChempropModels = function () {
     return Array.from(models.values()).map(function (m) {
-      return { id: m.id, task: m.task, taskType: m.taskType, outputLevel: m.outputLevel, dims: m.dims };
+      return { id: m.id, task: m.task, taskType: m.taskType, outputLevel: m.outputLevel, graphType: m.graphType, applicableElement: m.applicableElement, dims: m.dims };
     });
   };
   // With an id: unload just that model. Without: unload everything.
@@ -199,15 +216,83 @@ CC.GNN = window.CC.GNN || {};
     return applyHead(model, pooled);
   }
 
-  // Atom-level: no pooling at all -- the FFN runs once per atom, directly
-  // on that atom's own embedding (see header comment: MABBondMessagePassing's
-  // per-atom output is the same W_o/W_vo computation plain BondMessagePassing
-  // already does, Chemprop just skips the aggregation step for this case).
-  // Returns an array of values, one per atom, in the same order as
-  // graph.atomIds.
+  // Atom-level, "heavy" graph: no pooling at all -- the FFN runs once per
+  // atom, directly on that atom's own embedding (see header comment:
+  // MABBondMessagePassing's per-atom output is the same W_o/W_vo
+  // computation plain BondMessagePassing already does, Chemprop just
+  // skips the aggregation step for this case). Returns an array of
+  // values, one per atom, in the same order as graph.atomIds.
   function runOneAtomLevel(model, graph) {
     const out = runDMPNNFor(model, graph);
     return out.atomEmbeddings.map(function (embedding) { return applyHead(model, embedding); });
+  }
+
+  // Atom-level, "explicit-h" graph (chemprop-features-explicit-h.js):
+  // runs the FFN on EVERY node (heavy + synthetic H), then aggregates
+  // each heavy atom's own attached-H predictions down to one number
+  // (mean) -- this app's atom-heatmap UI colors real drawn (heavy) atoms
+  // only, the same reason nagl-model.js's public predict() doesn't
+  // surface its own synthetic H nodes' results individually. A real,
+  // deliberate loss of resolution (e.g. a CH2's two diastereotopic
+  // protons collapse to their average), not a bug -- documented in
+  // js/pka-model.js's sibling pattern and worth the same honesty here.
+  // Returns an array of length graph.numHeavyAtoms, NaN for any heavy
+  // atom with no attached H's (nothing to aggregate).
+  function runOneAtomLevelExplicitH(model, graph) {
+    const out = runDMPNNFor(model, graph);
+    const values = out.atomEmbeddings.map(function (embedding) { return applyHead(model, embedding); });
+    return graph.hNodesByHeavyIndex.map(function (hIndices) {
+      if (hIndices.length === 0) return NaN;
+      const sum = hIndices.reduce(function (s, hIdx) { return s + values[hIdx]; }, 0);
+      return sum / hIndices.length;
+    });
+  }
+
+  // Builds (and lazily caches) whichever graph(s) the currently-loaded
+  // models actually need -- most predictions only ever need the "heavy"
+  // graph, so the (pricier) explicit-H graph is only built if some
+  // loaded model's graphType asks for it.
+  function buildGraphsForMolecule(molecule) {
+    const molblock = CC.moleculeToMolblock(molecule);
+    const annotations = CC.GNN.getRDKitAnnotations(molblock);
+    let heavy = null;
+    let explicitH = null;
+    return {
+      forGraphType: function (graphType) {
+        if (graphType === 'explicit-h') {
+          if (!explicitH) explicitH = CC.GNN.buildMolGraphChempropExplicitH(molecule, annotations);
+          return explicitH;
+        }
+        if (!heavy) heavy = CC.GNN.buildMolGraphChemprop(molecule, annotations);
+        return heavy;
+      },
+    };
+  }
+
+  // Zeroes out (leaves absent from) any atomProperties entry whose heavy
+  // atom doesn't match model.applicableElement, e.g. a 13C shift model
+  // should only ever annotate carbon atoms -- same pattern
+  // pka-model.js's candidate-site gating uses. No-op if the model didn't
+  // declare an applicableElement.
+  //
+  // Doesn't apply to an "explicit-h" model: there applicableElement='H'
+  // documents which underlying atoms the model targets, not a literal
+  // heavy-atom element filter -- hydrogen is never a heavy atom in this
+  // app's molecule representation, so that comparison would always be
+  // false and silently drop every prediction. runOneAtomLevelExplicitH()
+  // already returns NaN for any heavy atom with no attached H's, and the
+  // NaN check in the callers below does that filtering instead.
+  function elementMask(molecule, model) {
+    if (!model.applicableElement || model.graphType === 'explicit-h') return null;
+    const heavyAtoms = Array.from(molecule.atoms.values());
+    return heavyAtoms.map(function (a) { return a.element === model.applicableElement; });
+  }
+
+  function runAtomLevelModel(molecule, model, graphs) {
+    const graph = graphs.forGraphType(model.graphType);
+    const values = model.graphType === 'explicit-h' ? runOneAtomLevelExplicitH(model, graph) : runOneAtomLevel(model, graph);
+    const mask = elementMask(molecule, model);
+    return { values: values, atomIds: graph.atomIds, mask: mask };
   }
 
   /**
@@ -219,24 +304,25 @@ CC.GNN = window.CC.GNN || {};
     const model = models.get(id);
     if (!model) throw new Error('No Chemprop model loaded under id "' + id + '"');
 
-    const molblock = CC.moleculeToMolblock(molecule);
-    const annotations = CC.GNN.getRDKitAnnotations(molblock);
-    const graph = CC.GNN.buildMolGraphChemprop(molecule, annotations);
+    const graphs = buildGraphsForMolecule(molecule);
 
-    if (graph.numAtoms === 0) {
+    if (molecule.atoms.size === 0) {
       return model.outputLevel === 'atom'
         ? { atomProperties: [], atomIds: [], backend: 'chemprop', modelId: id }
         : { molecularProperties: {}, propertyMeta: {}, atomIds: [], backend: 'chemprop', modelId: id };
     }
 
     if (model.outputLevel === 'atom') {
-      const values = runOneAtomLevel(model, graph);
-      const atomProperties = values.map(function (v) {
-        const obj = {}; obj[model.task] = v; return obj;
+      const result = runAtomLevelModel(molecule, model, graphs);
+      const atomProperties = result.values.map(function (v, i) {
+        const obj = {};
+        if ((!result.mask || result.mask[i]) && v === v) obj[model.task] = v; // v === v excludes NaN (no attached H's)
+        return obj;
       });
-      return { atomProperties: atomProperties, atomIds: graph.atomIds, backend: 'chemprop', modelId: id };
+      return { atomProperties: atomProperties, atomIds: result.atomIds, backend: 'chemprop', modelId: id };
     }
 
+    const graph = graphs.forGraphType('heavy');
     const molecularProperties = {};
     const propertyMeta = {};
     molecularProperties[model.task] = runOneMolecule(model, graph);
@@ -247,8 +333,10 @@ CC.GNN = window.CC.GNN || {};
   /**
    * Run every currently-loaded model on a molecule and merge their
    * outputs into one result. The (only somewhat expensive) featurization
-   * + graph build happens once and is shared across all models, since
-   * it doesn't depend on which model is being run.
+   * + graph build happens once per graph TYPE and is shared across every
+   * model needing that type (most models share the "heavy" graph; only
+   * an explicit-H-trained model like the 1H NMR checkpoint needs the
+   * pricier explicit-H graph, built lazily and only if actually needed).
    *
    * If two loaded models happen to share the same task/property name,
    * the later one (in load order) wins that key — give models distinct
@@ -258,20 +346,22 @@ CC.GNN = window.CC.GNN || {};
    * molecularProperties/propertyMeta cover any molecule-level models loaded,
    * atomProperties (one object per atom, matching atomIds) covers any
    * atom-level models loaded, merged together if both kinds are loaded
-   * at once. propertyMeta lets callers (see app.js's renderGNNOutput)
-   * render a classification model's output as Positive/Negative + score
-   * rather than a plain regression number.
+   * at once (all atom-level models here share the SAME atomIds -- the
+   * molecule's own heavy atoms -- regardless of which graph type each
+   * individual model's own forward pass used internally). propertyMeta
+   * lets callers (see app.js's renderGNNOutput) render a classification
+   * model's output as Positive/Negative + score rather than a plain
+   * regression number.
    */
   CC.GNN.predictAllChempropModels = function (molecule) {
     if (models.size === 0) throw new Error('No Chemprop models loaded');
 
-    const molblock = CC.moleculeToMolblock(molecule);
-    const annotations = CC.GNN.getRDKitAnnotations(molblock);
-    const graph = CC.GNN.buildMolGraphChemprop(molecule, annotations);
-
-    if (graph.numAtoms === 0) {
+    if (molecule.atoms.size === 0) {
       return { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], backend: 'chemprop' };
     }
+
+    const graphs = buildGraphsForMolecule(molecule);
+    const heavyAtomIds = Array.from(molecule.atoms.values()).map(function (a) { return a.id; });
 
     const molecularProperties = {};
     const propertyMeta = {};
@@ -279,10 +369,13 @@ CC.GNN = window.CC.GNN || {};
 
     models.forEach(function (model) {
       if (model.outputLevel === 'atom') {
-        const values = runOneAtomLevel(model, graph);
-        if (!atomProperties) atomProperties = graph.atomIds.map(function () { return {}; });
-        values.forEach(function (v, i) { atomProperties[i][model.task] = v; });
+        const result = runAtomLevelModel(molecule, model, graphs);
+        if (!atomProperties) atomProperties = heavyAtomIds.map(function () { return {}; });
+        result.values.forEach(function (v, i) {
+          if ((!result.mask || result.mask[i]) && v === v) atomProperties[i][model.task] = v;
+        });
       } else {
+        const graph = graphs.forGraphType('heavy');
         molecularProperties[model.task] = runOneMolecule(model, graph);
         propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id };
       }
@@ -292,7 +385,7 @@ CC.GNN = window.CC.GNN || {};
       molecularProperties: molecularProperties,
       propertyMeta: propertyMeta,
       atomProperties: atomProperties || [],
-      atomIds: graph.atomIds,
+      atomIds: heavyAtomIds,
       backend: 'chemprop',
     };
   };

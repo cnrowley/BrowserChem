@@ -179,6 +179,28 @@ CC.GNN = window.CC.GNN || {};
     return 'SP3';
   }
 
+  // Shared with geomol-features.js -- same RDKit.js gap (no per-atom
+  // hybridization in CommonChem's get_json()), same validated
+  // approximation, not a second guess reinvented from scratch.
+  CC.GNN.guessHybridization = guessHybridization;
+
+  // Exposed so chemprop-features-explicit-h.js (the separate explicit-H
+  // graph builder 1H-type atom-level checkpoints need -- see that file's
+  // header) can build feature rows for synthetic H nodes using the exact
+  // same choice lists/encoding as this file, rather than a second,
+  // independently-typed copy that could silently drift out of sync.
+  CC.GNN.chempropOneHotBlock = oneHotBlock;
+  CC.GNN.CHEMPROP_ATOMIC_NUM_CHOICES = ATOMIC_NUM_CHOICES;
+  CC.GNN.CHEMPROP_DEGREE_CHOICES = DEGREE_CHOICES;
+  CC.GNN.CHEMPROP_FORMAL_CHARGE_CHOICES = FORMAL_CHARGE_CHOICES;
+  CC.GNN.CHEMPROP_CHIRAL_TAG_CHOICES = CHIRAL_TAG_CHOICES;
+  CC.GNN.CHEMPROP_NUM_H_CHOICES = NUM_H_CHOICES;
+  CC.GNN.CHEMPROP_HYBRIDIZATION_CHOICES = HYBRIDIZATION_CHOICES;
+  CC.GNN.CHEMPROP_BOND_TYPE_CHOICES = BOND_TYPE_CHOICES;
+  CC.GNN.CHEMPROP_STEREO_CHOICES = STEREO_CHOICES;
+  CC.GNN.CHEMPROP_ATOMIC_WEIGHT_BY_Z = ATOMIC_WEIGHT_BY_Z;
+  CC.GNN.CHEMPROP_ELEMENT_TO_Z = ELEMENT_TO_Z;
+
   /**
    * Chemprop's MultiHotAtomFeaturizer.v2(), 72 dims per atom:
    *   atomic number (38) | degree (7) | formal charge (6) | chiral tag (5)

@@ -108,9 +108,17 @@
     </div>
 
     <div class="side-panel-content" id="panel-view3d" role="tabpanel">
+      <div class="viewer3d-method-row">
+        <label for="gen3d-method-select">3D generation method</label>
+        <select id="gen3d-method-select" title="Classical: a hand-tuned harmonic/Lennard-Jones force field, refined by conformer search. GeoMol: a learned model that predicts a conformer directly from the 2D graph in one pass (loads a ~1MB model automatically on first use).">
+          <option value="classical" selected>Classical force field</option>
+          <option value="geomol">GeoMol (learned)</option>
+        </select>
+      </div>
       <div class="viewer3d-toolbar">
         <button class="btn btn-accent btn-small" id="generate-3d-btn">Generate 3D structure</button>
         <button class="btn btn-ghost btn-small" id="optimize-3d-btn" disabled title="Refine the current 3D structure with the force field (conformer search + minimization) — can take several seconds to tens of seconds on larger or more flexible molecules">Optimize geometry&hellip;</button>
+        <button class="btn btn-ghost btn-small" id="ani2x-optimize-btn" disabled title="Optimize with the ANI-2x neural network potential — requires a neutral molecule containing only H, C, N, O, F, S, Cl. Loads the ANI-2x model automatically on first use (~50MB, one-time)">Optimize with ANI-2x&hellip;</button>
       </div>
       <div class="viewer3d-container" id="viewer3d"></div>
       <div class="viewer3d-progress" id="viewer3d-progress" style="display:none;">
@@ -118,6 +126,7 @@
         <p class="side-panel-note" id="viewer3d-progress-note"></p>
       </div>
       <p class="side-panel-note" id="viewer3d-note">Draw a structure, then click "Generate 3D structure" for a quick initial layout (adds hydrogens, no optimization yet) — then "Optimize geometry…" to relax it with the force field.</p>
+      <p class="side-panel-note" id="ani2x-note"></p>
     </div>
 
     <div class="side-panel-content is-hidden" id="panel-properties" role="tabpanel">
@@ -289,6 +298,8 @@
 <script src="js/atom-features.js"></script>
 <script src="js/bond-features.js"></script>
 <script src="js/chemprop-features.js"></script>
+<script src="js/chemprop-features-explicit-h.js"></script>
+<script src="js/geomol-features.js"></script>
 <script src="js/graph-builder.js"></script>
 <script src="js/sascorer.js"></script>
 <script src="js/dmpnn.js"></script>
@@ -298,6 +309,12 @@
 <script src="js/model-registry.js"></script>
 <script src="js/nagl-features.js"></script>
 <script src="js/nagl-model.js"></script>
+<script src="js/pka-descriptor.js"></script>
+<script src="js/pka-model.js"></script>
+<script src="js/ani2x-features.js"></script>
+<script src="js/ani2x-model.js"></script>
+<script src="js/geomol-model.js"></script>
+<script src="js/geomol-assembly.js"></script>
 <script src="js/gnn-inference.js"></script>
 <script src="js/atom-heatmap.js"></script>
 <script src="js/export.js"></script>

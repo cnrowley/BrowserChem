@@ -14,7 +14,13 @@
  *      outputs are merged. Runs entirely client-side with the bit-exact
  *      Chemprop featurizers (chemprop-features.js) and the fixed D-MPNN
  *      forward pass in dmpnn.js — no server, no ONNX Runtime. This is
- *      the path that gives real, numerically-correct predictions.
+ *      the path that gives real, numerically-correct predictions. Any
+ *      loaded NAGL-MBIS charge model(s) (nagl-model.js) and pKa model(s)
+ *      (pka-model.js) merge their atom-level results into the same
+ *      atomProperties array here too -- a pKa model additionally needs
+ *      its own required NAGL charge model loaded first (see
+ *      pka-model.js's header), surfaced as a warning rather than an
+ *      exception if it isn't.
  *
  *   2. "onnx" — an ONNX model loaded via CC.GNN.loadOnnxModel(), for
  *      anything exported that way instead. See buildOnnxTensors() below
@@ -149,8 +155,9 @@ CC.GNN = window.CC.GNN || {};
   CC.GNN.predictMolecule = function (molecule) {
     const hasChemprop = CC.GNN.hasChempropModel();
     const hasNagl = window.CC.NAGL && CC.NAGL.hasModel && CC.NAGL.hasModel();
+    const hasPka = window.CC.PKA && CC.PKA.hasModel && CC.PKA.hasModel();
 
-    if (hasChemprop || hasNagl) {
+    if (hasChemprop || hasNagl || hasPka) {
       const merged = { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], backend: 'chemprop', warnings: [] };
 
       if (hasChemprop) {
@@ -186,6 +193,27 @@ CC.GNN = window.CC.GNN || {};
             // vocabulary -- see CC.NAGL.checkCompatibility) shouldn't
             // sink predictions from everything else that's loaded.
             merged.warnings.push('NAGL model "' + id + '": ' + err.message);
+          }
+        });
+      }
+
+      if (hasPka) {
+        CC.PKA.getLoadedModelIds().forEach(function (id) {
+          try {
+            const pkaResult = CC.PKA.predict(molecule, id);
+            if (merged.atomIds.length === 0) merged.atomIds = pkaResult.atomIds;
+            if (merged.atomProperties.length === 0) {
+              merged.atomProperties = pkaResult.atomProperties.map(function (p) { return Object.assign({}, p); });
+            } else {
+              // Same atom ordering every engine produces (all iterate
+              // molecule.atoms.values() directly, no reordering).
+              pkaResult.atomProperties.forEach(function (p, i) { Object.assign(merged.atomProperties[i], p); });
+            }
+          } catch (err) {
+            // Most likely cause: the pKa model's required NAGL charge
+            // model isn't loaded yet -- surfaced as a warning rather
+            // than sinking every other loaded model's predictions.
+            merged.warnings.push('pKa model "' + id + '": ' + err.message);
           }
         });
       }

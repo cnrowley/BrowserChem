@@ -31,6 +31,8 @@
   let reapplyHeatmap = function () {};
   let invalidateGNNResults = function () {};
   let invalidate3DView = function () {};
+  let notifyAni2xModelsChanged = function () {};
+  let refreshRegistryList = function () {};
 
   const history = new CC.History(onHistoryChange);
   history.commit(molecule.toJSON());
@@ -683,16 +685,22 @@
   function setup3DPanel() {
     generate3dBtn = document.getElementById('generate-3d-btn');
     viewer3dNote = document.getElementById('viewer3d-note');
+    const gen3dMethodSelect = document.getElementById('gen3d-method-select');
     const optimizeBtn = document.getElementById('optimize-3d-btn');
     const progressWrap = document.getElementById('viewer3d-progress');
     const progressFill = document.getElementById('viewer3d-progress-fill');
     const progressNote = document.getElementById('viewer3d-progress-note');
+    const ani2xBtn = document.getElementById('ani2x-optimize-btn');
+    const ani2xNote = document.getElementById('ani2x-note');
 
-    let lastInitial = null; // CC.buildInitial3D() result, reused by the Optimize button
+    let lastInitial = null; // CC.buildInitial3D() result -- kept as-is (has .molecule/.rotatableBonds/.aromaticSet, which CC.optimize3D needs) so the classical optimizer can always be re-run, independent of whatever's currently on screen.
+    let currentGeometry = null; // {atoms, bonds} actually on screen right now -- what "Optimize with ANI-2x" should start from, kept separate from lastInitial specifically so overwriting it (with a classical-optimize or ANI result, neither of which carries molecule/rotatableBonds/aromaticSet) can never corrupt lastInitial's shape.
+    let currentGeometryOptimized = false; // whether currentGeometry has already been through the classical force field -- see the ANI-2x click handler's pre-relax step below.
 
     function renderResult(result) {
       viewer3d = window.chemCanvasLibs && window.chemCanvasLibs.viewer3d;
       if (viewer3d) CC.render3D(viewer3d, result);
+      currentGeometry = { atoms: result.atoms, bonds: result.bonds };
     }
 
     function describeResult(result, opts) {
@@ -708,19 +716,108 @@
           : ', not yet optimized \u2014 click "Optimize geometry\u2026" to relax it');
     }
 
-    generate3dBtn.addEventListener('click', function () {
+    // Enabled once there's a generated 3D structure -- clicking it loads
+    // the ANI-2x model on demand (see the click handler below) rather than
+    // requiring a separate trip to the Properties panel's model list
+    // first. Classical force-field optimization is NOT a prerequisite --
+    // ANI-2x can be the sole optimizer, run directly on buildInitial3D's
+    // output.
+    function updateAni2xButtonState() {
+      ani2xBtn.disabled = !lastInitial || lastInitial.atoms.length === 0;
+    }
+    notifyAni2xModelsChanged = updateAni2xButtonState;
+
+    generate3dBtn.addEventListener('click', async function () {
       if (controller.molecule.isEmpty()) {
         viewer3dNote.textContent = 'Nothing to generate yet \u2014 draw a structure first.';
         optimizeBtn.disabled = true;
+        updateAni2xButtonState();
         return;
       }
 
       // buildInitial3D is fast (just implicit-H addition + 2D-seeded
-      // coordinates, no force-field optimization) -- no progress UI needed.
+      // coordinates, no force-field optimization) -- computed regardless
+      // of which generation method is selected, since it's also the
+      // metadata carrier CC.optimize3D needs (.molecule/.rotatableBonds/
+      // .aromaticSet) and the classical starting point for the ANI-2x
+      // button's pre-relax safety net.
       lastInitial = CC.buildInitial3D(controller.molecule);
+      currentGeometryOptimized = false;
+      ani2xNote.textContent = '';
+
+      if (gen3dMethodSelect.value === 'geomol') {
+        const compatibility = CC.GeoMol.checkCompatibility(controller.molecule);
+        if (!compatibility.compatible) {
+          viewer3dNote.textContent = 'Cannot use GeoMol: ' + compatibility.issues.join('; ') + '. Showing the classical seed instead.';
+          renderResult(lastInitial);
+          optimizeBtn.disabled = false;
+          updateAni2xButtonState();
+          return;
+        }
+
+        generate3dBtn.disabled = true;
+        optimizeBtn.disabled = true;
+        gen3dMethodSelect.disabled = true;
+
+        // Load-on-click, same pattern as the ANI-2x button: the model
+        // (~1MB) loads automatically the first time it's needed instead
+        // of requiring a separate trip to the Properties panel first.
+        if (CC.GeoMol.getLoadedModelIds().length === 0) {
+          const entry = CC.GNN.getRegistryEntries().find(function (e) { return (e.engine || 'chemprop') === 'geomol'; });
+          if (!entry) {
+            viewer3dNote.textContent = 'No GeoMol model entry found in the model registry. Showing the classical seed instead.';
+            renderResult(lastInitial);
+            generate3dBtn.disabled = false;
+            optimizeBtn.disabled = false;
+            gen3dMethodSelect.disabled = false;
+            updateAni2xButtonState();
+            return;
+          }
+          progressWrap.style.display = '';
+          progressFill.style.width = '0%';
+          progressNote.textContent = 'Loading GeoMol model\u2026';
+          try {
+            await CC.GNN.loadRegistryModel(entry.id);
+            refreshRegistryList();
+          } catch (err) {
+            viewer3dNote.textContent = 'Failed to load GeoMol model: ' + err.message + '. Showing the classical seed instead.';
+            console.error('[ChemCanvas] GeoMol model load failed', err);
+            renderResult(lastInitial);
+            progressWrap.style.display = 'none';
+            generate3dBtn.disabled = false;
+            optimizeBtn.disabled = false;
+            gen3dMethodSelect.disabled = false;
+            updateAni2xButtonState();
+            return;
+          }
+        }
+
+        progressWrap.style.display = '';
+        progressFill.style.width = '100%';
+        progressNote.textContent = 'Predicting conformer with GeoMol\u2026';
+        try {
+          const modelId = CC.GeoMol.getLoadedModelIds()[0];
+          const result = CC.GeoMol.generateConformer(controller.molecule, modelId);
+          renderResult(result);
+          viewer3dNote.textContent = result.atoms.length + ' atoms (incl. implicit H), generated with GeoMol \u2014 a single learned prediction, not an energy-minimized structure. Click "Optimize geometry\u2026" or "Optimize with ANI-2x\u2026" to refine it, or "Generate 3D structure" again for a different sampled conformer.';
+        } catch (err) {
+          viewer3dNote.textContent = 'GeoMol prediction failed: ' + err.message + '. Showing the classical seed instead.';
+          console.error('[ChemCanvas] GeoMol conformer generation failed', err);
+          renderResult(lastInitial);
+        } finally {
+          progressWrap.style.display = 'none';
+          generate3dBtn.disabled = false;
+          optimizeBtn.disabled = false;
+          gen3dMethodSelect.disabled = false;
+          updateAni2xButtonState();
+        }
+        return;
+      }
+
       renderResult(lastInitial);
       viewer3dNote.textContent = describeResult(lastInitial, { optimized: false });
       optimizeBtn.disabled = false;
+      updateAni2xButtonState();
     });
 
     // Called on every 2D edit (see runValidation) -- a 3D structure or
@@ -730,10 +827,136 @@
     invalidate3DView = function () {
       if (!lastInitial) return; // nothing generated yet -- nothing to invalidate
       lastInitial = null;
+      currentGeometry = null;
+      currentGeometryOptimized = false;
       if (viewer3d) CC.render3D(viewer3d, { atoms: [], bonds: [] });
       viewer3dNote.textContent = 'Structure has changed \u2014 click "Generate 3D structure" to update.';
       optimizeBtn.disabled = true;
+      ani2xNote.textContent = '';
+      updateAni2xButtonState();
     };
+
+    ani2xBtn.addEventListener('click', async function () {
+      if (!lastInitial || lastInitial.atoms.length === 0) {
+        ani2xNote.textContent = 'Click "Generate 3D structure" first.';
+        return;
+      }
+
+      const compatibility = CC.ANI.checkCompatibility(controller.molecule);
+      if (!compatibility.compatible) {
+        ani2xNote.textContent = 'Cannot run ANI-2x: ' + compatibility.issues.join('; ') + '.';
+        return;
+      }
+
+      generate3dBtn.disabled = true;
+      optimizeBtn.disabled = true;
+      ani2xBtn.disabled = true;
+
+      // Load-on-click: same registry entry the Properties panel's model
+      // list would load, just triggered from here instead of requiring a
+      // separate trip there first. Weights are ~50MB, so this can take a
+      // few seconds on a slow connection -- reuse the same progress note
+      // the optimization itself uses below.
+      if (CC.ANI.getLoadedModelIds().length === 0) {
+        const entry = CC.GNN.getRegistryEntries().find(function (e) { return (e.engine || 'chemprop') === 'ani2x'; });
+        if (!entry) {
+          ani2xNote.textContent = 'No ANI-2x model entry found in the model registry.';
+          updateAni2xButtonState();
+          generate3dBtn.disabled = false;
+          optimizeBtn.disabled = false;
+          return;
+        }
+        progressWrap.style.display = '';
+        progressFill.style.width = '0%';
+        progressNote.textContent = 'Loading ANI-2x model\u2026';
+        try {
+          await CC.GNN.loadRegistryModel(entry.id);
+          refreshRegistryList();
+        } catch (err) {
+          ani2xNote.textContent = 'Failed to load ANI-2x model: ' + err.message;
+          console.error('[ChemCanvas] ANI-2x model load failed', err);
+          progressWrap.style.display = 'none';
+          updateAni2xButtonState();
+          generate3dBtn.disabled = false;
+          optimizeBtn.disabled = false;
+          return;
+        }
+      }
+
+      // ANI-2x's own potential doesn't reliably hold bonds/angles together
+      // starting from a topologically raw structure -- verified directly:
+      // a plain 2D-projected seed with only a moderate steric clash (two
+      // O atoms ~1.1 A apart, nowhere near "on top of each other") was
+      // enough to make the optimizer collapse an unrelated ring C-S bond
+      // to 0.3 A while stretching the neighboring ring bond to 2.8 A, on
+      // O=C(N[C@H](C(N)=O)CO)C1=C(C)OC2=CC=C(OCC3=CN=C(C)S3)C=C21. Handing
+      // it the same structure after a classical bonds/angles/sterics
+      // relax first (even one that didn't fully converge within budget)
+      // kept every bond in a chemically sane range and let ANI-2x resolve
+      // the remaining steric clashes on its own without incident -- so
+      // that relax is not optional preprocessing here, it's load-bearing.
+      // Skipped only if currentGeometry has already been through it
+      // (either from a previous "Optimize geometry" click, or from an
+      // earlier ANI-2x pass in this same session).
+      if (!currentGeometryOptimized) {
+        progressWrap.style.display = '';
+        progressFill.style.width = '0%';
+        progressNote.textContent = 'Pre-relaxing geometry (classical force field)\u2026';
+        try {
+          const relaxed = await CC.optimize3D(lastInitial, {
+            onProgress: function (info) {
+              const pct = Math.round(((info.attempt - 1) / info.totalAttempts) * 100);
+              progressFill.style.width = pct + '%';
+              progressNote.textContent = 'Pre-relaxing \u2014 attempt ' + info.attempt + '/' + info.totalAttempts + ' \u2014 ' + info.stage;
+            },
+          });
+          renderResult(relaxed);
+          currentGeometryOptimized = true;
+        } catch (err) {
+          ani2xNote.textContent = 'Pre-relaxation failed: ' + err.message;
+          console.error('[ChemCanvas] classical pre-relax before ANI-2x failed', err);
+          progressWrap.style.display = 'none';
+          generate3dBtn.disabled = false;
+          optimizeBtn.disabled = false;
+          updateAni2xButtonState();
+          return;
+        }
+      }
+
+      progressWrap.style.display = '';
+      progressFill.style.width = '0%';
+      progressNote.textContent = 'Running ANI-2x optimization\u2026';
+
+      try {
+        const modelId = CC.ANI.getLoadedModelIds()[0];
+        const result = await CC.ANI.optimizeGeometry(currentGeometry.atoms, currentGeometry.bonds, modelId, {
+          onProgress: function (info) {
+            const pct = Math.round((info.iteration / info.maxIterations) * 100);
+            progressFill.style.width = pct + '%';
+            progressNote.textContent = 'Iteration ' + info.iteration + '/' + info.maxIterations +
+              (info.energy !== null ? ' (energy so far: ' + info.energy.toFixed(6) + ' Hartree)' : '');
+          },
+        });
+        progressFill.style.width = '100%';
+        renderResult(result);
+        const kcal = result.energy * 627.5094740631;
+        const convergedNote = result.converged
+          ? ' \u2014 converged'
+          : ' \u2014 stopped before fully converging (hit the iteration/time budget; try again for another pass)';
+        ani2xNote.textContent = 'ANI-2x energy: ' + result.energy.toFixed(6) + ' Hartree (' +
+          kcal.toFixed(2) + ' kcal/mol)' + convergedNote + '.';
+      } catch (err) {
+        ani2xNote.textContent = 'ANI-2x optimization failed: ' + err.message;
+        console.error('[ChemCanvas] ANI-2x optimization failed', err);
+      } finally {
+        generate3dBtn.disabled = false;
+        optimizeBtn.disabled = false;
+        progressWrap.style.display = 'none';
+        updateAni2xButtonState();
+      }
+    });
+
+    updateAni2xButtonState();
 
     optimizeBtn.addEventListener('click', async function () {
       if (!lastInitial || lastInitial.atoms.length === 0) {
@@ -762,6 +985,7 @@
         });
         progressFill.style.width = '100%';
         renderResult(result);
+        currentGeometryOptimized = true;
         viewer3dNote.textContent = describeResult(result, { optimized: true });
       } catch (err) {
         viewer3dNote.textContent = 'Optimization failed: ' + err.message;
@@ -1039,7 +1263,14 @@
         result.atomIds.forEach(function (atomId, i) {
           lastAtomProperties[atomId] = result.atomProperties[i];
         });
-        const propNames = Object.keys(result.atomProperties[0]);
+        // Union of keys across every atom, not just atom 0 -- a sparse
+        // property (e.g. shift_19f, present only on F atoms) can easily
+        // be absent from whichever atom happens to be first.
+        const propNameSet = {};
+        result.atomProperties.forEach(function (props) {
+          Object.keys(props).forEach(function (name) { propNameSet[name] = true; });
+        });
+        const propNames = Object.keys(propNameSet);
         heatmapSelect.innerHTML = '';
         propNames.forEach(function (name) {
           const opt = document.createElement('option');
@@ -1160,6 +1391,7 @@
             .then(function () {
               btn.textContent = 'Loaded';
               updateRunButtonLabel();
+              notifyAni2xModelsChanged();
             })
             .catch(function (err) {
               btn.textContent = 'Load';
@@ -1176,6 +1408,11 @@
         container.appendChild(row);
       });
     }
+
+    // Lets other panels (the 3D view's "Optimize with ANI-2x" auto-load,
+    // see setup3DPanel) re-render this list after loading a model from
+    // outside this panel, so its "Load"/"Loaded" button state stays honest.
+    refreshRegistryList = function () { renderRegistryList(CC.GNN.getRegistryEntries()); };
 
     // The registry (model/registry.json by default -- see model-config.js)
     // is fetched once at startup; individual models' weights are only

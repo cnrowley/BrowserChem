@@ -54,6 +54,18 @@ window.CC = window.CC || {};
   const LJ_EPSILON = 0.15; // uniform well depth -- see file header, not per-element real data
   const LJ_SCALE_14 = 0.5; // standard force-field convention: soften (don't exclude) 1-4 nonbonded pairs
 
+  // Below this fraction of (rm = sum of vdW radii), the raw 12-6 shape is
+  // replaced by a quadratic continuation -- see ljShape() below for why.
+  const LJ_FLOOR_FRAC = 0.85;
+  // (rm/rFloor) is the same fixed ratio (1/LJ_FLOOR_FRAC) for every atom
+  // pair, since rFloor is always LJ_FLOOR_FRAC*rm -- so the shape
+  // function's value/slope/curvature *coefficients* at the floor are
+  // universal constants, only the per-pair rFloor scale differs.
+  const LJ_FLOOR_SR6 = Math.pow(1 / LJ_FLOOR_FRAC, 6);
+  const LJ_FLOOR_F0 = LJ_FLOOR_SR6 * LJ_FLOOR_SR6 - 2 * LJ_FLOOR_SR6;
+  const LJ_FLOOR_SLOPE_COEF = -12 * LJ_FLOOR_SR6 * (LJ_FLOOR_SR6 - 1); // slope at floor = this / rFloor
+  const LJ_FLOOR_CURV_COEF = 156 * LJ_FLOOR_SR6 * LJ_FLOOR_SR6 - 84 * LJ_FLOOR_SR6; // curvature at floor = this / rFloor^2
+
   const K_OOP = 60; // out-of-plane (improper) force constant -- real sp2 centers are quite
                      // rigidly planar, comparable in stiffness to angle bending, not a soft preference
 
@@ -124,7 +136,130 @@ window.CC = window.CC || {};
 
   // ---------- step 1: implicit hydrogens ----------
 
-  function withImplicitHydrogens(molecule) {
+  // An arbitrary unit vector perpendicular to u, plus a second one
+  // completing an orthonormal basis with it -- standard Gram-Schmidt
+  // against a seed axis, falling back from z to x when u is itself
+  // nearly parallel to z (the only case the z seed fails on).
+  function computePerpendicularBasis(u) {
+    const seed = Math.abs(u.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+    const p1 = CC.vec3.normalize(CC.vec3.cross(u, seed));
+    const p2 = CC.vec3.cross(u, p1); // u, p1 already orthonormal -> p2 unit length free
+    return [p1, p2];
+  }
+
+  // Real vector-geometry placement for implicit hydrogens, keyed off the
+  // central atom's hybridization and how many *heavy* neighbor directions
+  // are already known -- not random jitter. Each case is the standard
+  // tetrahedral/trigonal-planar completion construction (the same one
+  // real "add explicit hydrogens with 3D coordinates" toolkit code uses):
+  // given the known bond direction(s), the missing one(s) are fully
+  // determined up to an arbitrary azimuthal rotation when more than one
+  // is missing and only one direction is known (e.g. a methyl group's
+  // three H's can spin freely around the C-X axis before any force-field
+  // relaxation -- any consistent choice is an equally valid starting
+  // point). Verified by hand: every formula below reproduces the exact
+  // ideal angle (dot product -1/3, i.e. 109.4712 degrees) between any two
+  // placed H directions, and between each placed H and a known neighbor
+  // direction where geometry pins that down (methyl, methylene).
+  //
+  // Returns null for any (hybridization, known-count, missing-count)
+  // combination not explicitly covered below (e.g. a charged/hypervalent
+  // center) -- the caller falls back to the previous
+  // average-neighbor-direction-plus-jitter behavior for those, so
+  // something reasonable always gets placed rather than throwing.
+  function computeImplicitHDirections(neighborDirs, hybridization, count) {
+    const known = neighborDirs.length;
+    const TETRA_ANGLE = 109.4712206 * DEG2RAD;
+    const TETRA_HALF = TETRA_ANGLE / 2;
+
+    // sp, one known neighbor (triple bond or cumulated double bonds),
+    // one H missing -- linear, straight out the back (terminal alkyne CH).
+    if (hybridization === 'sp' && known === 1 && count === 1) {
+      return [CC.vec3.scale(neighborDirs[0], -1)];
+    }
+
+    // sp2, two known neighbors, one H missing -- trigonal planar,
+    // opposite the bisector (aromatic ring CH, vinyl CH, aldehyde CH).
+    if (hybridization === 'sp2' && known === 2 && count === 1) {
+      const bisector = CC.vec3.add(neighborDirs[0], neighborDirs[1]);
+      if (CC.vec3.length(bisector) < 1e-6) return null; // antiparallel neighbors -- degenerate
+      return [CC.vec3.scale(CC.vec3.normalize(bisector), -1)];
+    }
+
+    // sp2, one known neighbor, two H missing -- trigonal planar tripod
+    // in an arbitrary plane containing the known bond (terminal =CH2).
+    if (hybridization === 'sp2' && known === 1 && count === 2) {
+      const u = neighborDirs[0];
+      const p1 = computePerpendicularBasis(u)[0];
+      const cos120 = Math.cos(120 * DEG2RAD), sin120 = Math.sin(120 * DEG2RAD);
+      return [
+        CC.vec3.normalize(CC.vec3.add(CC.vec3.scale(u, cos120), CC.vec3.scale(p1, sin120))),
+        CC.vec3.normalize(CC.vec3.add(CC.vec3.scale(u, cos120), CC.vec3.scale(p1, -sin120))),
+      ];
+    }
+
+    // sp3, three known neighbors, one H missing -- the fourth tetrahedron
+    // corner is exactly opposite the other three's vector sum (methine).
+    if (hybridization === 'sp3' && known === 3 && count === 1) {
+      let sum = { x: 0, y: 0, z: 0 };
+      neighborDirs.forEach(function (d) { sum = CC.vec3.add(sum, d); });
+      if (CC.vec3.length(sum) < 1e-6) return null; // perfectly symmetric -- degenerate, no unique direction
+      return [CC.vec3.scale(CC.vec3.normalize(sum), -1)];
+    }
+
+    // sp3, two known neighbors, two H missing -- the two new bonds sit
+    // symmetric about the plane perpendicular to the two knowns' bisector,
+    // tilted by half the tetrahedral angle either side of straight-back
+    // (methylene).
+    if (hybridization === 'sp3' && known === 2 && count === 2) {
+      const u1 = neighborDirs[0], u2 = neighborDirs[1];
+      const bisectorSum = CC.vec3.add(u1, u2);
+      if (CC.vec3.length(bisectorSum) < 1e-6) return null; // antiparallel -- degenerate
+      let n = CC.vec3.cross(u1, u2);
+      if (CC.vec3.length(n) < 1e-6) return null; // parallel -- no well-defined perpendicular plane
+      const negB = CC.vec3.scale(CC.vec3.normalize(bisectorSum), -1);
+      n = CC.vec3.normalize(n);
+      const cosH = Math.cos(TETRA_HALF), sinH = Math.sin(TETRA_HALF);
+      return [
+        CC.vec3.normalize(CC.vec3.add(CC.vec3.scale(negB, cosH), CC.vec3.scale(n, sinH))),
+        CC.vec3.normalize(CC.vec3.add(CC.vec3.scale(negB, cosH), CC.vec3.scale(n, -sinH))),
+      ];
+    }
+
+    // sp3, one known neighbor, three H missing -- a tetrahedral tripod
+    // around the known bond axis, each H at the ideal 109.4712 degree
+    // angle from it and 120 degrees apart from each other azimuthally
+    // (methyl).
+    if (hybridization === 'sp3' && known === 1 && count === 3) {
+      const u = neighborDirs[0];
+      const basis = computePerpendicularBasis(u);
+      const p1 = basis[0], p2 = basis[1];
+      const cosT = Math.cos(TETRA_ANGLE), sinT = Math.sin(TETRA_ANGLE);
+      const dirs = [];
+      for (let k = 0; k < 3; k++) {
+        const az = k * 120 * DEG2RAD;
+        const perp = CC.vec3.add(CC.vec3.scale(p1, Math.cos(az)), CC.vec3.scale(p2, Math.sin(az)));
+        dirs.push(CC.vec3.normalize(CC.vec3.add(CC.vec3.scale(u, cosT), CC.vec3.scale(perp, sinT))));
+      }
+      return dirs;
+    }
+
+    // No known neighbors at all, four H missing (isolated methane) --
+    // no reference direction to build from; a canonical tetrahedron
+    // orientation (alternating cube corners) is as good as any other.
+    if (known === 0 && count === 4) {
+      return [
+        CC.vec3.normalize({ x: 1, y: 1, z: 1 }),
+        CC.vec3.normalize({ x: 1, y: -1, z: -1 }),
+        CC.vec3.normalize({ x: -1, y: 1, z: -1 }),
+        CC.vec3.normalize({ x: -1, y: -1, z: 1 }),
+      ];
+    }
+
+    return null;
+  }
+
+  function withImplicitHydrogens(molecule, aromaticSet) {
     const heavyAtoms = Array.from(molecule.atoms.values());
     const idToIndex = new Map();
     const atoms3d = [];
@@ -150,32 +285,49 @@ window.CC = window.CC || {};
       const bondedOrders = molecule.getBondsForAtom(a.id).map(function (b) { return b.order; });
       const usedValence = bondedOrders.reduce(function (sum, o) { return sum + o; }, 0);
       const implicitH = Math.max(0, data.valence - usedValence);
+      if (implicitH === 0) return;
 
       const neighborIds = molecule.getBondsForAtom(a.id).map(function (b) {
         return b.a1 === a.id ? b.a2 : b.a1;
       });
-      const neighborPositions = neighborIds.map(function (id) {
-        const n = molecule.atoms.get(id);
-        return { x: n.x / CC.BOND_LENGTH, y: -n.y / CC.BOND_LENGTH, z: 0 };
+      // Directions off the already-placed (jittered-z) 3D positions, not
+      // a fresh z=0 read of the original 2D coordinates -- keeps this
+      // consistent with where atoms3d[index] itself actually ended up.
+      // Convention every computeImplicitHDirections() formula assumes:
+      // neighborDirs[k] points FROM the central atom OUT TO neighbor k
+      // (neighbor minus center), not the reverse.
+      const neighborDirs = neighborIds.map(function (id) {
+        const nIndex = idToIndex.get(id);
+        return CC.vec3.normalize(CC.vec3.sub(atoms3d[nIndex], atoms3d[index]));
       });
 
-      let baseDir = { x: 0, y: 0, z: 1 };
-      if (neighborPositions.length > 0) {
-        let sum = { x: 0, y: 0, z: 0 };
-        neighborPositions.forEach(function (p) {
-          sum = CC.vec3.add(sum, CC.vec3.normalize(CC.vec3.sub(atoms3d[index], p)));
-        });
-        if (CC.vec3.length(sum) > 1e-6) baseDir = CC.vec3.normalize(sum);
-      }
-
+      const hybridization = hybridizationOf(atoms3d, bonds3d, index, aromaticSet);
       const rHX = CC.idealBondLength(a.element, 'H', 1);
+      const dirs = computeImplicitHDirections(neighborDirs, hybridization, implicitH);
+
       for (let h = 0; h < implicitH; h++) {
-        const jitter = {
-          x: (Math.random() - 0.5) * 0.8,
-          y: (Math.random() - 0.5) * 0.8,
-          z: (Math.random() - 0.5) * 0.8 + 0.3,
-        };
-        const dir = CC.vec3.normalize(CC.vec3.add(baseDir, jitter));
+        let dir;
+        if (dirs) {
+          dir = dirs[h];
+        } else {
+          // Fallback for anything computeImplicitHDirections doesn't
+          // explicitly cover (charged/hypervalent centers, unusual
+          // valence/hybridization combinations) -- the same
+          // average-neighbor-direction-plus-jitter approach this file
+          // always used, not a hard failure.
+          let baseDir = { x: 0, y: 0, z: 1 };
+          if (neighborDirs.length > 0) {
+            let sum = { x: 0, y: 0, z: 0 };
+            neighborDirs.forEach(function (d) { sum = CC.vec3.add(sum, d); });
+            if (CC.vec3.length(sum) > 1e-6) baseDir = CC.vec3.normalize(sum);
+          }
+          const jitter = {
+            x: (Math.random() - 0.5) * 0.8,
+            y: (Math.random() - 0.5) * 0.8,
+            z: (Math.random() - 0.5) * 0.8 + 0.3,
+          };
+          dir = CC.vec3.normalize(CC.vec3.add(baseDir, jitter));
+        }
         const hPos = CC.vec3.add(atoms3d[index], CC.vec3.scale(dir, rHX));
         const hIndex = atoms3d.length;
         atoms3d.push({ element: 'H', x: hPos.x, y: hPos.y, z: hPos.z });
@@ -331,6 +483,37 @@ window.CC = window.CC || {};
     return CC.vec3.dot(CC.vec3.sub(p, a), normal) / normalLen;
   }
 
+  // 12-6 shape (minimum -1 at r=rm), continued below r=LJ_FLOOR_FRAC*rm by
+  // a quadratic matching the true curve's value/slope/curvature exactly at
+  // the floor. A hard clamp on r itself (the previous approach here) makes
+  // the *numeric* gradient exactly zero for any pair closer than the floor
+  // -- computeEnergy's numericGradient perturbs positions by +-GRAD_H
+  // (1e-4 A), far smaller than the gap between a badly-clashed distance and
+  // the floor, so both perturbed evaluations clamp to the identical value
+  // and the finite difference is 0/(2*GRAD_H) = 0. That silences the
+  // repulsive force precisely when two atoms need it most, letting a bad
+  // torsion-randomized starting conformer (or a chance downhill move
+  // elsewhere in the energy) leave them sitting on top of each other with
+  // nothing pushing them apart -- a real observed failure, not a
+  // hypothetical one (e.g. two ring systems of
+  // Cc1ccc(cc1Nc2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)CN5CCN(CC5)C ending up
+  // superimposed and staying that way through the whole optimization). The
+  // quadratic keeps a real, ever-steepening, never-zero gradient all the
+  // way to r=0 while still bounding the curvature the true r^-12 term would
+  // otherwise have right at r=0 (which is what the floor was added to
+  // avoid in the first place).
+  function ljShape(r, rm) {
+    const rFloor = LJ_FLOOR_FRAC * rm;
+    if (r >= rFloor) {
+      const sr6 = Math.pow(rm / r, 6);
+      return sr6 * sr6 - 2 * sr6;
+    }
+    const dr = r - rFloor; // <= 0
+    const slope = LJ_FLOOR_SLOPE_COEF / rFloor;
+    const curv = LJ_FLOOR_CURV_COEF / (rFloor * rFloor);
+    return LJ_FLOOR_F0 + slope * dr + 0.5 * curv * dr * dr;
+  }
+
   function computeEnergy(positions, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage) {
     let energy = 0;
 
@@ -366,18 +549,13 @@ window.CC = window.CC || {};
       for (let i = 0; i < pairs.length; i++) {
         const p = pairs[i];
         const rm = CC.VDW_RADIUS[atoms3d[p.a].element] + CC.VDW_RADIUS[atoms3d[p.b].element];
-        // Floor relative to rm (not an absolute distance) -- (rm/r) must
-        // never be allowed to grow arbitrarily large or the r^-12 term
-        // produces a pathologically stiff energy landscape that a simple
-        // gradient-descent optimizer can't navigate.
-        const r = Math.max(CC.vec3.distance(positions[p.a], positions[p.b]), 0.85 * rm);
-        const sr6 = Math.pow(rm / r, 6);
+        const r = CC.vec3.distance(positions[p.a], positions[p.b]);
         // stage.lj ramps 0->1 over the first several iterations of the
         // nonbonded stage (see minimizeStaged) -- introducing the
         // stiffest term gradually rather than at full strength against
         // whatever (possibly clashy) structure the previous stage left,
         // same "soft start" principle real minimization protocols use.
-        energy += stage.lj * p.scale * LJ_EPSILON * (sr6 * sr6 - 2 * sr6); // AMBER-style 12-6: minimum (-eps) exactly at r=rm
+        energy += stage.lj * p.scale * LJ_EPSILON * ljShape(r, rm); // AMBER-style 12-6: minimum (-eps) exactly at r=rm
       }
     }
 
@@ -538,6 +716,105 @@ window.CC = window.CC || {};
     return result;
   }
 
+  // ---------- quick preoptimization pass (deliberately simpler model) ----------
+  //
+  // Runs automatically as part of CC.buildInitial3D, right after implicit
+  // hydrogens are placed by real vector geometry (see above) -- a cheap,
+  // fixed-iteration sanity pass so the *very first* structure shown (before
+  // any explicit "Optimize geometry..." click) is already roughly
+  // declashed, not a raw 2D-projected structure with only its hydrogens
+  // freshly placed. Deliberately a separate, simpler model from
+  // minimizeStaged above, not a cut-down call into it: softened harmonic
+  // bond/angle constants (this only needs to roughly correct gross
+  // distortions, not settle them precisely) and a genuinely soft-core
+  // repulsive-only nonbonded term -- no attractive well, no torsions, no
+  // 1-4 scaling (buildNonBondedPairs is reused with an empty torsions list
+  // specifically to get its 1-2/1-3 exclusion logic without any 1-4
+  // distinction, so every remaining pair is treated uniformly) -- rather
+  // than the full 12-6 LJ. Fixed at 5 iterations, no early exit, no time
+  // budget: this is meant to be cheap enough to always run synchronously,
+  // not a real minimization to convergence.
+  const PREOPT_K_BOND = 100;
+  const PREOPT_K_ANGLE = 15;
+  const PREOPT_ITERATIONS = 5;
+  const PREOPT_SOFTCORE_EPSILON = 0.3;
+  const PREOPT_SOFTCORE_DELTA = 0.5; // Angstrom -- softening length scale
+
+  // Purely repulsive, soft-core by construction: unlike a bare inverse-
+  // power term (or even the main model's floor-patched LJ above), this
+  // needs no clamp/floor hack to stay smooth at extreme overlap -- the
+  // +delta^2 term keeps the denominator away from zero everywhere, so the
+  // gradient stays real and repulsive all the way to r=0.
+  function softCoreRepulsion(r, rm) {
+    const ratio = (rm * rm) / (r * r + PREOPT_SOFTCORE_DELTA * PREOPT_SOFTCORE_DELTA);
+    return PREOPT_SOFTCORE_EPSILON * Math.pow(ratio, 6);
+  }
+
+  function computePreoptEnergy(positions, atoms3d, bonds3d, angles, pairs) {
+    let energy = 0;
+    for (let i = 0; i < bonds3d.length; i++) {
+      const b = bonds3d[i];
+      const r = CC.vec3.distance(positions[b.a1], positions[b.a2]);
+      const r0 = CC.idealBondLength(atoms3d[b.a1].element, atoms3d[b.a2].element, b.order);
+      const dr = r - r0;
+      energy += 0.5 * PREOPT_K_BOND * dr * dr;
+    }
+    for (let i = 0; i < angles.length; i++) {
+      const a = angles[i];
+      const theta = angleBetween(positions[a.i], positions[a.j], positions[a.k]);
+      const dTheta = theta - a.theta0;
+      energy += 0.5 * PREOPT_K_ANGLE * dTheta * dTheta;
+    }
+    for (let i = 0; i < pairs.length; i++) {
+      const p = pairs[i];
+      const rm = CC.VDW_RADIUS[atoms3d[p.a].element] + CC.VDW_RADIUS[atoms3d[p.b].element];
+      const r = CC.vec3.distance(positions[p.a], positions[p.b]);
+      energy += softCoreRepulsion(r, rm);
+    }
+    return energy;
+  }
+
+  function preoptNumericGradient(flat, atoms3d, bonds3d, angles, pairs) {
+    const grad = new Float64Array(flat.length);
+    for (let i = 0; i < flat.length; i++) {
+      const original = flat[i];
+      flat[i] = original + GRAD_H;
+      const ePlus = computePreoptEnergy(unflatten(flat), atoms3d, bonds3d, angles, pairs);
+      flat[i] = original - GRAD_H;
+      const eMinus = computePreoptEnergy(unflatten(flat), atoms3d, bonds3d, angles, pairs);
+      flat[i] = original;
+      grad[i] = (ePlus - eMinus) / (2 * GRAD_H);
+    }
+    return grad;
+  }
+
+  // Synchronous on purpose (no yielding, no time budget, fixed 5
+  // iterations) -- cheap enough to always run as part of the fast phase
+  // CC.buildInitial3D already promises. Returns new positions; doesn't
+  // mutate atoms3d/bonds3d.
+  function quickPreoptimize(atoms3d, bonds3d, aromaticSet) {
+    const angles = buildAngles(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+    const pairs = buildNonBondedPairs(bonds3d, angles, [], atoms3d.length);
+    let flat = flatten(atoms3d);
+    let energy = computePreoptEnergy(unflatten(flat), atoms3d, bonds3d, angles, pairs);
+    let step = 0.02;
+
+    for (let iter = 0; iter < PREOPT_ITERATIONS; iter++) {
+      const grad = preoptNumericGradient(flat, atoms3d, bonds3d, angles, pairs);
+      const trial = new Float64Array(flat.length);
+      for (let i = 0; i < flat.length; i++) trial[i] = flat[i] - step * grad[i];
+      const trialEnergy = computePreoptEnergy(unflatten(trial), atoms3d, bonds3d, angles, pairs);
+      if (trialEnergy < energy) {
+        flat = trial;
+        energy = trialEnergy;
+        step *= 1.2;
+      } else {
+        step *= 0.5;
+      }
+    }
+    return unflatten(flat);
+  }
+
   // ---------- conformer seeding: real torsion-driven search ----------
 
   // A bond is "rotatable" for conformer-search purposes using the
@@ -649,10 +926,17 @@ window.CC = window.CC || {};
     }
     const rotatableBonds = findRotatableBonds(molecule, ringBondPairs, idToIndex);
 
-    const built = withImplicitHydrogens(molecule);
+    const built = withImplicitHydrogens(molecule, aromaticSet);
+    // Quick 5-iteration decrappification pass (see the section above) --
+    // still cheap enough to keep this whole function synchronous, so the
+    // structure shown immediately after "Generate 3D structure" is
+    // already roughly declashed rather than a raw jittered seed.
+    const preoptimized = quickPreoptimize(built.atoms3d, built.bonds3d, aromaticSet);
 
     return {
-      atoms: built.atoms3d.map(function (a) { return { element: a.element, x: a.x, y: a.y, z: a.z }; }),
+      atoms: built.atoms3d.map(function (a, i) {
+        return { element: a.element, x: preoptimized[i].x, y: preoptimized[i].y, z: preoptimized[i].z };
+      }),
       bonds: built.bonds3d,
       molecule: molecule,
       rotatableBonds: rotatableBonds,
@@ -700,7 +984,7 @@ window.CC = window.CC || {};
     for (let attempt = 0; attempt < attempts; attempt++) {
       if (performance.now() > overallDeadline) break;
 
-      const built = withImplicitHydrogens(molecule);
+      const built = withImplicitHydrogens(molecule, aromaticSet);
       const atoms3d = built.atoms3d;
       const bonds3d = built.bonds3d;
 
