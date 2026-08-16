@@ -152,8 +152,15 @@ CC.GNN = window.CC.GNN || {};
     // by the totalDegree===4 branch above.
     if (element === 'B' && totalDegree === 3) return 'SP2';
     const orders = molecule.getBondsForAtom(atomId).map(function (b) { return b.order; });
-    if (orders.indexOf(3) !== -1) return 'SP';
-    if (orders.indexOf(2) !== -1) return 'SP2';
+    const nTriple = orders.filter(function (o) { return o === 3; }).length;
+    const nDouble = orders.filter(function (o) { return o === 2; }).length;
+    // A triple bond, or two double bonds on the same atom (a cumulated
+    // system -- isocyanate/isothiocyanate N=C=O/N=C=S, CS2's S=C=S,
+    // allene's central carbon), both mean two independent pi systems at
+    // this atom, which is only geometrically possible when it's linear
+    // (sp). A single double bond alone is the ordinary sp2 carbonyl case.
+    if (nTriple >= 1 || nDouble >= 2) return 'SP';
+    if (nDouble === 1) return 'SP2';
     if (totalDegree === 0) return S_HYBRIDIZED_METALS.indexOf(element) !== -1 ? 'S' : 'SP3';
     // Lone-pair conjugation into an adjacent pi system (ester O, amide N,
     // phenol O, aniline N) promotes N/O to sp2 even with only single

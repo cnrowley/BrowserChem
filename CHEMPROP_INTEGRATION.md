@@ -338,3 +338,57 @@ python3 convert_nagl_checkpoint.py nagl-v1-mbis.ckpt model/nagl-mbis/
 ```
 then add a `registry.json` entry with `"engine": "nagl"` pointing at the
 output, same shape as any Chemprop entry otherwise.
+
+## Vapor pressure model + a real bug found via headless JS validation
+
+`vapor-pressure-v1` (`model/vapor-pressure/`) predicts `LogVP`
+(log10(vapor pressure in mmHg)), trained end-to-end this session --
+data fetch through registry entry, not a reused checkpoint. Dataset:
+2,034 train / 679 test SMILES from
+[gkxiao/vapor-pressure](https://github.com/gkxiao/vapor-pressure), built
+from EPA/NICEATM's OPERA vapor-pressure endpoint (Zang et al. 2017,
+*J. Chem. Inf. Model.* 57, 36-49). Same architecture template as every
+other regression model here (D-MPNN, hidden 300, depth 3, norm agg,
+50 epochs). Real held-out test metrics: MAE 0.576, RMSE 0.920, R² 0.933,
+r 0.966 (log10 mmHg). Training artifacts live in
+`~/projects/chemprop/vaporpressure/` on this machine (config.toml,
+splits, `vp_test.csv` ground truth, `test_predictions.csv`).
+
+**Validation method, upgraded from earlier "hand-pick some molecules"
+checks**: rather than eyeballing a handful of predictions in the browser,
+this ran the app's *actual* `chemprop-model.js` / `graph-builder.js` /
+`chemprop-features.js` / `dmpnn.js` pipeline headlessly in Node
+(`@rdkit/rdkit`'s WASM build standing in for the browser's RDKit.js,
+`global.window = global` as the only shim needed -- these files have no
+other DOM dependency) against all 679 real test-set molecules, and
+compared to Chemprop's own Python predictions on the same set. See
+`~/projects/chemprop/vaporpressure/js_validate/run.mjs` -- reusable for
+validating any future model the same way, just swap the manifest/weights
+paths and the input molecule list.
+
+This surfaced a real bug in `chemprop-features.js`'s
+`guessHybridization()`: **cumulated double bonds on one atom** --
+isocyanate/isothiocyanate `N=C=O`/`N=C=S`, CS2's `S=C=S`, allene centers
+-- were falling through to the plain "has a double bond -> SP2" branch,
+when two independent pi systems on one atom only fit a linear (SP)
+center, not a trigonal-planar (SP2) one; only a *triple* bond was
+special-cased before. 14/679 test molecules (2.1%) showed real
+discrepancy against Chemprop's Python output before the fix (several
+>0.4 log units); fixed by checking for two-or-more double bonds
+alongside the existing triple-bond check, which brought it down to
+4/679 (0.6%), all under 0.5 log units and concentrated in
+chiral-center/E-Z-adjacent structures already inside this pipeline's
+documented known-approximation scope above. Fixed project-wide in
+`chemprop-features.js`, same as the molfile.js/boron fixes from the
+electrophile-reactivity validation -- worth re-running this same
+headless-Node check against any other regression model's own test set if
+one is ever assembled, since isocyanates/thiocyanates/CS2-like fragments
+wouldn't have been exercised by any prior validation here.
+
+Sanity-checked against real literature vapor pressures too (log10 mmHg,
+~25 degC): benzene lit. ~1.98 vs. predicted 2.05, naphthalene lit. ~-1.07
+vs. -1.16, acetone lit. ~2.36 vs. 2.48 -- all within ~0.1 log units.
+Water is the expected outlier (lit. ~1.38 vs. predicted 2.14) -- same
+small-polar-molecule-underrepresented-in-organic-training-data pattern
+already documented for the melting-point model above, not new to this
+model.

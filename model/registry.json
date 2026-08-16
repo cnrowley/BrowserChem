@@ -218,6 +218,67 @@
         "atom-level",
         "force-field-parameterization"
       ]
+    },
+    {
+      "id": "vapor-pressure-v1",
+      "displayName": "Vapor pressure (log10)",
+      "propertyKey": "LogVP",
+      "taskType": "regression",
+      "units": "log10(mmHg)",
+      "description": "Predicts LogVP, the log10 of vapor pressure in mmHg (experimental values collected roughly across 15-30 degC, the source dataset's reporting convention, not a single fixed temperature).",
+      "files": {
+        "manifest": "vapor-pressure/manifest.json",
+        "weights": "vapor-pressure/weights.bin"
+      },
+      "dataset": {
+        "name": "EPA/NICEATM OPERA vapor-pressure endpoint, via gkxiao/vapor-pressure's train/test CSVs",
+        "citationKey": "zang2017vaporpressure",
+        "citationFull": "Zang, Q.; Mansouri, K.; Williams, A. J.; Judson, R. S.; Allen, D. G.; Casey, W. M.; Kleinstreuer, N. C. In Silico Prediction of Physicochemical Properties of Environmental Chemicals Using Molecular Fingerprints and Machine Learning. J. Chem. Inf. Model. 2017, 57 (1), 36-49. https://doi.org/10.1021/acs.jcim.6b00625",
+        "size": 2713,
+        "splitStrategy": "pre-defined train/test split as published (2034/679); further internal 90/10 train/val split of the train partition during training (RANDOM, chemprop split-sizes=[0.9,0.1,0.0], data-seed=0)",
+        "sourceUrl": "https://github.com/gkxiao/vapor-pressure"
+      },
+      "metrics": {
+        "testSetSize": 679,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.576,
+          "units": "log10(mmHg)"
+        },
+        "all": {
+          "testMAE": 0.576,
+          "testRMSE": 0.920,
+          "testR2": 0.9331,
+          "testPearsonR": 0.9661
+        },
+        "note": "Real held-out test-set metrics (chemprop predict on vp_test.csv, a genuine pre-published test split never seen during training -- 0 SMILES overlap with train confirmed by canonical-SMILES check), computed directly against ground truth, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.3.1",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "aggNorm": 100,
+          "epochs": 50,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "split": "RANDOM",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-15"
+      },
+      "notes": "Trained end-to-end this session (data fetch -> RDKit validation -> chemprop train -> convert -> JS validation), not a reused/pre-existing checkpoint. JS port cross-validated against all 679 real held-out test-set predictions (not just a hand-picked sanity set), by running this app's actual chemprop-model.js/graph-builder.js/chemprop-features.js/dmpnn.js pipeline headlessly in Node (RDKit.js WASM via @rdkit/rdkit) rather than eyeballing a few molecules in the browser: 675/679 (99.4%) match Chemprop's own Python predictions to <1e-3, mean abs error 0.0018 log units (negligible next to the model's own 0.576 test MAE). This surfaced and fixed one real, previously-undetected bug in chemprop-features.js's guessHybridization(): cumulated double bonds on a single atom (isocyanate/isothiocyanate N=C=O / N=C=S, CS2's S=C=S, allene-type centers) were classified as ordinary sp2 carbonyl-style, when they're actually SP (two independent pi systems only fit a linear/sp center) -- before the fix, 14/679 molecules (2.1%) had this discrepancy, several with >0.4 log-unit error; after, only 4/679 (0.6%) remain, all under 0.5 log units and concentrated in chiral-center/E-Z-adjacent structures already within this pipeline's documented known-approximation scope (see CHEMPROP_INTEGRATION.md). Fixed in chemprop-features.js so it applies to every model using this pipeline, not just this one -- worth spot-checking the other regression models' test sets for isocyanates/thiocyanates/CS2-like fragments if any exist, since none of their prior validations would have exercised this code path.",
+      "tags": [
+        "physicochemical",
+        "vapor-pressure",
+        "volatility",
+        "environmental-fate"
+      ]
     }
   ]
 }
