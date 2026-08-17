@@ -506,4 +506,21 @@ CC.GNN = window.CC.GNN || {};
       backend: 'chemprop',
     };
   };
+
+  // See model-adapters.js's header. `predict` here is
+  // predictAllChempropModels itself (molecule) -> {...}, not
+  // predict(molecule, id) -- it already aggregates across every
+  // currently-loaded chemprop checkpoint in one call, a genuinely
+  // different shape from the single-model-id adapters below, and
+  // gnn-inference.js's predictMolecule treats it as its own first step
+  // rather than folding it into the generic per-id loop for that reason.
+  CC.ModelAdapters.register('chemprop', {
+    kind: 'property',
+    load: CC.GNN.loadChempropModel,
+    unload: CC.GNN.clearChempropModel,
+    hasModel: CC.GNN.hasChempropModel,
+    getLoadedModelIds: CC.GNN.getLoadedChempropModelIds,
+    validate: CC.GNN.checkChempropCompatibility,
+    predict: CC.GNN.predictAllChempropModels,
+  });
 })();

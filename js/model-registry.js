@@ -163,8 +163,9 @@ CC.GNN = window.CC.GNN || {};
    * Fetch and load one registry model's weights by id (paths in the
    * entry are resolved relative to registry.json's own URL). Returns a
    * Promise resolving to the same info object the underlying engine's
-   * own loadXModel would (chemprop-model.js's loadChempropModel or
-   * nagl-model.js's loadModel, depending on the entry's "engine" field).
+   * own load() would -- looked up by the entry's "engine" field via
+   * CC.ModelAdapters (model-adapters.js) rather than an if/else chain
+   * hard-coded here per engine.
    */
   CC.GNN.loadRegistryModel = function (id) {
     const entry = entriesById.get(id);
@@ -173,14 +174,10 @@ CC.GNN = window.CC.GNN || {};
     const manifestUrl = resolveUrl(registryBaseUrl, entry.files.manifest);
     const weightsUrl = resolveUrl(registryBaseUrl, entry.files.weights);
     const engine = entry.engine || 'chemprop';
+    const adapter = CC.ModelAdapters.get(engine);
+    if (!adapter) return Promise.reject(new Error('No model adapter registered for engine "' + engine + '"'));
 
-    const loadPromise = engine === 'nagl' ? CC.NAGL.loadModel(id, manifestUrl, weightsUrl)
-      : engine === 'ani2x' ? CC.ANI.loadModel(id, manifestUrl, weightsUrl)
-      : engine === 'geomol' ? CC.GeoMol.loadModel(id, manifestUrl, weightsUrl)
-      : engine === 'pka' ? CC.PKA.loadModel(id, manifestUrl, weightsUrl)
-      : CC.GNN.loadChempropModel(id, manifestUrl, weightsUrl);
-
-    return loadPromise.then(function (info) {
+    return adapter.load(id, manifestUrl, weightsUrl).then(function (info) {
       loadedIds.add(id);
       return info;
     });
@@ -189,11 +186,8 @@ CC.GNN = window.CC.GNN || {};
   CC.GNN.unloadRegistryModel = function (id) {
     const entry = entriesById.get(id);
     const engine = entry ? (entry.engine || 'chemprop') : 'chemprop';
-    if (engine === 'nagl') CC.NAGL.clearModel(id);
-    else if (engine === 'ani2x') CC.ANI.clearModel(id);
-    else if (engine === 'geomol') CC.GeoMol.clearModel(id);
-    else if (engine === 'pka') CC.PKA.clearModel(id);
-    else CC.GNN.clearChempropModel(id);
+    const adapter = CC.ModelAdapters.get(engine);
+    if (adapter) adapter.unload(id);
     loadedIds.delete(id);
   };
 })();

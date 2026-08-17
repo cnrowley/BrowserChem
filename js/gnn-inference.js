@@ -153,16 +153,27 @@ CC.GNN = window.CC.GNN || {};
   // ---------- public API ----------
 
   CC.GNN.predictMolecule = function (molecule) {
-    const hasChemprop = CC.GNN.hasChempropModel();
-    const hasNagl = window.CC.NAGL && CC.NAGL.hasModel && CC.NAGL.hasModel();
-    const hasPka = window.CC.PKA && CC.PKA.hasModel && CC.PKA.hasModel();
+    const chempropAdapter = CC.ModelAdapters.get('chemprop');
+    const hasChemprop = chempropAdapter.hasModel();
 
-    if (hasChemprop || hasNagl || hasPka) {
+    // Every OTHER registered kind:'property' engine (nagl, pka, and any
+    // future one) shares the exact same single-model-id predict(molecule,
+    // id) shape, so they're merged with one loop instead of one
+    // hand-written block per engine -- see model-adapters.js's header for
+    // why chemprop stays separate (it aggregates across every loaded
+    // checkpoint internally, in one call, with a richer result shape).
+    const otherPropertyEngines = CC.ModelAdapters.list().filter(function (name) {
+      if (name === 'chemprop') return false;
+      const adapter = CC.ModelAdapters.get(name);
+      return adapter.kind === 'property' && adapter.hasModel();
+    });
+
+    if (hasChemprop || otherPropertyEngines.length > 0) {
       const merged = { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], bondProperties: [], bondIds: [], backend: 'chemprop', warnings: [] };
 
       if (hasChemprop) {
         try {
-          const cpResult = CC.GNN.predictAllChempropModels(molecule);
+          const cpResult = chempropAdapter.predict(molecule);
           Object.assign(merged.molecularProperties, cpResult.molecularProperties);
           Object.assign(merged.propertyMeta, cpResult.propertyMeta);
           if (cpResult.atomIds.length > 0) merged.atomIds = cpResult.atomIds;
@@ -178,49 +189,30 @@ CC.GNN = window.CC.GNN || {};
         }
       }
 
-      if (hasNagl) {
-        CC.NAGL.getLoadedModelIds().forEach(function (id) {
+      otherPropertyEngines.forEach(function (engineName) {
+        const adapter = CC.ModelAdapters.get(engineName);
+        adapter.getLoadedModelIds().forEach(function (id) {
           try {
-            const naglResult = CC.NAGL.predict(molecule, id);
-            if (merged.atomIds.length === 0) merged.atomIds = naglResult.atomIds;
+            const result = adapter.predict(molecule, id);
+            if (merged.atomIds.length === 0) merged.atomIds = result.atomIds;
             if (merged.atomProperties.length === 0) {
-              merged.atomProperties = naglResult.atomProperties.map(function (p) { return Object.assign({}, p); });
-            } else {
-              // Same atom ordering either engine produces (both iterate
-              // molecule.atoms.values() directly with no reordering), so
-              // this merges index-by-index rather than needing to
-              // re-match by atom id.
-              naglResult.atomProperties.forEach(function (p, i) { Object.assign(merged.atomProperties[i], p); });
-            }
-          } catch (err) {
-            // One incompatible NAGL model (e.g. an element outside its
-            // vocabulary -- see CC.NAGL.checkCompatibility) shouldn't
-            // sink predictions from everything else that's loaded.
-            merged.warnings.push('NAGL model "' + id + '": ' + err.message);
-          }
-        });
-      }
-
-      if (hasPka) {
-        CC.PKA.getLoadedModelIds().forEach(function (id) {
-          try {
-            const pkaResult = CC.PKA.predict(molecule, id);
-            if (merged.atomIds.length === 0) merged.atomIds = pkaResult.atomIds;
-            if (merged.atomProperties.length === 0) {
-              merged.atomProperties = pkaResult.atomProperties.map(function (p) { return Object.assign({}, p); });
+              merged.atomProperties = result.atomProperties.map(function (p) { return Object.assign({}, p); });
             } else {
               // Same atom ordering every engine produces (all iterate
-              // molecule.atoms.values() directly, no reordering).
-              pkaResult.atomProperties.forEach(function (p, i) { Object.assign(merged.atomProperties[i], p); });
+              // molecule.atoms.values() directly, no reordering), so
+              // this merges index-by-index rather than needing to
+              // re-match by atom id.
+              result.atomProperties.forEach(function (p, i) { Object.assign(merged.atomProperties[i], p); });
             }
           } catch (err) {
-            // Most likely cause: the pKa model's required NAGL charge
-            // model isn't loaded yet -- surfaced as a warning rather
-            // than sinking every other loaded model's predictions.
-            merged.warnings.push('pKa model "' + id + '": ' + err.message);
+            // One incompatible/misconfigured model (e.g. an element
+            // outside NAGL's vocabulary, or a pKa model missing its
+            // required NAGL charge model) shouldn't sink predictions
+            // from everything else that's loaded.
+            merged.warnings.push(engineName + ' model "' + id + '": ' + err.message);
           }
         });
-      }
+      });
 
       return Promise.resolve(merged);
     }

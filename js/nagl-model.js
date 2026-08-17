@@ -361,4 +361,15 @@ CC.NAGL = window.CC.NAGL || {};
       atomIds: graph.atomIds,
     };
   };
+
+  // See model-adapters.js's header.
+  CC.ModelAdapters.register('nagl', {
+    kind: 'property',
+    load: CC.NAGL.loadModel,
+    unload: CC.NAGL.clearModel,
+    hasModel: CC.NAGL.hasModel,
+    getLoadedModelIds: CC.NAGL.getLoadedModelIds,
+    validate: CC.NAGL.checkCompatibility,
+    predict: CC.NAGL.predict,
+  });
 })();

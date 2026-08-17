@@ -888,4 +888,17 @@ CC.GeoMol = window.CC.GeoMol || {};
   // known rotation) -- not part of the real assembly pipeline's public
   // surface, so not documented as a stable API.
   CC.GeoMol._internal = { svd3x3: svd3x3, kabschAlign: kabschAlign };
+
+  // See model-adapters.js's header. kind:'geometry' -- generateConformer
+  // takes (molecule, id, opts), a single learned prediction rather than
+  // an iterative optimize() like ani2x's adapter.
+  CC.ModelAdapters.register('geomol', {
+    kind: 'geometry',
+    load: CC.GeoMol.loadModel,
+    unload: CC.GeoMol.clearModel,
+    hasModel: CC.GeoMol.hasModel,
+    getLoadedModelIds: CC.GeoMol.getLoadedModelIds,
+    validate: CC.GeoMol.checkCompatibility,
+    generate: CC.GeoMol.generateConformer,
+  });
 })();

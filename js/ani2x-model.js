@@ -329,4 +329,17 @@ CC.ANI = window.CC.ANI || {};
 
     return run();
   };
+
+  // See model-adapters.js's header. kind:'geometry' -- optimizeGeometry
+  // takes (atoms, bonds, id, opts), not (molecule, id) the way the
+  // property-predictor adapters' predict() does.
+  CC.ModelAdapters.register('ani2x', {
+    kind: 'geometry',
+    load: CC.ANI.loadModel,
+    unload: CC.ANI.clearModel,
+    hasModel: CC.ANI.hasModel,
+    getLoadedModelIds: CC.ANI.getLoadedModelIds,
+    validate: CC.ANI.checkCompatibility,
+    optimize: CC.ANI.optimizeGeometry,
+  });
 })();

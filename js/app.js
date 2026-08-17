@@ -2386,7 +2386,16 @@
     // Lets other panels (the 3D view's conformer-search auto-load,
     // see setup3DPanel) re-render this list after loading a model from
     // outside this panel, so its "Load"/"Loaded" button state stays honest.
-    refreshRegistryList = function () { renderRegistryList(CC.GNN.getRegistryEntries()); };
+    // Also re-renders the Validation tab's compatibility table: every
+    // call site that calls refreshRegistryList() does so because a
+    // model just finished loading/unloading, which is exactly the other
+    // state that table depends on (structural issues alone don't
+    // change) -- one shared refresh point instead of adding a second
+    // refreshValidationPanel() call at each of those sites individually.
+    refreshRegistryList = function () {
+      renderRegistryList(CC.GNN.getRegistryEntries());
+      refreshValidationPanel();
+    };
 
     // The registry (model/registry.json by default -- see model-config.js)
     // is fetched once at startup; individual models' weights are only

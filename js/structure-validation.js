@@ -520,11 +520,20 @@ CC.Validate = window.CC.Validate || {};
 
   function engineOf(entry) { return entry.engine || 'chemprop'; }
 
+  // Looked up via CC.ModelAdapters (model-adapters.js) rather than an
+  // if/else chain hard-coded here per engine -- this used to be a THIRD
+  // independent copy of the same dispatch model-registry.js and
+  // gnn-inference.js each had their own version of, and it had silently
+  // drifted: there was no 'pka' branch at all, so a pKa model's real
+  // requirement (its own NAGL charge model must already be loaded --
+  // see pka-model.js) was never actually checked here, just silently
+  // defaulted to the generic chemprop vocabulary check below instead.
+  // Falling back to the 'chemprop' adapter's own validate for any
+  // engine with no adapter registered preserves that same generic-
+  // vocabulary-check-as-default behavior for a genuinely unknown engine.
   function hardCompatibilityFor(engine, molecule) {
-    if (engine === 'nagl' && window.CC.NAGL && CC.NAGL.checkCompatibility) return CC.NAGL.checkCompatibility(molecule);
-    if (engine === 'geomol' && window.CC.GeoMol && CC.GeoMol.checkCompatibility) return CC.GeoMol.checkCompatibility(molecule);
-    if (engine === 'ani2x' && window.CC.ANI && CC.ANI.checkCompatibility) return CC.ANI.checkCompatibility(molecule);
-    if (window.CC.GNN && CC.GNN.checkChempropCompatibility) return CC.GNN.checkChempropCompatibility(molecule);
+    const adapter = CC.ModelAdapters.get(engine) || CC.ModelAdapters.get('chemprop');
+    if (adapter && adapter.validate) return adapter.validate(molecule);
     return { compatible: true, issues: [] };
   }
 

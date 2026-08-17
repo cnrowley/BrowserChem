@@ -171,4 +171,40 @@ CC.PKA = window.CC.PKA || {};
 
     return { atomProperties: atomProperties, atomIds: atomIds, backend: 'pka', modelId: id };
   };
+
+  /**
+   * Real requirement per predict() above: a pKa checkpoint needs its own
+   * specific NAGL-MBIS charge model (model.descriptor.chargeSource)
+   * already loaded. This family-level check (same "engine in general,
+   * not whichever specific checkpoint happens to be loaded" convention
+   * every other checkCompatibility in this project already uses -- see
+   * CC.GNN.checkChempropCompatibility's own header) can't know exactly
+   * which chargeSource id a not-yet-loaded pKa checkpoint will need, so
+   * it checks the weaker but still real fact: is ANY NAGL model loaded
+   * at all. predict()'s own check above still catches a mismatched
+   * chargeSource id precisely, with a name, at call time.
+   *
+   * Registered as this engine's `validate` -- previously there was no
+   * checkCompatibility for 'pka' at all, so structure-validation.js
+   * silently fell through to the generic chemprop vocabulary check
+   * instead of this real one.
+   */
+  CC.PKA.checkCompatibility = function (molecule) {
+    if (!molecule || molecule.atoms.size === 0) return { compatible: true, issues: [] };
+    if (!window.CC.NAGL || !CC.NAGL.hasModel || !CC.NAGL.hasModel()) {
+      return { compatible: false, issues: ['requires a NAGL-MBIS partial-charge model to be loaded first'] };
+    }
+    return { compatible: true, issues: [] };
+  };
+
+  // See model-adapters.js's header.
+  CC.ModelAdapters.register('pka', {
+    kind: 'property',
+    load: CC.PKA.loadModel,
+    unload: CC.PKA.clearModel,
+    hasModel: CC.PKA.hasModel,
+    getLoadedModelIds: CC.PKA.getLoadedModelIds,
+    validate: CC.PKA.checkCompatibility,
+    predict: CC.PKA.predict,
+  });
 })();
