@@ -51,8 +51,22 @@ CC.ELEMENT_TO_ATOMIC_NUMBER = {
   Cu: 29, Zn: 30, Ga: 31, Ge: 32, As: 33, Se: 34, Br: 35, Kr: 36, I: 53,
 };
 
+// Fallback for any element outside the small table above (metals, noble
+// gases, anything exotic) -- carbon's RADIUS only, for reasonable bond
+// spacing, deliberately NOT carbon's valence(4). Real, previously-shipped
+// bug: reusing carbon's valence here made every implicit-H count this
+// project computes (2D atom labels in render.js, embed3d.js's 3D
+// hydrogen placement) invent up to 4 implicit hydrogens on an
+// unrecognized atom -- a bare [Na+] ion, 0 real bonds, displayed as
+// "NaH4+" on the 2D canvas (found via structure-validation.js's own
+// metal-detection test coverage, not a hypothetical). valence:0 means
+// "assume no implicit hydrogens for an element this table doesn't cover"
+// -- the honest default; a real 3D-embeddable/labelable valence for a
+// specific new element still belongs in CC.ELEMENT_DATA above, not here.
+const FALLBACK_ELEMENT_DATA = { radius: 0.76, valence: 0 };
+
 CC.elementData = function (symbol) {
-  return CC.ELEMENT_DATA[symbol] || CC.ELEMENT_DATA.C;
+  return CC.ELEMENT_DATA[symbol] || FALLBACK_ELEMENT_DATA;
 };
 
 CC.idealBondLength = function (el1, el2, order) {

@@ -34,6 +34,11 @@ CC.Controller = class Controller {
     // RDKit's get_new_coords(), both of which live in app.js.
     this.onToolShortcut = callbacks.onToolShortcut || function () {};
     this.onCleanupShortcut = callbacks.onCleanupShortcut || function () {};
+    // Fired on every pointermove (and cleared on pointerleave) with either
+    // null or {x, y, r} in molecule-space coords -- lets app.js position
+    // the hover-highlight circle without this file touching the DOM
+    // directly, matching this file's "no rendering" boundary.
+    this.onHoverChanged = callbacks.onHoverChanged || function () {};
 
     this.svg.addEventListener('pointerdown', this._onPointerDown.bind(this));
     this.svg.addEventListener('pointermove', this._onPointerMove.bind(this));
@@ -149,37 +154,57 @@ CC.Controller = class Controller {
   }
 
   _onPointerMove(e) {
-    this.hoveredAtomId = this._hitAtom(e);
-
-    if (!this.drag) return;
     const p = this._point(e);
+    this.hoveredAtomId = CC.nearestAtomWithinRadius(this.molecule, p.x, p.y, CC.HOVER_RADIUS);
 
-    if (this.drag.type === 'move-atom') {
-      const atom = this.molecule.atoms.get(this.drag.atomId);
-      if (!atom) return;
-      atom.x = p.x;
-      atom.y = p.y;
-      this.onMoleculeChanged();
-      return;
+    if (this.drag) {
+      if (this.drag.type === 'move-atom') {
+        const atom = this.molecule.atoms.get(this.drag.atomId);
+        if (atom) {
+          atom.x = p.x;
+          atom.y = p.y;
+          this.onMoleculeChanged();
+        }
+      } else if (this.drag.type === 'bond') {
+        const startAtom = this.molecule.atoms.get(this.drag.startAtomId);
+        if (startAtom) {
+          const hoverAtomId = this._hitAtom(e);
+          const end = (hoverAtomId && hoverAtomId !== this.drag.startAtomId)
+            ? this.molecule.atoms.get(hoverAtomId)
+            : CC.snapToAngle(startAtom, p);
+          this.drag.previewEnd = end;
+          this.drag.hoverAtomId = (hoverAtomId && hoverAtomId !== this.drag.startAtomId) ? hoverAtomId : null;
+          this.onMoleculeChanged({ preview: this.drag });
+        }
+      } else if (this.drag.type === 'chain') {
+        this._updateChainPreview(p);
+        this.onMoleculeChanged({ preview: this.drag });
+      }
     }
 
-    if (this.drag.type === 'bond') {
-      const startAtom = this.molecule.atoms.get(this.drag.startAtomId);
-      if (!startAtom) return;
-      const hoverAtomId = this._hitAtom(e);
-      const end = (hoverAtomId && hoverAtomId !== this.drag.startAtomId)
-        ? this.molecule.atoms.get(hoverAtomId)
-        : CC.snapToAngle(startAtom, p);
-      this.drag.previewEnd = end;
-      this.drag.hoverAtomId = (hoverAtomId && hoverAtomId !== this.drag.startAtomId) ? hoverAtomId : null;
-      this.onMoleculeChanged({ preview: this.drag });
-      return;
-    }
+    // Published after any drag-triggered render above, so a fresh render
+    // doesn't wipe the highlight circle out from under it.
+    this.onHoverChanged(this._hoverTarget(e));
+  }
 
-    if (this.drag.type === 'chain') {
-      this._updateChainPreview(p);
-      this.onMoleculeChanged({ preview: this.drag });
+  // What the hover-highlight circle should show right now: the nearest
+  // atom within snap range (same radius the chain tool uses to close
+  // rings, so what's highlighted is exactly what dragging onto it would
+  // connect to), else a bond under the pointer highlighted at its
+  // midpoint, else nothing.
+  _hoverTarget(e) {
+    if (this.hoveredAtomId) {
+      const atom = this.molecule.atoms.get(this.hoveredAtomId);
+      if (atom) return { x: atom.x, y: atom.y, r: CC.HOVER_RADIUS };
     }
+    const bondId = this._hitBond(e);
+    if (bondId) {
+      const bond = this.molecule.bonds.get(bondId);
+      const a1 = bond && this.molecule.atoms.get(bond.a1);
+      const a2 = bond && this.molecule.atoms.get(bond.a2);
+      if (a1 && a2) return { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2, r: 8 };
+    }
+    return null;
   }
 
   _onPointerUp() {
@@ -201,6 +226,7 @@ CC.Controller = class Controller {
 
   _onPointerLeave() {
     this.hoveredAtomId = null;
+    this.onHoverChanged(null);
   }
 
   // Keyboard interface for the whole canvas:
@@ -344,16 +370,35 @@ CC.Controller = class Controller {
       });
     }
     this.drag.previewPoints = points;
+
+    // If the chain's free end has landed near an existing atom (other
+    // than the one it started from), releasing should close a ring onto
+    // that atom instead of dropping a fresh overlapping one on top of it.
+    const last = points[points.length - 1];
+    this.drag.snapAtomId = CC.nearestAtomWithinRadius(
+      this.molecule, last.x, last.y, CC.HOVER_RADIUS, this.drag.startAtomId
+    );
   }
 
   _finalizeChain() {
     const points = this.drag.previewPoints;
     if (!points || points.length < 2) return;
     let prevId = this.drag.startAtomId;
-    for (let i = 1; i < points.length; i++) {
+    // Every interior point always becomes a new atom; only the final
+    // point may instead snap onto an existing one to close a ring.
+    for (let i = 1; i < points.length - 1; i++) {
       const atom = this.molecule.addAtom('C', points[i].x, points[i].y);
       this.molecule.addBond(prevId, atom.id, 1);
       prevId = atom.id;
+    }
+
+    const last = points[points.length - 1];
+    let lastId = this.drag.snapAtomId;
+    if (!lastId) {
+      lastId = this.molecule.addAtom('C', last.x, last.y).id;
+    }
+    if (!this.molecule.getBondBetween(prevId, lastId)) {
+      this.molecule.addBond(prevId, lastId, 1);
     }
   }
 
@@ -364,10 +409,30 @@ CC.Controller = class Controller {
     const r = CC.BOND_LENGTH / (2 * Math.sin(Math.PI / n));
     let center;
     let attachAtomId = null;
+    let dir = 0; // angle from the attach atom OUT to the ring's center; unused when attaching to empty canvas
 
     if (atomId) {
-      const atom = this.molecule.atoms.get(atomId);
-      const dir = Math.atan2(p.y - atom.y, p.x - atom.x) || -Math.PI / 2;
+      const molecule = this.molecule;
+      const atom = molecule.atoms.get(atomId);
+      const pointerDir = Math.atan2(p.y - atom.y, p.x - atom.x) || -Math.PI / 2;
+      // Orient the ring so its two bonds at the attachment atom split
+      // evenly around whatever open angular space is left there, rather
+      // than always placing the ring at a fixed "north" rotation
+      // regardless of what's already drawn. For the common case (one
+      // existing bond, six-membered ring), the vertex-to-center line of
+      // a regular polygon always bisects that vertex's own interior
+      // angle, so this puts both new ring bonds at exactly 120° from the
+      // existing one -- standard chemistry-drawing placement, not a
+      // fixed rotation that happens to look right sometimes. Pointer
+      // direction only breaks ties between equally-open gaps (e.g. two
+      // existing bonds exactly opposite each other); see
+      // CC.bestOpenDirection.
+      const existingAngles = molecule.getBondsForAtom(atomId).map(function (b) {
+        const otherId = b.a1 === atomId ? b.a2 : b.a1;
+        const other = molecule.atoms.get(otherId);
+        return Math.atan2(other.y - atom.y, other.x - atom.x);
+      });
+      dir = CC.bestOpenDirection(existingAngles, pointerDir);
       center = { x: atom.x + Math.cos(dir) * r, y: atom.y + Math.sin(dir) * r };
       attachAtomId = atomId;
     } else {
@@ -376,7 +441,15 @@ CC.Controller = class Controller {
 
     const ids = [];
     for (let i = 0; i < n; i++) {
-      const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+      // With an attach atom, vertex 0 is placed at angle (dir + π) from
+      // center -- exactly the reverse of how center was placed relative
+      // to the atom, so vertex 0 lands back on the atom's own (unmoved)
+      // position by construction, not by teleporting it there after the
+      // fact. Without one (empty-canvas click), there's nothing to stay
+      // consistent with, so this keeps the original fixed "north" start.
+      const angle = attachAtomId
+        ? dir + Math.PI + (Math.PI * 2 * i) / n
+        : (Math.PI * 2 * i) / n - Math.PI / 2;
       const x = center.x + Math.cos(angle) * r;
       const y = center.y + Math.sin(angle) * r;
       if (i === 0 && attachAtomId) {

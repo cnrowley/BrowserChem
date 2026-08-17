@@ -13,25 +13,33 @@ Only supports the architecture this project's JS actually implements:
                       variant, used whenever --atom-target-columns or
                       --bond-target-columns is set)
   - aggregation:      NormAggregation (sum / norm) for molecule-level
-                      output; skipped entirely for atom-level output
+                      output; skipped entirely for atom-/bond-level output
   - predictor:         single-task RegressionFFN or BinaryClassificationFFN,
                         n_layers=1 (Linear -> ReLU -> Linear), with the
                         regression head's UnscaleTransform or the
                         classification head's sigmoid applied in JS.
-                        Molecule-level (predictor / mol_predictor) or
-                        atom-level (atom_predictor) -- not both at once,
-                        and not bond-level (bond_predictor) yet.
+                        Molecule-level (predictor / mol_predictor),
+                        atom-level (atom_predictor), or bond-level
+                        (bond_predictor) -- not more than one at once.
+                        A bond-level checkpoint additionally needs
+                        message_passing.W_eo (the edge_finalize
+                        projection) -- confirmed present whenever
+                        --bond-target-columns is used, since
+                        MolAtomBondMPNN always attaches a bond_predictor's
+                        message-passing block with return_edge_embeddings
+                        implied by that predictor's existence.
 
 If your checkpoint uses a different message-passing scheme
 (AtomMessagePassing), a different aggregation (mean/sum/attentive), a
 deeper FFN (n_layers > 1), multiclass/Dirichlet/evidential/spectral
-heads, multi-task output, or a bond-level predictor, this script will
-raise -- extending chemprop-model.js's forward pass to match is required
-first (see chemprop-model.js's header for the shapes it expects).
+heads, or multi-task output, this script will raise -- extending
+chemprop-model.js's forward pass to match is required first (see
+chemprop-model.js's header for the shapes it expects).
 
 Usage:
     pip install torch chemprop lightning --break-system-packages
     python3 convert_chemprop_checkpoint.py best.pt output_dir/
+    python3 convert_chemprop_checkpoint.py best.pt output_dir/ --task-key cyp2d6  # avoid a same-task collision
 
 Produces:
     output_dir/<task>-manifest.json
@@ -51,15 +59,28 @@ def main():
     parser.add_argument("--name", default=None, help="base filename (default: the task name from the checkpoint)")
     parser.add_argument("--graph-type", choices=["heavy", "explicit-h"], default="heavy",
                          help="'explicit-h' if this checkpoint was trained with chemprop's --add-h flag "
-                              "(every hydrogen is its own graph node -- e.g. a per-atom 1H NMR shift model). "
-                              "Not auto-detected: the checkpoint doesn't reliably record whether --add-h was "
-                              "used, so pass this explicitly based on how you trained it. Only meaningful for "
-                              "outputLevel=atom; ignored for molecule-level checkpoints.")
+                              "(every hydrogen is its own graph node -- e.g. a per-atom 1H NMR shift model, "
+                              "or any bond-level/BDE checkpoint, which always needs this). Not auto-detected: "
+                              "the checkpoint doesn't reliably record whether --add-h was used, so pass this "
+                              "explicitly based on how you trained it. Only meaningful for outputLevel=atom or "
+                              "outputLevel=bond; ignored for molecule-level checkpoints.")
     parser.add_argument("--applicable-element", default=None,
                          help="restrict this atom-level checkpoint's predictions to one element, e.g. 'C' for "
                               "a 13C shift model -- chemprop-model.js will only annotate atoms of this element "
                               "and leave others blank, the same masking pattern pka-model.js uses for its own "
                               "candidate-site gating. Only meaningful for outputLevel=atom.")
+    parser.add_argument("--task-key", default=None,
+                         help="override manifest['task'] (default: the checkpoint's own target-column name, "
+                              "e.g. 'label'). Purely a dictionary key -- gnn-inference.js/chemprop-model.js "
+                              "merge every currently-loaded model's molecule-/atom-/bond-level output into one "
+                              "object keyed by this string, so two loaded models sharing a task name silently "
+                              "overwrite each other (last-loaded wins) instead of both showing up. This "
+                              "project's prepare_*_training_data.py scripts conventionally name every binary-"
+                              "classification target column 'label', so any two single-task classifiers "
+                              "trained that way collide unless given distinct --task-key values here at "
+                              "conversion time (e.g. --task-key cyp2d6). Does not affect --name/output "
+                              "filenames or the model's math -- registry.json's propertyKey for this entry "
+                              "should be updated to match.")
     args = parser.parse_args()
 
     import torch
@@ -84,12 +105,18 @@ def main():
         # atom_predictor / bond_predictor, any of the three predictors may
         # be None. output_columns is [mol_names, atom_names, bond_names].
         mol_names, atom_names, bond_names = (out_cols_raw + [None, None, None])[:3]
+        n_predictors_set = sum(hp.get(k) is not None for k in ("mol_predictor", "atom_predictor", "bond_predictor"))
+        if n_predictors_set > 1:
+            sys.exit("A checkpoint with more than one of mol-/atom-/bond-level predictors attached isn't "
+                      "supported yet -- chemprop-model.js's manifest format assumes exactly one output level "
+                      "per model.")
         if hp.get("bond_predictor") is not None:
-            sys.exit("Bond-level predictors aren't implemented yet -- only mol-level and atom-level are.")
-        if hp.get("atom_predictor") is not None and hp.get("mol_predictor") is not None:
-            sys.exit("A checkpoint with both a mol-level and an atom-level predictor isn't supported yet "
-                      "-- chemprop-model.js's manifest format assumes exactly one output level per model.")
-        if hp.get("atom_predictor") is not None:
+            output_level = "bond"
+            pred_hp = hp["bond_predictor"]
+            task_names = bond_names
+            mp_weight_key = "W_eo"  # MABBondMessagePassing's edge-output layer
+            pred_prefix = "bond_predictor"
+        elif hp.get("atom_predictor") is not None:
             output_level = "atom"
             pred_hp = hp["atom_predictor"]
             task_names = atom_names
@@ -104,7 +131,7 @@ def main():
             if hp.get("agg") is None:
                 sys.exit("mol_predictor present but agg is None -- unexpected shape, aborting rather than guessing.")
         else:
-            sys.exit("Neither mol_predictor nor atom_predictor is set -- nothing to export.")
+            sys.exit("None of mol_predictor/atom_predictor/bond_predictor is set -- nothing to export.")
         agg_hp = hp.get("agg")
     else:
         # Plain MPNN: hp has message_passing / agg / predictor.
@@ -128,8 +155,11 @@ def main():
                   "+ the default MultiHotBondFeaturizer) -- it was trained with a different/custom featurizer "
                   "this project's JS port doesn't implement. Converting anyway would silently feed the JS "
                   "forward pass wrong-shaped input rather than fail loudly, so this aborts instead.")
-    if args.graph_type == "explicit-h" and (hp.get("atom_predictor") if is_mol_atom_bond else None) is None:
-        sys.exit("--graph-type explicit-h only makes sense for an atom-level (--atom-target-columns) checkpoint.")
+    if output_level == "bond" and args.graph_type != "explicit-h":
+        sys.exit("A bond-level (--bond-target-columns) checkpoint always needs --graph-type explicit-h -- "
+                  "BDE-style targets are meaningless without real per-hydrogen graph nodes.")
+    if args.graph_type == "explicit-h" and output_level == "molecule":
+        sys.exit("--graph-type explicit-h only makes sense for an atom-level or bond-level checkpoint.")
     if output_level == "molecule":
         if agg_hp is None or agg_hp["cls"].__name__ != "NormAggregation":
             sys.exit("Unsupported aggregation -- expected NormAggregation for a molecule-level model.")
@@ -159,11 +189,18 @@ def main():
     def arr(name):
         return sd[name].detach().numpy().astype("float32")
 
+    # Bond-level checkpoints have no atom-output layer at all (Chemprop
+    # never builds message_passing.W_vo without a mol/atom predictor
+    # attached) -- export message_passing.W_eo (edge_finalize) under its
+    # own tensor names instead of reusing "W_o_weight"/"W_o_bias", so
+    # chemprop-model.js can tell the two apart (see dmpnn.js: Wo and Weo
+    # are each independently optional).
+    mp_out_tensor_names = ("W_eo_weight", "W_eo_bias") if output_level == "bond" else ("W_o_weight", "W_o_bias")
     tensors = {
         "W_i": arr("message_passing.W_i.weight"),
         "W_h": arr("message_passing.W_h.weight"),
-        "W_o_weight": arr(f"message_passing.{mp_weight_key}.weight"),
-        "W_o_bias": arr(f"message_passing.{mp_weight_key}.bias"),
+        mp_out_tensor_names[0]: arr(f"message_passing.{mp_weight_key}.weight"),
+        mp_out_tensor_names[1]: arr(f"message_passing.{mp_weight_key}.bias"),
         "ffn0_weight": arr(f"{pred_prefix}.ffn.0.0.weight"),
         "ffn0_bias": arr(f"{pred_prefix}.ffn.0.0.bias"),
         "ffn1_weight": arr(f"{pred_prefix}.ffn.1.2.weight"),
@@ -190,10 +227,10 @@ def main():
         ffn_hidden_dim = ffn_hidden_dim[0]
 
     manifest = {
-        "task": task_names[0],
+        "task": args.task_key or task_names[0],
         "taskType": task_type,
-        "outputLevel": output_level,  # "molecule" (default/omitted in older manifests) or "atom"
-        "graphType": args.graph_type if output_level == "atom" else "heavy",
+        "outputLevel": output_level,  # "molecule" (default/omitted in older manifests), "atom", or "bond"
+        "graphType": args.graph_type if output_level in ("atom", "bond") else "heavy",
         "applicableElement": args.applicable_element if output_level == "atom" else None,
         "architecture": "chemprop-dmpnn-v2",
         "dims": {
@@ -212,7 +249,7 @@ def main():
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    base = args.name or task_names[0]
+    base = args.name or args.task_key or task_names[0]
     bin_path = out_dir / f"{base}.bin"
     manifest_path = out_dir / f"{base}-manifest.json"
 

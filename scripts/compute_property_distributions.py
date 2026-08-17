@@ -40,12 +40,20 @@ WHAT'S COMPUTED AND WHY IT MATCHES THE APP:
   pka_min (the most acidic candidate C-H site) and candidate-site count,
   mirroring how pKalculator itself reports results.
 
-NOT COMPUTED (explicitly, not silently): the four "chemprop"-engine
-molecule-level models (logP-v1, logS-aqsoldb, melting-point,
-electrophile-reactivity-v1). Reproducing those in Python needs a D-MPNN
-message-passing + 72-dim/14-dim Chemprop featurizer port that doesn't
-exist anywhere in this project yet -- real new engineering, not a reuse
-of already-validated code the way the three property groups above are.
+  Chemprop molecule-level models (logP, logS, melting point, electrophile
+  reactivity) -- a numpy port of dmpnn.js's D-MPNN forward pass (message
+  passing, NormAggregation, FFN head), reading each model's shipped
+  manifest.json + weights.bin directly under model/logp/,
+  model/logs-aqsoldb/, model/melting-point/, model/electrophile-reactivity/
+  -- the same artifacts the browser loads. Featurization uses chemprop's
+  own real SimpleMoleculeMolGraphFeaturizer (MultiHotAtomFeaturizer +
+  MultiHotBondFeaturizer, both confirmed 72-dim/14-dim, matching what
+  every one of these checkpoints was trained with) rather than
+  reimplementing the one-hot encoding tables -- needs the real `chemprop`
+  package installed (only for this property group; everything else in
+  this script only needs rdkit + numpy + pandas + matplotlib). If
+  `chemprop` isn't importable, these four properties are skipped with a
+  warning rather than failing the whole run.
 
 Usage:
     python3 compute_property_distributions.py \\
@@ -379,6 +387,122 @@ def compute_pka(mol_noh, pka_model, nagl_charge_result):
 
 
 # --------------------------------------------------------------------------
+# Chemprop molecule-level models (logP, logS, melting point, electrophile
+# reactivity) -- numpy port of js/dmpnn.js's D-MPNN forward pass, reading
+# the shipped manifest.json/weights.bin directly (same tensors
+# js/chemprop-model.js loads). Featurization uses chemprop's own real
+# SimpleMoleculeMolGraphFeaturizer for exact parity -- see this module's
+# docstring.
+# --------------------------------------------------------------------------
+
+CHEMPROP_MOLECULE_MODELS = {
+    # column name -> (registry id, model directory, manifest/weights base name)
+    "logP": ("logp-v1", "logp"),
+    "Solubility": ("logs-aqsoldb", "logs-aqsoldb"),
+    "mp": ("melting-point", "melting-point"),
+    "label": ("electrophile-reactivity-v1", "electrophile-reactivity"),
+}
+
+
+class ChempropDMPNNModel:
+    def __init__(self, manifest_path, weights_path):
+        manifest = json.loads(Path(manifest_path).read_text())
+        weights = np.fromfile(weights_path, dtype=np.float32)
+
+        def tensor(name):
+            t = manifest["tensors"][name]
+            return weights[t["offset"]: t["offset"] + t["length"]].reshape(t["shape"])
+
+        self.task = manifest.get("task", "prediction")
+        self.task_type = manifest.get("taskType", "regression")
+        self.dims = manifest["dims"]
+        self.Wi = tensor("W_i")
+        self.Wh = tensor("W_h")
+        self.Wo = tensor("W_o_weight")
+        self.Wo_bias = tensor("W_o_bias")
+        self.ffn0 = tensor("ffn0_weight")
+        self.ffn0_bias = tensor("ffn0_bias")
+        self.ffn1 = tensor("ffn1_weight")
+        self.ffn1_bias = tensor("ffn1_bias")
+        if self.task_type == "regression":
+            self.out_mean = float(tensor("out_mean")[0])
+            self.out_scale = float(tensor("out_scale")[0])
+
+    def apply_head(self, embedding):
+        hidden = np.maximum(self.ffn0 @ embedding + self.ffn0_bias, 0)
+        raw = float((self.ffn1 @ hidden)[0] + self.ffn1_bias[0])
+        if self.task_type == "classification":
+            return 1.0 / (1.0 + np.exp(-raw))
+        return raw * self.out_scale + self.out_mean
+
+
+def run_chemprop_molecule(mol, model, featurizer):
+    """Mirrors js/dmpnn.js's runDMPNN() + js/chemprop-model.js's
+    runOneMolecule() exactly: h0raw = W_i.[atomFeat(src), bondFeat] (no
+    bias); h_0 = ReLU(h0raw); depth-1 message/update rounds add back the
+    UNACTIVATED h0raw at each step (not its ReLU); final atom embedding is
+    ReLU(W_o.[atomFeat(v), sum of incoming h] + bias); molecule embedding
+    is NormAggregation (sum of atom embeddings / aggNorm); then
+    ffn0->ReLU->ffn1->task head."""
+    mg = featurizer(mol)
+    num_atoms = mg.V.shape[0]
+    hidden_size = model.dims["d_h"]
+    depth = model.dims["depth"]
+
+    if mg.E.shape[0] == 0:
+        # No bonds (single-atom "molecule") -- falls back to the
+        # atom-feature-only projection, same as dmpnn.js's numEdges===0 case.
+        embeddings = [np.maximum(model.Wo @ np.concatenate([mg.V[v], np.zeros(hidden_size)]) + model.Wo_bias, 0)
+                      for v in range(num_atoms)]
+    else:
+        edge_src = mg.edge_index[0]
+        edge_dst = mg.edge_index[1]
+        num_edges = len(edge_src)
+        incoming_by_atom = [[] for _ in range(num_atoms)]
+        for e, dst in enumerate(edge_dst):
+            incoming_by_atom[dst].append(e)
+
+        h0raw = np.stack([model.Wi @ np.concatenate([mg.V[edge_src[e]], mg.E[e]]) for e in range(num_edges)])
+        h = np.maximum(h0raw, 0)
+
+        for _ in range(1, depth):
+            h_next = np.zeros_like(h)
+            for e in range(num_edges):
+                src_atom = edge_src[e]
+                rev = mg.rev_edge_index[e]
+                incoming = [e2 for e2 in incoming_by_atom[src_atom] if e2 != rev]
+                message = h[incoming].sum(axis=0) if incoming else np.zeros(hidden_size)
+                h_next[e] = np.maximum(h0raw[e] + model.Wh @ message, 0)
+            h = h_next
+
+        embeddings = []
+        for v in range(num_atoms):
+            incoming = incoming_by_atom[v]
+            message = h[incoming].sum(axis=0) if incoming else np.zeros(hidden_size)
+            embeddings.append(np.maximum(model.Wo @ np.concatenate([mg.V[v], message]) + model.Wo_bias, 0))
+
+    agg_norm = model.dims.get("aggNorm") or 1.0
+    pooled = np.sum(embeddings, axis=0) / agg_norm
+    return model.apply_head(pooled)
+
+
+def load_chemprop_molecule_models():
+    """Returns {column_name: ChempropDMPNNModel}, skipping (with a
+    warning) any model whose files aren't present -- lets the rest of
+    this script run even if model/ doesn't have every checkpoint."""
+    models = {}
+    for column, (_, dir_name) in CHEMPROP_MOLECULE_MODELS.items():
+        model_dir = REPO_ROOT / "model" / dir_name
+        manifest_path = model_dir / "manifest.json"
+        weights_path = model_dir / "weights.bin"
+        if not manifest_path.exists() or not weights_path.exists():
+            warnings.warn(f"{model_dir} missing manifest.json/weights.bin -- skipping {column!r}")
+            continue
+        models[column] = ChempropDMPNNModel(manifest_path, weights_path)
+    return models
+
+
+# --------------------------------------------------------------------------
 # Orchestration
 # --------------------------------------------------------------------------
 
@@ -420,7 +544,7 @@ def read_molecules(path, smiles_column):
     return mols
 
 
-def compute_all_properties(name, smiles, sascorer, QED, nagl_model, pka_model):
+def compute_all_properties(name, smiles, sascorer, QED, nagl_model, pka_model, chemprop_models, chemprop_featurizer):
     from rdkit import Chem
 
     row = {"name": name, "smiles": smiles, "warning": ""}
@@ -455,6 +579,12 @@ def compute_all_properties(name, smiles, sascorer, QED, nagl_model, pka_model):
     except Exception as err:  # noqa: BLE001
         row["warning"] += f"pKa failed: {err}; "
 
+    for column, model in chemprop_models.items():
+        try:
+            row[column] = run_chemprop_molecule(mol, model, chemprop_featurizer)
+        except Exception as err:  # noqa: BLE001
+            row["warning"] += f"{column} failed: {err}; "
+
     return row
 
 
@@ -464,6 +594,7 @@ NUMERIC_COLUMNS = [
     "NumUnspecifiedAtomStereoCenters", "saScore", "qed",
     "nagl_charge_mean", "nagl_charge_min", "nagl_charge_max",
     "pka_min", "n_ch_sites",
+    "logP", "Solubility", "mp", "label",
 ]
 
 
@@ -527,13 +658,13 @@ def percentile_of(value, dist_entry):
     return float(np.interp(value, xs, ps))
 
 
-def run_lookup(smiles, out_dir, sascorer, QED, nagl_model, pka_model):
+def run_lookup(smiles, out_dir, sascorer, QED, nagl_model, pka_model, chemprop_models, chemprop_featurizer):
     dist_path = out_dir / "distributions.json"
     if not dist_path.exists():
         sys.exit(f"{dist_path} not found -- run a full --input batch first to build the reference distribution.")
     dist = json.loads(dist_path.read_text())
 
-    row = compute_all_properties("lookup", smiles, sascorer, QED, nagl_model, pka_model)
+    row = compute_all_properties("lookup", smiles, sascorer, QED, nagl_model, pka_model, chemprop_models, chemprop_featurizer)
     if row.get("warning"):
         print(f"warning: {row['warning']}", file=sys.stderr)
 
@@ -554,6 +685,10 @@ def main():
     parser.add_argument("--output-dir", required=True, help="directory for properties.csv / distributions.json / plots/")
     parser.add_argument("--lookup", metavar="SMILES", help="report percentiles for one SMILES against an existing --output-dir's saved distribution, instead of running a full batch")
     parser.add_argument("--no-plots", action="store_true", help="skip histogram generation (matplotlib not required)")
+    parser.add_argument("--no-chemprop", action="store_true",
+                         help="skip the four Chemprop molecule-level properties (logP/Solubility/mp/label) even if "
+                              "the `chemprop` package is installed -- useful to avoid its import cost/torch "
+                              "dependency when you only want the RDKit/NAGL/pKa properties")
     args = parser.parse_args()
 
     from rdkit.Chem import QED
@@ -565,8 +700,21 @@ def main():
     nagl_model = NaglModel(NAGL_MODEL_DIR / "manifest.json", NAGL_MODEL_DIR / "weights.bin")
     pka_model = PkaModel(PKA_MODEL_DIR / "manifest.json", PKA_MODEL_DIR / "weights.bin")
 
+    chemprop_models = {}
+    chemprop_featurizer = None
+    if not args.no_chemprop:
+        try:
+            from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
+            chemprop_featurizer = SimpleMoleculeMolGraphFeaturizer()
+            chemprop_models = load_chemprop_molecule_models()
+        except ImportError:
+            warnings.warn(
+                "`chemprop` package not importable -- skipping logP/Solubility/mp/label "
+                "(pip install chemprop, or pass --no-chemprop to silence this warning)."
+            )
+
     if args.lookup:
-        run_lookup(args.lookup, out_dir, sascorer, QED, nagl_model, pka_model)
+        run_lookup(args.lookup, out_dir, sascorer, QED, nagl_model, pka_model, chemprop_models, chemprop_featurizer)
         return
 
     if not args.input:
@@ -578,7 +726,7 @@ def main():
     rows = []
     n_failed = 0
     for name, smiles in molecules:
-        row = compute_all_properties(name, smiles, sascorer, QED, nagl_model, pka_model)
+        row = compute_all_properties(name, smiles, sascorer, QED, nagl_model, pka_model, chemprop_models, chemprop_featurizer)
         if row["warning"]:
             n_failed += 1 if "could not parse" in row["warning"] else 0
         rows.append(row)

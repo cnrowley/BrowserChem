@@ -27,6 +27,22 @@
  *         "id": "...",              required, unique, used as the
  *                                   model key in whichever engine loads it
  *         "displayName": "...",     required
+ *         "categories": ["general" | "environmental-analytical" | "medicinal"
+ *                        | "structure-tools" | "characterization", ...],
+ *                        which Properties-panel section(s) (js/app.js's
+ *                        renderRegistryList) this model's Load row
+ *                        appears under -- purely a UI grouping, doesn't
+ *                        affect prediction/loading behavior at all. A
+ *                        LIST because a model can intentionally appear
+ *                        in more than one section (e.g. melting point
+ *                        is filed under both "environmental-analytical"
+ *                        and "characterization" -- redundant listing on
+ *                        purpose, not a bug). Not force-required (an
+ *                        entry without one just won't render anywhere),
+ *                        but validate_registry.py errors on a value
+ *                        outside this set, since a typo would silently
+ *                        make a model vanish from the Properties panel
+ *                        instead of failing loudly.
  *         "propertyKey": "...",     required (should match the
  *                                   checkpoint's own manifest.task, but
  *                                   not force-checked at load time --

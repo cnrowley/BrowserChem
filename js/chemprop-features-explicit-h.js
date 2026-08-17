@@ -146,8 +146,15 @@ CC.GNN = window.CC.GNN || {};
     // H node to its parent.
     const bondFeat = CC.GNN.buildChempropBondFeatures(molecule, atomIdToIndex, annotations, sp2ByAtomId);
     const bondRows = bondFeat.rows.slice();
+    const numRealBonds = bondRows.length;
+    // Canonical bond index (position within bondRows) of each heavy
+    // atom's own attached-H bonds -- for a bond-level (BDE) checkpoint's
+    // per-atom "weakest attached C-H" aggregation, mirroring
+    // hNodesByHeavyIndex above but indexing bonds instead of H nodes.
+    const hBondCanonicalIndexByHeavyIndex = heavyAtoms.map(function () { return []; });
     heavyAtoms.forEach(function (atom, i) {
       hNodesByHeavyIndex[i].forEach(function (hIdx) {
+        hBondCanonicalIndexByHeavyIndex[i].push(bondRows.length);
         bondRows.push({ i: i, j: hIdx, features: singleBondFeatureRow() });
       });
     });
@@ -183,6 +190,9 @@ CC.GNN = window.CC.GNN || {};
       atomIds: heavyAtoms.map(function (a) { return a.id; }),
       numHeavyAtoms: numHeavyAtoms,
       hNodesByHeavyIndex: hNodesByHeavyIndex,
+      numRealBonds: numRealBonds,
+      bondIds: Array.from(molecule.bonds.values()).map(function (b) { return b.id; }),
+      hBondCanonicalIndexByHeavyIndex: hBondCanonicalIndexByHeavyIndex,
     };
   };
 })();

@@ -7,6 +7,13 @@ engines for the trained models.
 
 ## What's in here
 
+- **Structure validation layer** — 14 real structural checks (valence,
+  charges, radicals, salts/counterions, duplicates, stereochemistry,
+  aromaticity, metals, hypervalent atoms, unusual isotopes, and more) run
+  before any property model, feeding a three-tier per-model verdict
+  (compatible / outside applicability domain — warned / incompatible —
+  blocked) shown in a dedicated Validation tab and as badges next to
+  every model in the Properties panel — see `VALIDATION.md`.
 - **2D structure editor** — ChemDraw-style drawing tools, ring templates,
   keyboard shortcuts, standard-bond-length "clean up" via RDKit's own
   coordinate generator.
@@ -29,6 +36,23 @@ engines for the trained models.
   ensemble-network forward pass, with analytic backprop for forces, to
   drive 3D geometry optimization and report total energy (H/C/N/O/F/S/Cl,
   neutral molecules only) — see `ANI2X_INTEGRATION.md`.
+- **OpenFF Sage (SMIRNOFF) force field** — a real published small-molecule
+  force field (`openff-2.1.0.offxml`), typed via SMARTS matching against
+  RDKit.js, as a third 3D generation method alongside Classical and
+  GeoMol; electrostatics use this app's own NAGL-MBIS charges in place of
+  Sage's official AM1-BCC protocol — see `OPENFF_INTEGRATION.md`.
+- **Conformer search** — generates diverse rotamer-sampled starting
+  geometries, optimizes each with a chosen energy model (Classical/
+  OpenFF Sage/ANI-2x), then prunes to distinct conformers using CREST's
+  own real CREGEN thresholds (6 kcal/mol energy window, 0.125 Å RMSD
+  duplicate cutoff) — CREST-inspired, not a literal port (CREST is a
+  native binary and can't run in a browser) — see `CONFORMER_SEARCH.md`.
+- **Bond dissociation enthalpy (per bond)** — this app's first bond-level
+  property: every bond gets a predicted BDE, color-coded and labeled
+  directly on the 2D structure, plus a per-atom "weakest attached C-H"
+  value through the existing atom heatmap. A real trained Chemprop
+  bond-level D-MPNN checkpoint (own dataset/training, not a port of
+  ALFABET's published weights) — see `BDE_INTEGRATION.md`.
 - **Structural alerts** — ~1250 real medicinal-chemistry SMARTS filters
   (PAINS, Glaxo, Dundee, BMS, SureChEMBL, MLSMR, Inpharmatica, LINT),
   with substructure highlighting.

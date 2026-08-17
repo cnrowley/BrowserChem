@@ -103,30 +103,74 @@
   <!-- Right: tabbed panel for 3D view / properties -->
   <aside class="side-panel" aria-label="3D view and properties">
     <div class="side-panel-tabs" role="tablist">
+      <button class="side-tab" role="tab" aria-selected="false" data-panel="validation">Validation</button>
       <button class="side-tab is-active" role="tab" aria-selected="true" data-panel="view3d">3D view</button>
       <button class="side-tab" role="tab" aria-selected="false" data-panel="properties">Properties</button>
+      <button class="side-tab" role="tab" aria-selected="false" data-panel="titration">Titration</button>
+    </div>
+
+    <div class="side-panel-content is-hidden" id="panel-validation" role="tabpanel">
+      <div class="validation-status-banner status-idle" id="validation-status-banner">Draw a structure to check it.</div>
+
+      <div class="properties-section-title">Structural issues</div>
+      <div id="validation-issues-list"></div>
+      <p class="side-panel-note" id="validation-issues-note" style="display:none;"></p>
+
+      <div class="properties-section-title">Model compatibility</div>
+      <table class="descriptor-table" id="validation-compat-table" style="display:none;">
+        <thead><tr><th>Model</th><th>Status</th></tr></thead>
+        <tbody id="validation-compat-body"></tbody>
+      </table>
+      <p class="side-panel-note" id="validation-compat-note">Draw a structure to see per-model compatibility.</p>
     </div>
 
     <div class="side-panel-content" id="panel-view3d" role="tabpanel">
       <div class="viewer3d-method-row">
-        <label for="gen3d-method-select">3D generation method</label>
-        <select id="gen3d-method-select" title="Classical: a hand-tuned harmonic/Lennard-Jones force field, refined by conformer search. GeoMol: a learned model that predicts a conformer directly from the 2D graph in one pass (loads a ~1MB model automatically on first use).">
-          <option value="classical" selected>Classical force field</option>
+        <label for="quick-preview-select">Quick preview</label>
+        <select id="quick-preview-select" title="A single, fast, unoptimized-or-lightly-optimized starting structure — for a quick look, not a real search. Classical: 2D-projected seed with implicit hydrogens, no force-field relaxation. GeoMol: a learned model that predicts a conformer directly from the 2D graph in one pass (loads a ~1MB model automatically on first use).">
+          <option value="classical" selected>Classical seed</option>
           <option value="geomol">GeoMol (learned)</option>
+        </select>
+        <button class="btn btn-ghost btn-small" id="quick-preview-btn">Preview</button>
+      </div>
+      <div class="viewer3d-container" id="viewer3d"></div>
+      <div class="viewer3d-toolbar">
+        <button class="btn btn-ghost btn-small" id="measure-distance-btn" disabled title="Click two atoms in the 3D view to measure the distance between them; click again to measure another pair">Measure distance</button>
+        <button class="btn btn-ghost btn-small" id="clear-measurements-btn" disabled title="Remove all drawn distance measurements">Clear measurements</button>
+      </div>
+      <p class="side-panel-note" id="measure-distance-status"></p>
+      <p class="side-panel-note" id="viewer3d-note">Draw a structure, then click "Preview" for a quick look, or set up a conformer search below.</p>
+
+      <div class="properties-section-title">Conformer search</div>
+      <div class="viewer3d-method-row">
+        <label for="conformer-model-select">Energy model</label>
+        <select id="conformer-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model. ANI-2x: a neural network potential (H/C/N/O/F/S/Cl, neutral molecules only) — each conformer gets a quick classical pre-relax first, since ANI-2x needs a chemically sane starting point.">
+          <option value="classical" selected>Classical force field</option>
+          <option value="smirnoff">OpenFF Sage (SMIRNOFF)</option>
+          <option value="ani2x">ANI-2x</option>
         </select>
       </div>
       <div class="viewer3d-toolbar">
-        <button class="btn btn-accent btn-small" id="generate-3d-btn">Generate 3D structure</button>
-        <button class="btn btn-ghost btn-small" id="optimize-3d-btn" disabled title="Refine the current 3D structure with the force field (conformer search + minimization) — can take several seconds to tens of seconds on larger or more flexible molecules">Optimize geometry&hellip;</button>
-        <button class="btn btn-ghost btn-small" id="ani2x-optimize-btn" disabled title="Optimize with the ANI-2x neural network potential — requires a neutral molecule containing only H, C, N, O, F, S, Cl. Loads the ANI-2x model automatically on first use (~50MB, one-time)">Optimize with ANI-2x&hellip;</button>
+        <button class="btn btn-accent btn-small" id="conformer-search-btn">Run conformer search&hellip;</button>
       </div>
-      <div class="viewer3d-container" id="viewer3d"></div>
       <div class="viewer3d-progress" id="viewer3d-progress" style="display:none;">
         <div class="viewer3d-progress-bar"><div class="viewer3d-progress-fill" id="viewer3d-progress-fill"></div></div>
         <p class="side-panel-note" id="viewer3d-progress-note"></p>
       </div>
-      <p class="side-panel-note" id="viewer3d-note">Draw a structure, then click "Generate 3D structure" for a quick initial layout (adds hydrogens, no optimization yet) — then "Optimize geometry…" to relax it with the force field.</p>
-      <p class="side-panel-note" id="ani2x-note"></p>
+      <p class="side-panel-note" id="conformer-search-note">Generates a diverse set of starting geometries (systematic or randomized rotatable-bond sampling), locally optimizes each with the selected energy model, then prunes to distinct low-energy conformers — CREST-inspired (real CREGEN defaults: 6 kcal/mol energy window, 0.125 Å RMSD duplicate threshold), not a literal port (CREST itself can't run in a browser — see CONFORMER_SEARCH.md).</p>
+      <table class="descriptor-table" id="conformer-list-table" style="display:none;">
+        <thead>
+          <tr><th colspan="4" class="properties-section-title">Conformer ensemble</th></tr>
+          <tr><th>#</th><th>&Delta;E (kcal/mol)</th><th>Converged</th><th></th></tr>
+        </thead>
+        <tbody id="conformer-list-body"></tbody>
+      </table>
+
+      <table class="descriptor-table" id="shape3d-table" style="display:none;">
+        <thead><tr><th colspan="2" class="properties-section-title">3D shape (non-planarity)</th></tr></thead>
+        <tbody id="shape3d-output"></tbody>
+      </table>
+      <p class="side-panel-note" id="shape3d-note">Generate a 3D structure to see plane-of-best-fit and shape descriptors.</p>
     </div>
 
     <div class="side-panel-content is-hidden" id="panel-properties" role="tabpanel">
@@ -148,6 +192,7 @@
               <td>
                 <div class="smiles-box">
                   <code id="smiles-output">&mdash;</code>
+                  <button class="smiles-toggle-link" id="smiles-toggle-btn" type="button" style="display:none;">[show]</button>
                   <button class="btn btn-ghost btn-small" id="copy-smiles-btn" disabled>Copy</button>
                 </div>
               </td>
@@ -161,37 +206,64 @@
           <thead><tr><th colspan="2" class="properties-section-title">2D properties (RDKit)</th></tr></thead>
           <tbody id="descriptor-table"></tbody>
         </table>
+        <input type="text" id="export-title-input" class="export-title-input" placeholder="Title (default: molecular formula) — used as report title + filename" autocomplete="off" spellcheck="false">
         <div class="export-toolbar">
           <button class="btn btn-ghost btn-small" id="copy-properties-btn" disabled>Copy all</button>
           <button class="btn btn-ghost btn-small" id="download-csv-btn" disabled>CSV</button>
           <button class="btn btn-ghost btn-small" id="download-xlsx-btn" disabled>XLSX</button>
           <button class="btn btn-ghost btn-small" id="download-pdf-btn" disabled>PDF</button>
+          <button class="btn btn-ghost btn-small" id="download-sdf-btn" disabled>SDF</button>
         </div>
         <p class="side-panel-note" id="export-status"></p>
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">Property radar</h3>
-        <div id="radar-chart-container"></div>
+        <h3 class="properties-section-title">Drug likeness</h3>
+        <table class="descriptor-table" id="druglikeness-filters-table" style="display:none;">
+          <thead><tr><th colspan="2" class="properties-section-title">Rule-based filters</th></tr></thead>
+          <tbody id="druglikeness-filters-output"></tbody>
+        </table>
+        <table class="descriptor-table" id="druglikeness-percentiles-table" style="display:none;">
+          <thead><tr><th colspan="2" class="properties-section-title">vs. FDA-approved drugs (percentile)</th></tr></thead>
+          <tbody id="druglikeness-percentiles-output"></tbody>
+        </table>
+        <p class="side-panel-note" id="druglikeness-note">Draw a structure to see drug-likeness filters.</p>
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">Mass spectrometry</h3>
-        <button class="btn btn-ghost btn-small" id="hrms-btn" disabled>Exact mass / HRMS adducts&hellip;</button>
+        <h3 class="properties-section-title">General properties</h3>
+        <p class="side-panel-note">Broadly-applicable physicochemical and electronic properties.</p>
+        <div id="model-registry-list-general" class="model-registry-list"></div>
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">Structural alerts</h3>
-        <button class="btn btn-ghost btn-small" id="smarts-filters-btn" disabled>Check medchem filters (PAINS, BMS, etc.)&hellip;</button>
+        <h3 class="properties-section-title">Characterization</h3>
+        <p class="side-panel-note">The classic bench toolkit for identifying/confirming a compound: melting point, UV-Vis absorption (via HOMO-LUMO gap), and NMR. Also listed under their other sections below -- intentionally redundant, not a typo.</p>
+        <div id="model-registry-list-characterization" class="model-registry-list"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Environmental &amp; analytical</h3>
+        <p class="side-panel-note">Physical characterization and spectroscopic/analytical identification.</p>
+        <div id="model-registry-list-environmental-analytical" class="model-registry-list"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Medicinal chemistry</h3>
+        <p class="side-panel-note">Drug-discovery-relevant reactivity, ionization, and metabolic stability.</p>
+        <div id="model-registry-list-medicinal" class="model-registry-list"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">3D structure tools</h3>
+        <p class="side-panel-note">Conformer generation/optimization -- also reachable from the 3D view tab.</p>
+        <div id="model-registry-list-structure-tools" class="model-registry-list"></div>
       </div>
 
       <div class="properties-section">
         <h3 class="properties-section-title">GNN prediction (D-MPNN)</h3>
-        <p class="side-panel-note gnn-caveat" id="gnn-caveat">Demo weights are random and untrained — numbers below are a plumbing test, not real chemistry, until you load a model trained elsewhere.</p>
         <p class="side-panel-note compatibility-warning" id="compatibility-warning" style="display:none;"></p>
         <p class="side-panel-note compatibility-warning" id="gnn-prediction-warnings" style="display:none;"></p>
-
-        <div id="model-registry-list" class="model-registry-list"></div>
         <p class="side-panel-note" id="registry-status"></p>
 
         <div class="gnn-controls">
@@ -210,6 +282,14 @@
         </table>
         <p class="side-panel-note" id="gnn-empty-note">Draw a structure, then click "Run prediction".</p>
 
+        <div class="properties-row" id="sasa-controls-row">
+          <span class="properties-label">Steric accessibility</span>
+          <div class="heatmap-controls">
+            <button class="btn btn-ghost btn-small" id="compute-sasa-btn">Compute (SASA)</button>
+          </div>
+        </div>
+        <p class="side-panel-note" id="sasa-status"></p>
+
         <div class="properties-row" id="gnn-atom-heatmap-row" style="display:none;">
           <span class="properties-label">Atom heatmap</span>
           <div class="heatmap-controls">
@@ -222,6 +302,89 @@
           </div>
         </div>
         <div id="heatmap-legend-container"></div>
+
+        <div class="properties-row" id="gnn-bond-heatmap-row" style="display:none;">
+          <span class="properties-label">Bond heatmap</span>
+          <div class="heatmap-controls">
+            <select id="bond-heatmap-property-select"></select>
+            <label class="heatmap-text-toggle">
+              <input type="checkbox" id="bond-heatmap-show-text">
+              Show values
+            </label>
+            <button class="btn btn-ghost btn-small" id="clear-bond-heatmap-btn">Clear</button>
+          </div>
+        </div>
+        <div id="bond-heatmap-legend-container"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Implicit solvation (GB/SA)</h3>
+        <p class="side-panel-note">Generalized Born (HCT) electrostatics + a SASA-based nonpolar term. Needs MBIS partial charges (load &amp; run "MBIS partial charges" above) and an already-optimized 3D conformer (3D view tab). A real, from-scratch physics calculation, not a trained/fit model &mdash; see this section's info note for what's simplified.</p>
+        <label class="heatmap-text-toggle" id="solvent-enable-label">
+          <input type="checkbox" id="solvent-enable-checkbox">
+          Enable implicit solvent
+        </label>
+        <div id="solvent-controls" style="display:none;">
+          <div class="viewer3d-method-row">
+            <label for="solvent-select">Solvent</label>
+            <select id="solvent-select"></select>
+          </div>
+          <div class="viewer3d-method-row" id="solvent-custom-row" style="display:none;">
+            <label for="solvent-custom-eps">Dielectric constant (&epsilon;)</label>
+            <input type="number" id="solvent-custom-eps" min="1" step="0.1" value="78.5">
+          </div>
+          <button class="btn btn-accent btn-small" id="compute-solvent-btn">Compute solvation energy</button>
+          <p class="side-panel-note" id="solvent-status"></p>
+          <table class="descriptor-table" id="solvent-output-table" style="display:none;">
+            <tbody id="solvent-output"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Property radar</h3>
+        <div id="radar-chart-container"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Mass spectrometry</h3>
+        <button class="btn btn-ghost btn-small" id="hrms-btn" disabled>Exact mass / HRMS adducts&hellip;</button>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Structural alerts</h3>
+        <button class="btn btn-ghost btn-small" id="smarts-filters-btn" disabled>Check medchem filters (PAINS, BMS, etc.)&hellip;</button>
+      </div>
+    </div>
+
+    <div class="side-panel-content is-hidden" id="panel-titration" role="tabpanel">
+      <div class="properties-section">
+        <h3 class="properties-section-title">Aqueous pKa &amp; titration curve <button type="button" class="property-info-btn" id="titration-info-btn" aria-label="About this property">[?]</button></h3>
+        <p class="side-panel-note">Detects ionizable groups by SMARTS pattern matching, looks up each site's pKa from a trained model, then computes a titration curve treating sites as independent (no site-site electrostatic coupling) — a standard, documented simplifying assumption, not a hidden one.</p>
+        <button class="btn btn-accent btn-small" id="compute-titration-btn">Compute titration curve</button>
+        <p class="side-panel-note" id="titration-status"></p>
+      </div>
+
+      <div class="properties-section" id="titration-sites-section" style="display:none;">
+        <table class="descriptor-table" id="titration-sites-table">
+          <thead><tr><th colspan="3" class="properties-section-title">Detected ionizable sites</th></tr></thead>
+          <tbody id="titration-sites-output"></tbody>
+        </table>
+      </div>
+
+      <div class="properties-section" id="titration-curve-section" style="display:none;">
+        <h3 class="properties-section-title">Titration curve</h3>
+        <div id="titration-chart-container"></div>
+        <p class="side-panel-note" id="titration-pi-note"></p>
+      </div>
+
+      <div class="properties-section" id="titration-microstates-section" style="display:none;">
+        <h3 class="properties-section-title">Dominant microstate by pH</h3>
+        <p class="side-panel-note">Of every possible combination of protonated/deprotonated sites (independent-site model, same assumption as the curve above), the species that's actually the majority population at each pH -- most of the 2^N possible combinations are never the majority anywhere and are omitted.</p>
+        <table class="descriptor-table" id="titration-microstates-table">
+          <thead><tr><th>Structure</th><th>pH range</th><th>Net charge</th><th>Protonation state</th></tr></thead>
+          <tbody id="titration-microstates-output"></tbody>
+        </table>
       </div>
     </div>
   </aside>
@@ -249,7 +412,25 @@
     <span class="status-label">WebGPU</span>
     <span class="status-state" id="status-webgpu">checking&hellip;</span>
   </div>
+  <button class="status-item status-log-toggle" id="log-toggle-btn" title="Show/hide the event log">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span class="status-label">Log</span>
+    <span class="status-state" id="log-toggle-summary">0 entries</span>
+  </button>
 </footer>
+
+<div class="log-console" id="log-console" style="display:none;">
+  <div class="log-console-header">
+    <span class="log-console-title">Event log</span>
+    <span class="log-console-summary" id="log-console-summary">0 entries</span>
+    <div class="log-console-actions">
+      <button class="btn btn-ghost btn-small" id="log-clear-btn">Clear</button>
+      <button class="btn btn-ghost btn-small" id="log-download-btn">Download</button>
+      <button class="btn btn-ghost btn-small" id="log-close-btn">Close</button>
+    </div>
+  </div>
+  <div class="log-console-body" id="log-console-body"></div>
+</div>
 
 <!-- Third-party engines, loaded from CDN as UMD globals -->
 <script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
@@ -260,6 +441,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
 <!-- App code -->
+<script src="js/logger.js"></script>
 <script src="js/lib-loader.js"></script>
 <script src="js/model-config.js"></script>
 <script src="js/molecule.js"></script>
@@ -286,14 +468,48 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="druglikeness-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="druglikeness-modal-title">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="druglikeness-modal-title">Filter criteria</h3>
+      <button class="modal-close-btn" id="druglikeness-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="druglikeness-modal-body"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="microstate-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="microstate-modal-title">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="microstate-modal-title">Microstate structure</h3>
+      <button class="modal-close-btn" id="microstate-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="microstate-modal-body"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="property-info-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="property-info-modal-title">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <h3 id="property-info-modal-title">About this property</h3>
+      <button class="modal-close-btn" id="property-info-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="property-info-modal-body"></div>
+  </div>
+</div>
+
 <script src="js/qed.js"></script>
 <script src="js/chemistry.js"></script>
+<script src="js/druglikeness.js"></script>
 <script src="js/radar-chart.js"></script>
 <script src="js/hrms.js"></script>
 <script src="js/smarts-filters.js"></script>
 <script src="js/vec3.js"></script>
 <script src="js/elements.js"></script>
 <script src="js/embed3d.js"></script>
+<script src="js/steric-accessibility.js"></script>
+<script src="js/implicit-solvent.js"></script>
+<script src="js/molecular-shape.js"></script>
 <script src="js/viewer3d.js"></script>
 <script src="js/atom-features.js"></script>
 <script src="js/bond-features.js"></script>
@@ -309,14 +525,22 @@
 <script src="js/model-registry.js"></script>
 <script src="js/nagl-features.js"></script>
 <script src="js/nagl-model.js"></script>
+<script src="js/openff-forcefield.js"></script>
 <script src="js/pka-descriptor.js"></script>
 <script src="js/pka-model.js"></script>
+<script src="js/pka-microstates.js"></script>
+<script src="js/pka-titration.js"></script>
+<script src="js/titration-chart.js"></script>
+<script src="js/convergence-chart.js"></script>
 <script src="js/ani2x-features.js"></script>
 <script src="js/ani2x-model.js"></script>
 <script src="js/geomol-model.js"></script>
 <script src="js/geomol-assembly.js"></script>
 <script src="js/gnn-inference.js"></script>
+<script src="js/conformer-search.js"></script>
+<script src="js/structure-validation.js"></script>
 <script src="js/atom-heatmap.js"></script>
+<script src="js/bond-heatmap.js"></script>
 <script src="js/export.js"></script>
 <script src="js/render.js"></script>
 <script src="js/tools.js"></script>

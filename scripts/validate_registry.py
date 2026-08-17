@@ -27,6 +27,7 @@ from pathlib import Path
 REQUIRED_FIELDS = ["id", "displayName", "propertyKey", "files"]
 VALID_TASK_TYPES = {"regression", "classification"}
 VALID_ENGINES = {"chemprop", "nagl", "ani2x", "geomol", "pka"}
+VALID_CATEGORIES = {"general", "environmental-analytical", "medicinal", "structure-tools", "characterization"}
 
 
 def main():
@@ -62,6 +63,27 @@ def main():
 
         if engine not in VALID_ENGINES:
             errors.append(f"[{label}] engine must be one of {VALID_ENGINES}, got {engine!r}")
+
+        # Not in REQUIRED_FIELDS (older entries could in principle ship
+        # without one and still be usable), but a typo'd value is a real
+        # bug -- js/app.js's renderRegistryList only has containers for
+        # this exact set of categories, so an unrecognized value would
+        # silently make that model vanish from the Properties panel
+        # entirely rather than erroring loudly. A list, not a single
+        # value, since a model is allowed to appear in more than one
+        # section on purpose (e.g. melting point shows under both
+        # "Environmental & analytical" and "Characterization" -- the
+        # user explicitly wants that redundancy, not a single home per
+        # model).
+        categories = entry.get("categories")
+        if categories is None:
+            warnings.append(f"[{label}] no 'categories' set -- won't appear in any Properties-panel section")
+        elif not isinstance(categories, list) or not categories:
+            errors.append(f"[{label}] 'categories' must be a non-empty list, got {categories!r}")
+        else:
+            bad = [c for c in categories if c not in VALID_CATEGORIES]
+            if bad:
+                errors.append(f"[{label}] categories contains invalid value(s) {bad!r} -- must be from {VALID_CATEGORIES}")
 
         entry_id = entry.get("id")
         if entry_id:
@@ -119,15 +141,19 @@ def main():
                             f"[{label}] registry says outputLevel={registry_output_level!r} but "
                             f"{manifest_path} says outputLevel={tech_output_level!r}"
                         )
-                    if tech_output_level == "atom":
-                        # graphType/applicableElement only matter for atom-level
-                        # models -- graphType='explicit-h' needs
+                    if tech_output_level in ("atom", "bond"):
+                        # graphType matters for both atom- and bond-level models --
+                        # graphType='explicit-h' needs
                         # chemprop-features-explicit-h.js's graph builder
                         # (chemprop-model.js), not just the normal heavy-atom one.
                         graph_type = tech_manifest.get("graphType", "heavy")
                         if graph_type not in ("heavy", "explicit-h"):
                             errors.append(f"[{label}] manifest graphType={graph_type!r}, expected 'heavy' or 'explicit-h'")
-                        if not tech_manifest.get("applicableElement"):
+                        if tech_output_level == "bond" and graph_type != "explicit-h":
+                            errors.append(f"[{label}] bond-level manifest has graphType={graph_type!r} -- "
+                                          f"a bond-level checkpoint always needs 'explicit-h' (see "
+                                          f"convert_chemprop_checkpoint.py's own validation at conversion time).")
+                        if tech_output_level == "atom" and not tech_manifest.get("applicableElement"):
                             warnings.append(
                                 f"[{label}] atom-level chemprop model has no 'applicableElement' set -- "
                                 f"it will annotate every atom regardless of element, which is only correct "

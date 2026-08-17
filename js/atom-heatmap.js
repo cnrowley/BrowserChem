@@ -43,6 +43,19 @@ window.CC = window.CC || {};
     return /charge/i.test(name || '');
   }
 
+  // kcal/mol (bde/bdfe) and pKa values are reported to 1 decimal place
+  // everywhere in the UI (tooltips, labels, legends, export) -- these are
+  // inherently low-precision predictions (chemprop MAE ~0.6-1 pKa unit /
+  // ~0.6 kcal/mol), so a 2nd/3rd decimal is false precision, not signal.
+  // Other property types (charges, NMR shifts, SASA, QM9 properties) keep
+  // their existing precision. `fallback` is what non-matching properties
+  // (or a missing/unrecognized propertyName) get.
+  function propertyDecimals(name, fallback) {
+    if (/^pka/i.test(name || '') || /^bde$|^bdfe$/i.test(name || '')) return 1;
+    return fallback;
+  }
+  CC.propertyDecimals = propertyDecimals; // shared with bond-heatmap.js
+
   // Diverging colormap, t in [0,1], t=0.5 is the neutral midpoint.
   // `reversed`: false = low->blue/high->red (generic numeric property);
   // true = low->red/high->blue (ESP-map convention, for charges).
@@ -60,6 +73,7 @@ window.CC = window.CC || {};
     }
     return 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
   }
+  CC.heatColor = heatColor; // shared with bond-heatmap.js, so both heatmaps use one colormap
 
   /**
    * atomValues: Map or plain object of atomId -> number.
@@ -83,6 +97,7 @@ window.CC = window.CC || {};
     if (values.length === 0) return null;
 
     const chargeLike = isChargeLikeProperty(propertyName);
+    const decimals = propertyDecimals(propertyName, 2);
     const rawMin = Math.min.apply(null, values);
     const rawMax = Math.max.apply(null, values);
 
@@ -115,7 +130,7 @@ window.CC = window.CC || {};
       circle.setAttribute('class', 'heatmap-atom');
 
       const title = document.createElementNS(SVG_NS, 'title');
-      title.textContent = atom.element + ': ' + value.toFixed(2);
+      title.textContent = atom.element + ': ' + value.toFixed(decimals);
       circle.appendChild(title);
 
       layer.appendChild(circle);
@@ -125,7 +140,7 @@ window.CC = window.CC || {};
     // but after the background so it's actually visible.
     svg.insertBefore(layer, svg.firstChild);
 
-    return { min: min, max: max, zeroCentered: chargeLike, reversed: chargeLike };
+    return { min: min, max: max, zeroCentered: chargeLike, reversed: chargeLike, decimals: decimals };
   };
 
   CC.clearAtomHeatmap = function (svg) {
@@ -147,10 +162,10 @@ window.CC = window.CC || {};
    * overlap bonds pointing inward -- a fixed offset would put labels on
    * top of bonds for atoms on the left/top of a structure.
    */
-  CC.renderAtomValueLabels = function (svg, molecule, atomValues, decimals) {
+  CC.renderAtomValueLabels = function (svg, molecule, atomValues, propertyName, decimals) {
     CC.clearAtomValueLabels(svg);
     if (!atomValues || !molecule || molecule.atoms.size === 0) return;
-    decimals = decimals === undefined ? 2 : decimals;
+    decimals = decimals === undefined ? propertyDecimals(propertyName, 2) : decimals;
 
     const atoms = Array.from(molecule.atoms.values());
     const centroid = atoms.reduce(function (acc, a) {
@@ -212,12 +227,13 @@ window.CC = window.CC || {};
 
     const labelsDiv = document.createElement('div');
     labelsDiv.className = 'heatmap-legend-labels';
+    const legendDecimals = scale.decimals === undefined ? 2 : scale.decimals;
     const lowLabel = document.createElement('span');
-    lowLabel.textContent = scale.min.toFixed(2);
+    lowLabel.textContent = scale.min.toFixed(legendDecimals);
     const midLabel = document.createElement('span');
-    midLabel.textContent = scale.zeroCentered ? '0' : ((scale.min + scale.max) / 2).toFixed(2);
+    midLabel.textContent = scale.zeroCentered ? '0' : ((scale.min + scale.max) / 2).toFixed(legendDecimals);
     const highLabel = document.createElement('span');
-    highLabel.textContent = scale.max.toFixed(2);
+    highLabel.textContent = scale.max.toFixed(legendDecimals);
     labelsDiv.appendChild(lowLabel);
     labelsDiv.appendChild(midLabel);
     labelsDiv.appendChild(highLabel);

@@ -32,6 +32,26 @@ window.CC = window.CC || {};
     return padLeft(num.toFixed(decimals), width);
   }
 
+  // The 12 fixed-width fields after an atom's element symbol, per the
+  // V2000 spec: mass-diff(2), charge(3), stereo-parity(3), h-count(3),
+  // stereo-care(3), valence(3), H0-designator(3), unused(3), unused(3),
+  // atom-map(3), inversion-flag(3), exact-change(3) -- 2 + 3*11 = 35
+  // characters total. A real, previously-shipped bug here (one field
+  // short -- "0  0  0  ..." repeated 12 times, i.e. treating the first
+  // field as 3 chars wide like the rest instead of 2) silently shifted
+  // every subsequent column left by one when RDKit re-parsed a molblock
+  // this app had written: verified directly by diffing against a real
+  // RDKit-written reference molblock for the same molecule, byte for
+  // byte, after RDKit's get_smiles() on the re-parsed result started
+  // showing spurious ":0" atom-map annotations on every atom (harmless
+  // to valence/charge perception for ordinary atoms, since misreading
+  // one all-zero field as another is invisible -- but it broke this
+  // app's own downstream fragment-SMILES comparisons, e.g.
+  // structure-validation.js's counterion recognition, and would
+  // misalign a real non-zero field like the special zero-valence "15"
+  // sentinel RDKit writes for bare ions).
+  const ATOM_BLOCK_TAIL_DEFAULT = ' 0' + '  0'.repeat(11);
+
   CC.moleculeToMolblock = function (molecule, name) {
     const atoms = Array.from(molecule.atoms.values());
     const bonds = Array.from(molecule.bonds.values());
@@ -54,7 +74,7 @@ window.CC = window.CC || {};
         fixed(-a.y / SCALE, 10, 4) +
         fixed(0, 10, 4) +
         ' ' + padRight(a.element, 3) +
-        '0  0  0  0  0  0  0  0  0  0  0  0'
+        ATOM_BLOCK_TAIL_DEFAULT
       );
     });
 
@@ -95,6 +115,15 @@ window.CC = window.CC || {};
       lines.push(line);
     }
 
+    // M RAD (radical) lines -- one atom per M RAD entry (not chunked
+    // 8-per-line like M CHG above) matches real MDL writers' own
+    // convention closely enough for round-tripping; radicals are rare
+    // enough in practice that this app never needs to write many.
+    atoms.forEach(function (a) {
+      if (a.radical) lines.push('M  RAD  1' + padLeft(idToIndex.get(a.id), 4) + padLeft(a.radical, 4));
+      if (a.isotope) lines.push('M  ISO  1' + padLeft(idToIndex.get(a.id), 4) + padLeft(a.isotope, 4));
+    });
+
     lines.push('M  END');
     return lines.join('\n') + '\n';
   };
@@ -130,7 +159,7 @@ window.CC = window.CC || {};
         fixed(a.y, 10, 4) +
         fixed(a.z, 10, 4) +
         ' ' + padRight(a.element, 3) +
-        '0  0  0  0  0  0  0  0  0  0  0  0'
+        ATOM_BLOCK_TAIL_DEFAULT
       );
     });
 
@@ -195,6 +224,26 @@ window.CC = window.CC || {};
           const atomId = indexToId[idx - 1];
           const atom = atomId && molecule.atoms.get(atomId);
           if (atom) atom.charge = chg;
+        }
+      } else if (line.indexOf('M  RAD') === 0) {
+        const count = parseInt(line.slice(6, 9), 10) || 0;
+        for (let k = 0; k < count; k++) {
+          const start = 9 + k * 8;
+          const idx = parseInt(line.slice(start, start + 4), 10);
+          const rad = parseInt(line.slice(start + 4, start + 8), 10);
+          const atomId = indexToId[idx - 1];
+          const atom = atomId && molecule.atoms.get(atomId);
+          if (atom) atom.radical = rad;
+        }
+      } else if (line.indexOf('M  ISO') === 0) {
+        const count = parseInt(line.slice(6, 9), 10) || 0;
+        for (let k = 0; k < count; k++) {
+          const start = 9 + k * 8;
+          const idx = parseInt(line.slice(start, start + 4), 10);
+          const iso = parseInt(line.slice(start + 4, start + 8), 10);
+          const atomId = indexToId[idx - 1];
+          const atom = atomId && molecule.atoms.get(atomId);
+          if (atom) atom.isotope = iso;
         }
       }
     }

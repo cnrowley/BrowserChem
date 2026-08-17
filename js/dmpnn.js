@@ -21,6 +21,15 @@
  *     h[e]_t   = ReLU(h0raw[e] + W_h . msg[e])                        (no bias)
  *   atomEmb[v] = ReLU(W_o . [atomFeat[v], sum_{e: dst(e)=v} h[e]_(T-1)] + bias_o)
  *
+ * A bond-level checkpoint (BDE) additionally needs a per-directed-edge
+ * embedding Chemprop calls edge_finalize (confirmed directly from
+ * chemprop/nn/message_passing/mol_atom_bond.py, MABBondMessagePassing's
+ * base class): edgeEmb[e] = ReLU(W_eo . [bondFeat[e], h[e]_(T-1)] + bias_eo),
+ * using the SAME final h[e] the atom-embedding step reads (no extra
+ * message-passing round). Only computed when weights.Weo is supplied —
+ * every existing molecule-/atom-level checkpoint's manifest has no W_eo
+ * tensor at all, since only a bond-level head ever consumes it.
+ *
  * Two things worth flagging since they're easy to get subtly wrong:
  *   1. The residual added back in at every step is the *unactivated*
  *      linear projection h0raw, not ReLU(h0raw) — only the running
@@ -106,11 +115,20 @@ CC.GNN = window.CC.GNN || {};
 
   /**
    * Run the D-MPNN forward pass over a graph (from graph-builder.js).
-   * Returns { atomEmbeddings: number[][] }, one embedding vector per atom,
-   * in the same order as graph.atomFeatures.
+   * Returns { atomEmbeddings: number[][], edgeEmbeddings: number[][] | null },
+   * one embedding per atom (matching graph.atomFeatures order) and,
+   * only when weights.Weo is supplied, one per directed edge (matching
+   * graph.edgeFeatures order) — null otherwise, so existing
+   * molecule-/atom-level callers see no change in shape.
    *
-   * `weights` needs: hiddenSize, Wi/WiBias, Wh/WhBias, Wo/WoBias — see
-   * createDemoWeights() above for the shape convention (*Bias may be null).
+   * `weights` needs: hiddenSize, Wi/WiBias, Wh/WhBias — see
+   * createDemoWeights() above for the shape convention (*Bias may be
+   * null). Wo/WoBias and Weo/WeoBias are each independently optional: a
+   * bond-level (BDE) checkpoint has no atom-output layer at all
+   * (Chemprop never builds message_passing.W_vo when there's no
+   * mol_predictor/atom_predictor attached), so Wo may be absent and
+   * atomEmbeddings comes back null in that case; conversely Weo is only
+   * present for a bond-level checkpoint.
    */
   CC.GNN.runDMPNN = function (graph, weights, opts) {
     opts = opts || {};
@@ -122,9 +140,10 @@ CC.GNN = window.CC.GNN || {};
       // No bonds at all (single atom, e.g. methane drawn as a lone C):
       // atom embedding falls back to just the atom-feature projection.
       return {
-        atomEmbeddings: graph.atomFeatures.map(function (feat) {
+        atomEmbeddings: weights.Wo ? graph.atomFeatures.map(function (feat) {
           return relu(matVecBias(weights.Wo, weights.WoBias, feat.concat(new Array(hiddenSize).fill(0))));
-        }),
+        }) : null,
+        edgeEmbeddings: weights.Weo ? [] : null,
       };
     }
 
@@ -153,14 +172,26 @@ CC.GNN = window.CC.GNN || {};
       h = hNext;
     }
 
-    const atomEmbeddings = [];
-    for (let v = 0; v < graph.numAtoms; v++) {
-      const incoming = graph.incomingEdgesByAtom[v].map(function (e) { return h[e]; });
-      const message = sumVectors(incoming, hiddenSize);
-      const input = graph.atomFeatures[v].concat(message);
-      atomEmbeddings.push(relu(matVecBias(weights.Wo, weights.WoBias, input)));
+    let atomEmbeddings = null;
+    if (weights.Wo) {
+      atomEmbeddings = [];
+      for (let v = 0; v < graph.numAtoms; v++) {
+        const incoming = graph.incomingEdgesByAtom[v].map(function (e) { return h[e]; });
+        const message = sumVectors(incoming, hiddenSize);
+        const input = graph.atomFeatures[v].concat(message);
+        atomEmbeddings.push(relu(matVecBias(weights.Wo, weights.WoBias, input)));
+      }
     }
 
-    return { atomEmbeddings: atomEmbeddings };
+    let edgeEmbeddings = null;
+    if (weights.Weo) {
+      edgeEmbeddings = new Array(numEdges);
+      for (let e = 0; e < numEdges; e++) {
+        const input = graph.edgeFeatures[e].concat(h[e]);
+        edgeEmbeddings[e] = relu(matVecBias(weights.Weo, weights.WeoBias, input));
+      }
+    }
+
+    return { atomEmbeddings: atomEmbeddings, edgeEmbeddings: edgeEmbeddings };
   };
 })();

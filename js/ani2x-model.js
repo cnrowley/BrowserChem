@@ -229,27 +229,47 @@ CC.ANI = window.CC.ANI || {};
    * that staging exists to avoid, and this starts from whatever geometry
    * is already on screen (classically optimized or not).
    *
-   * Returns { atoms, bonds, energy, converged } -- the same shape
+   * This optimizer is genuinely slow per iteration (each step needs two
+   * full ANI forward+backward passes -- one for the gradient, one to
+   * evaluate the trial step), confirmed directly: on a 15-heavy-atom
+   * molecule it was still meaningfully improving (gradNorm ~0.01, nowhere
+   * near the 1e-5 convergence target) after a full minute, at roughly
+   * 3-5 iterations/second. A single call's time/iteration budget alone
+   * can't responsibly cover real convergence without either a long
+   * blocking wait or a fragile huge default, so this is designed to be
+   * CALLED AGAIN to keep going instead: pass opts.iterationOffset (the
+   * total iteration count so far) and opts.initialStep (the previous
+   * call's returned finalStep) to continue the SAME trajectory -- both
+   * the reported iteration numbers and the step-size tuning pick up
+   * where the last call left off rather than resetting. See app.js's
+   * "Optimize further" button for the actual resume wiring.
+   *
+   * opts.onProgress now also reports gradNorm (not just energy) every 5
+   * iterations, for a live convergence chart -- see convergence-chart.js.
+   *
+   * Returns { atoms, bonds, energy, gradNorm, exitReason, converged,
+   * finalStep } -- finalStep specifically for the "optimize further"
+   * resume path above; everything else is the same shape
    * CC.render3D/app.js's renderResult already know how to consume.
    */
   CC.ANI.optimizeGeometry = function (atoms3d, bonds3d, id, opts) {
     opts = opts || {};
     const maxIterations = opts.maxIterations || 300;
-    const deadline = opts.deadline || (performance.now() + (opts.timeBudgetMs || 20000));
+    const deadline = opts.deadline || (performance.now() + (opts.timeBudgetMs || 30000));
+    const iterationOffset = opts.iterationOffset || 0;
 
     let positions = atoms3d.map(function (a) { return { element: a.element, x: a.x, y: a.y, z: a.z }; });
     let energy = null;
-    let step = 0.02;
+    let step = opts.initialStep || 0.02;
     let exitReason = 'iteration-limit';
     let lastGradNorm = Infinity;
 
+    let iterationsRun = 0;
+
     async function run() {
       for (let iter = 0; iter < maxIterations; iter++) {
+        iterationsRun = iter + 1;
         if (deadline && performance.now() > deadline) { exitReason = 'deadline'; break; }
-        if (iter > 0 && iter % 5 === 0) {
-          await yieldToUI();
-          if (opts.onProgress) opts.onProgress({ iteration: iter, maxIterations: maxIterations, energy: energy });
-        }
 
         const result = CC.ANI.energyAndForces(positions, id);
         if (energy === null) energy = result.energy;
@@ -261,6 +281,20 @@ CC.ANI = window.CC.ANI || {};
         }
         gradNorm = Math.sqrt(gradNorm);
         lastGradNorm = gradNorm;
+
+        if (iter % 5 === 0) {
+          await yieldToUI();
+          if (opts.onProgress) {
+            opts.onProgress({
+              iteration: iterationOffset + iter,
+              maxIterations: iterationOffset + maxIterations,
+              energy: energy,
+              gradNorm: gradNorm,
+              step: step,
+            });
+          }
+        }
+
         if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
         const trial = positions.map(function (p, i) {
@@ -288,6 +322,8 @@ CC.ANI = window.CC.ANI || {};
         gradNorm: lastGradNorm,
         exitReason: exitReason,
         converged: exitReason === 'gradient-converged' || exitReason === 'energy-plateau',
+        finalStep: step,
+        iterationsRun: iterationsRun, // this call's own iteration count -- add to iterationOffset for the next resumed call
       };
     }
 

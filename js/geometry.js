@@ -26,6 +26,33 @@ CC.distance = function (p1, p2) {
   return Math.hypot(p2.x - p1.x, p2.y - p1.y);
 };
 
+// Radius (molecule-space units, same space as atom coordinates) used for
+// both the hover-highlight circle and chain-tool ring-closing snapping --
+// one shared notion of "close enough to this atom to interact with it",
+// matching the existing atom-hit circle's r=12 with a little extra
+// forgiveness since this is a proximity search, not an exact DOM hit.
+CC.HOVER_RADIUS = 14;
+
+/**
+ * Nearest atom to (x, y) within `radius` (molecule-space units), or null
+ * if none qualifies. `excludeId`, if given, is skipped -- used by the
+ * chain tool so a drag's own start atom never counts as a ring-closing
+ * snap target.
+ */
+CC.nearestAtomWithinRadius = function (molecule, x, y, radius, excludeId) {
+  let bestId = null;
+  let bestDist = radius;
+  molecule.atoms.forEach(function (atom, id) {
+    if (id === excludeId) return;
+    const d = CC.distance(atom, { x: x, y: y });
+    if (d <= bestDist) {
+      bestDist = d;
+      bestId = id;
+    }
+  });
+  return bestId;
+};
+
 CC.DEFAULT_VIEWBOX = { x: 0, y: 0, width: 600, height: 440 };
 
 /**
@@ -111,6 +138,52 @@ CC.zoomViewBoxAt = function (svg, clientX, clientY, factor) {
   const newX = focal.x - (focal.x - vb.x) * (newWidth / vb.width);
   const newY = focal.y - (focal.y - vb.y) * (newHeight / vb.height);
   CC.setViewBox(svg, { x: newX, y: newY, width: newWidth, height: newHeight });
+};
+
+/**
+ * Given the angles (radians) of bonds/directions already occupying a
+ * point, returns the angle that bisects the largest open gap between
+ * them -- the natural "next bond direction" a chemistry drawing tool
+ * picks so a new bond or ring doesn't crowd/overlap what's already
+ * there. One existing bond at angle θ -> returns θ+π (directly
+ * opposite, the only open direction). Two existing bonds -> bisects
+ * whichever of the two remaining gaps is wider. `preferredAngle`
+ * (typically wherever the pointer currently is) only matters as a
+ * tie-breaker between two or more gaps of the same (or very nearly the
+ * same) size -- whichever gap's own bisector is angularly closest to it
+ * wins, e.g. two existing bonds exactly 180° apart leaves two equally
+ * "best" 180° gaps, and the pointer picks which side. Returns
+ * `preferredAngle` unchanged when `existingAngles` is empty -- nothing
+ * to avoid, so plain freehand placement is correct.
+ */
+CC.bestOpenDirection = function (existingAngles, preferredAngle) {
+  if (!existingAngles || existingAngles.length === 0) return preferredAngle;
+
+  const TWO_PI = Math.PI * 2;
+  function normalize(a) { const m = a % TWO_PI; return m < 0 ? m + TWO_PI : m; }
+  function angularDist(a, b) {
+    const d = Math.abs(normalize(a) - normalize(b));
+    return Math.min(d, TWO_PI - d);
+  }
+
+  const sorted = existingAngles.map(normalize).sort(function (a, b) { return a - b; });
+  const gaps = sorted.map(function (a, i) {
+    const next = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + TWO_PI;
+    return { bisector: (a + next) / 2, size: next - a };
+  });
+
+  let maxSize = 0;
+  gaps.forEach(function (g) { if (g.size > maxSize) maxSize = g.size; });
+  const EPS = 1e-6;
+  const candidates = gaps.filter(function (g) { return maxSize - g.size < EPS; });
+
+  let best = candidates[0];
+  let bestDist = angularDist(best.bisector, preferredAngle);
+  for (let i = 1; i < candidates.length; i++) {
+    const d = angularDist(candidates[i].bisector, preferredAngle);
+    if (d < bestDist) { best = candidates[i]; bestDist = d; }
+  }
+  return normalize(best.bisector);
 };
 
 /**

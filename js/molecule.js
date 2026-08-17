@@ -26,6 +26,18 @@ CC.Molecule = class Molecule {
       x: x,
       y: y,
       charge: opts.charge || 0,
+      // MDL "RAD" value (0=none, 1=singlet, 2=doublet, 3=triplet) -- not
+      // settable from this app's own drawing tools (no radical button in
+      // the atom palette), but real molfile/SMILES imports can carry one,
+      // and losing it silently on that import would make structure-
+      // validation.js's radical check unable to ever fire (see its
+      // header). Stored/round-tripped as-is, not interpreted here.
+      radical: opts.radical || 0,
+      // Explicit isotope mass number (e.g. 13 for carbon-13), 0 = natural
+      // abundance/unspecified -- same round-tripping rationale as
+      // `radical` above (RDKit encodes this as an "M  ISO" molfile
+      // property line, not the legacy atom-block mass-diff field).
+      isotope: opts.isotope || 0,
     };
     this.atoms.set(id, atom);
     return atom;

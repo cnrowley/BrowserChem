@@ -20,8 +20,11 @@
   let validityDot = null;
   let validityText = null;
   let smilesOutput = null;
+  let smilesToggleBtn = null;
   let copySmilesBtn = null;
   let currentSmiles = '';
+  let smilesExpanded = false;
+  const SMILES_TRUNCATE_AT = 40;
   let currentDescriptors = null;
   let currentValidityText = 'no structure yet';
   let validationTimer = null;
@@ -31,8 +34,15 @@
   let reapplyHeatmap = function () {};
   let invalidateGNNResults = function () {};
   let invalidate3DView = function () {};
+  let invalidateTitration = function () {};
   let notifyAni2xModelsChanged = function () {};
   let refreshRegistryList = function () {};
+  let openDrugLikenessModal = function () {};
+  let openMicrostateModal = function () {};
+  let openPropertyInfoModal = function () {};
+  let getCurrent3DGeometry = function () { return null; }; // set by setup3DPanel() -- lets SASA reuse an already-generated structure instead of building its own
+  let refreshValidationPanel = function () {}; // set by setupValidationPanel() -- called from runValidation() on every 2D edit
+  let lastStructureReport = null; // most recent CC.Validate.checkStructure() result, for other panels (e.g. gating a Run/Load button) to read without recomputing
 
   const history = new CC.History(onHistoryChange);
   history.commit(molecule.toJSON());
@@ -83,9 +93,13 @@
     if (!validityDot) return;
 
     const mol = controller.molecule;
+    lastStructureReport = window.CC.Validate ? CC.Validate.checkStructure(mol) : null;
+    refreshValidationPanel();
+    refreshRegistryList(); // re-renders model-list tier badges against the new structure report
     updateModelCompatibilityWarning();
     invalidateGNNResults();
     invalidate3DView();
+    invalidateTitration();
 
     if (mol.isEmpty()) {
       setValidityState('idle', 'no structure yet');
@@ -220,6 +234,7 @@
       cell.style.color = 'var(--text-dark-muted)';
       row.appendChild(cell);
       tbody.appendChild(row);
+      renderDrugLikeness(null);
       return;
     }
 
@@ -235,6 +250,100 @@
       row.appendChild(valueCell);
       tbody.appendChild(row);
     });
+
+    renderDrugLikeness(descriptors);
+  }
+
+  function ordinalSuffix(n) {
+    const j = n % 10, k = n % 100;
+    if (j === 1 && k !== 11) return 'st';
+    if (j === 2 && k !== 12) return 'nd';
+    if (j === 3 && k !== 13) return 'rd';
+    return 'th';
+  }
+
+  // Five real rule-based drug-likeness filters (Lipinski/Ghose/Veber/
+  // Egan/Muegge — see druglikeness.js's own header for exact thresholds
+  // and the disclosed Crippen-LogP substitution) plus, once the
+  // reference distribution has loaded, each underlying property's
+  // percentile rank against ~3300 real FDA-approved-drug-proxy
+  // molecules (data/druglikeness_reference.json).
+  function renderDrugLikeness(descriptors) {
+    const filtersTable = document.getElementById('druglikeness-filters-table');
+    const filtersOutput = document.getElementById('druglikeness-filters-output');
+    const percentilesTable = document.getElementById('druglikeness-percentiles-table');
+    const percentilesOutput = document.getElementById('druglikeness-percentiles-output');
+    const note = document.getElementById('druglikeness-note');
+    if (!filtersTable || !percentilesTable) return; // panel not set up yet
+
+    if (!descriptors) {
+      filtersTable.style.display = 'none';
+      percentilesTable.style.display = 'none';
+      note.style.display = '';
+      note.textContent = 'Draw a structure to see drug-likeness filters.';
+      return;
+    }
+
+    const result = CC.DrugLikeness.evaluate(descriptors, controller.molecule);
+
+    filtersOutput.innerHTML = '';
+    Object.keys(result.filters).forEach(function (name) {
+      const f = result.filters[name];
+      const row = document.createElement('tr');
+      const labelCell = document.createElement('td');
+      labelCell.textContent = CC.DrugLikeness.FILTER_LABELS[name];
+      const infoBtn = document.createElement('button');
+      infoBtn.className = 'filter-info-btn';
+      infoBtn.type = 'button';
+      infoBtn.textContent = 'ⓘ';
+      infoBtn.title = 'Show ' + CC.DrugLikeness.FILTER_LABELS[name] + '’s criteria';
+      infoBtn.addEventListener('click', function () {
+        openDrugLikenessModal(name, f);
+      });
+      labelCell.appendChild(infoBtn);
+      const valueCell = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = 'classification-badge ' + (f.pass ? 'is-positive' : 'is-negative');
+      badge.textContent = f.pass ? 'Pass' : (f.violations + ' violation' + (f.violations === 1 ? '' : 's'));
+      valueCell.appendChild(badge);
+      if (f.referencePassRate !== null) {
+        const refSpan = document.createElement('span');
+        refSpan.className = 'property-units';
+        refSpan.textContent = ' (' + Math.round(f.referencePassRate * 100) + '% of approved drugs pass)';
+        valueCell.appendChild(refSpan);
+      }
+      row.appendChild(labelCell);
+      row.appendChild(valueCell);
+      filtersOutput.appendChild(row);
+    });
+
+    const integerProps = { hbd: true, hba: true, rotatableBonds: true, heavyAtoms: true };
+    percentilesOutput.innerHTML = '';
+    let anyPercentile = false;
+    Object.keys(CC.DrugLikeness.PROPERTY_LABELS).forEach(function (key) {
+      const value = result.inputs[key];
+      if (typeof value !== 'number' || isNaN(value)) return;
+      const pct = result.percentiles[key];
+      const row = document.createElement('tr');
+      const labelCell = document.createElement('td');
+      labelCell.textContent = CC.DrugLikeness.PROPERTY_LABELS[key];
+      const valueCell = document.createElement('td');
+      let text = value.toFixed(integerProps[key] ? 0 : 2);
+      if (pct !== null) {
+        anyPercentile = true;
+        const rounded = Math.round(pct);
+        text += ' (' + rounded + ordinalSuffix(rounded) + ' percentile)';
+      }
+      valueCell.textContent = text;
+      row.appendChild(labelCell);
+      row.appendChild(valueCell);
+      percentilesOutput.appendChild(row);
+    });
+
+    filtersTable.style.display = '';
+    percentilesTable.style.display = anyPercentile ? '' : 'none';
+    note.style.display = anyPercentile ? 'none' : '';
+    note.textContent = anyPercentile ? '' : 'Loading FDA-approved-drug reference distribution…';
   }
 
   function setValidityState(state, text) {
@@ -246,15 +355,40 @@
     validityText.textContent = text;
   }
 
+  // Long canonical SMILES (a real problem for anything beyond a small
+  // molecule -- the 50-atom example that motivated this is ~140
+  // characters) otherwise dominate the side panel's width or wrap
+  // across many lines just sitting there unread. Collapsed to a short
+  // preview by default with a [show]/[hide] toggle; Copy always copies
+  // the FULL string regardless of which state is currently displayed.
+  function renderSmilesDisplay() {
+    const full = currentSmiles || '';
+    if (!full) {
+      smilesOutput.textContent = '\u2014';
+      smilesToggleBtn.style.display = 'none';
+      return;
+    }
+    const needsTruncation = full.length > SMILES_TRUNCATE_AT;
+    if (needsTruncation && !smilesExpanded) {
+      smilesOutput.textContent = full.slice(0, SMILES_TRUNCATE_AT) + '\u2026';
+      smilesToggleBtn.textContent = '[show]';
+    } else {
+      smilesOutput.textContent = full;
+      smilesToggleBtn.textContent = '[hide]';
+    }
+    smilesToggleBtn.style.display = needsTruncation ? '' : 'none';
+  }
+
   function setSmiles(smiles) {
     currentSmiles = smiles;
-    smilesOutput.textContent = smiles || '\u2014';
+    smilesExpanded = false; // every new molecule/edit starts collapsed again
+    renderSmilesDisplay();
     copySmilesBtn.disabled = !smiles;
   }
 
   function updateExportButtons() {
     const hasData = !!currentDescriptors;
-    ['copy-properties-btn', 'download-csv-btn', 'download-xlsx-btn', 'download-pdf-btn'].forEach(function (id) {
+    ['copy-properties-btn', 'download-csv-btn', 'download-xlsx-btn', 'download-pdf-btn', 'download-sdf-btn'].forEach(function (id) {
       const btn = document.getElementById(id);
       if (btn) btn.disabled = !hasData;
     });
@@ -444,11 +578,125 @@
     });
   }
 
+  // Per-criterion detail behind each Lipinski/Ghose/Veber/Egan/Muegge
+  // filter row's \u24d8 button -- the row itself only ever shows an aggregate
+  // "N violations", which doesn't say WHICH criteria those are; this is
+  // literally CC.DrugLikeness.evaluate()'s own f.criteria for that one
+  // filter, just laid out as a pass/fail list instead of a count.
+  function setupDrugLikenessModal() {
+    const modal = document.getElementById('druglikeness-modal');
+    const title = document.getElementById('druglikeness-modal-title');
+    const closeBtn = document.getElementById('druglikeness-modal-close');
+    const body = document.getElementById('druglikeness-modal-body');
+    if (!modal) return;
+
+    function close() { modal.style.display = 'none'; }
+
+    openDrugLikenessModal = function (name, f) {
+      title.textContent = CC.DrugLikeness.FILTER_LABELS[name] + ' \u2014 ' + (f.pass ? 'passes every criterion' : f.violations + ' violation' + (f.violations === 1 ? '' : 's'));
+      body.innerHTML = '';
+
+      const list = document.createElement('ul');
+      list.className = 'filter-criteria-list';
+      f.criteria.forEach(function (c) {
+        const item = document.createElement('li');
+        item.className = 'filter-criterion ' + (c.violated ? 'is-violated' : 'is-met');
+        const mark = document.createElement('span');
+        mark.className = 'filter-criterion-mark';
+        mark.textContent = c.violated ? '\u2715' : '\u2713';
+        const label = document.createElement('span');
+        label.className = 'filter-criterion-label';
+        label.textContent = c.label;
+        const value = document.createElement('span');
+        value.className = 'filter-criterion-value';
+        value.textContent = typeof c.value === 'number' ? c.value.toFixed(2) + (c.unit ? ' ' + c.unit : '') : '\u2014';
+        item.appendChild(mark);
+        item.appendChild(label);
+        item.appendChild(value);
+        list.appendChild(item);
+      });
+      body.appendChild(list);
+
+      if (f.referencePassRate !== null) {
+        const note = document.createElement('p');
+        note.className = 'side-panel-note';
+        note.style.marginTop = '10px';
+        note.textContent = Math.round(f.referencePassRate * 100) + '% of the FDA-approved-drug reference set passes this filter overall.';
+        body.appendChild(note);
+      }
+
+      modal.style.display = '';
+    };
+
+    closeBtn.addEventListener('click', close);
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display !== 'none') close();
+    });
+  }
+
+  // Behind each titration microstate row's "View" button -- a real 2D
+  // depiction of that exact species (protonation state, formal charges
+  // and all), built on demand rather than pre-rendered for every row
+  // (see buildMicrostateViewButton's own comment for why). Reuses the
+  // SAME atom coordinates already on the main canvas
+  // (buildMicrostateStructure only ever touches .charge on the
+  // ionizable sites, never position), so this is chemically faithful,
+  // not a generic/schematic icon -- CC.render already draws charge
+  // labels on top.
+  function setupMicrostateModal() {
+    const modal = document.getElementById('microstate-modal');
+    const title = document.getElementById('microstate-modal-title');
+    const closeBtn = document.getElementById('microstate-modal-close');
+    const body = document.getElementById('microstate-modal-body');
+    if (!modal) return;
+
+    function close() { modal.style.display = 'none'; }
+
+    openMicrostateModal = function (sitesForCurve, microstate, region) {
+      body.innerHTML = '';
+      title.textContent = 'pH ' + region.pHStart.toFixed(1) + '–' + region.pHEnd.toFixed(1) +
+        ' · net charge ' + (microstate.netCharge > 0 ? '+' : '') + microstate.netCharge;
+
+      const built = CC.PKAMicrostates.buildMicrostateStructure(controller.molecule, sitesForCurve, microstate);
+      if (!built) {
+        const note = document.createElement('p');
+        note.className = 'side-panel-note';
+        note.textContent = 'Structure unavailable (RDKit.js not ready, or this microstate didn’t sanitize).';
+        body.appendChild(note);
+        modal.style.display = '';
+        return;
+      }
+
+      const structureSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      structureSvg.setAttribute('class', 'microstate-modal-structure');
+      body.appendChild(structureSvg);
+      CC.render(structureSvg, built.molecule, {});
+      CC.setViewBox(structureSvg, CC.computeFitViewBox(structureSvg, built.molecule, 30));
+
+      const desc = document.createElement('p');
+      desc.className = 'side-panel-note';
+      desc.style.marginTop = '10px';
+      desc.textContent = describeMicrostate(sitesForCurve, microstate);
+      body.appendChild(desc);
+
+      modal.style.display = '';
+    };
+
+    closeBtn.addEventListener('click', close);
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display !== 'none') close();
+    });
+  }
+
   function setupExportPanel() {
     const copyBtn = document.getElementById('copy-properties-btn');
     const csvBtn = document.getElementById('download-csv-btn');
     const xlsxBtn = document.getElementById('download-xlsx-btn');
     const pdfBtn = document.getElementById('download-pdf-btn');
+    const sdfBtn = document.getElementById('download-sdf-btn');
+    const titleInput = document.getElementById('export-title-input');
     const status = document.getElementById('export-status');
 
     function currentRows() {
@@ -459,10 +707,36 @@
       });
     }
 
+    // Default (pre-title-entry) title is the molecular formula -- short,
+    // unique-ish, and (unlike a raw SMILES) already filename-safe, so
+    // both reportTitle() and filenameBase() below can share it directly.
+    function defaultTitle() {
+      if (controller.molecule && !controller.molecule.isEmpty()) {
+        const formula = CC.computeMolecularFormula(controller.molecule);
+        if (formula) return formula;
+      }
+      return 'ChemCanvas structure';
+    }
+
+    // User-entered title, used as: the PDF report heading, the SDF
+    // molblock's own title line (conventionally a molecule name), and
+    // the download filename (sanitized) for every export format -- one
+    // field ties all of them together instead of each hardcoding
+    // "chemcanvas-properties".
+    function reportTitle() {
+      return titleInput.value.trim() || defaultTitle();
+    }
+
+    function filenameBase() {
+      const safe = reportTitle().replace(/[^a-z0-9_\- ]+/gi, '').trim().replace(/\s+/g, '-');
+      return safe || 'chemcanvas-properties';
+    }
+
     function flashStatus(text, isError) {
       status.textContent = text;
       status.style.color = isError ? 'var(--danger)' : 'var(--text-dark-muted)';
       setTimeout(function () { status.textContent = ''; }, 2500);
+      CC.Logger[isError ? 'error' : 'success'](text);
     }
 
     copyBtn.addEventListener('click', function () {
@@ -472,18 +746,334 @@
     });
 
     csvBtn.addEventListener('click', function () {
-      CC.Export.downloadCSV(currentRows(), 'chemcanvas-properties.csv');
+      CC.Export.downloadCSV(currentRows(), filenameBase() + '.csv');
       flashStatus('Downloaded CSV.');
     });
 
     xlsxBtn.addEventListener('click', function () {
-      const result = CC.Export.downloadXLSX(currentRows(), 'chemcanvas-properties.xlsx');
+      const result = CC.Export.downloadXLSX(currentRows(), filenameBase() + '.xlsx');
       flashStatus(result.ok ? 'Downloaded XLSX.' : result.message, !result.ok);
     });
 
     pdfBtn.addEventListener('click', function () {
-      const result = CC.Export.downloadPDF(currentRows(), 'chemcanvas-properties.pdf', currentSmiles || 'ChemCanvas structure');
+      const atomTable = CC.Export.buildAtomTable(controller.molecule, lastAtomProperties);
+      const bondTable = CC.Export.buildBondTable(controller.molecule, lastBondProperties);
+      const result = CC.Export.downloadPDF(
+        currentRows(), filenameBase() + '.pdf', reportTitle(),
+        atomTable, bondTable
+      );
       flashStatus(result.ok ? 'Downloaded PDF.' : result.message, !result.ok);
+    });
+
+    sdfBtn.addEventListener('click', function () {
+      const result = CC.Export.downloadSDF(
+        controller.molecule, reportTitle(), currentRows(),
+        lastAtomProperties, lastBondProperties, filenameBase() + '.sdf'
+      );
+      flashStatus(result.ok ? 'Downloaded SDF.' : result.message, !result.ok);
+    });
+  }
+
+  // One short "site: protonated/deprotonated" clause per site, e.g.
+  // "carboxylic acid: deprotonated, aliphatic amine: protonated" --
+  // "protonated" always means literally bears the extra H here,
+  // regardless of whether that's the site's neutral or charged form (an
+  // acid site is neutral when protonated; a base site is charged when
+  // protonated) -- matches a net-charge column/label rather than
+  // requiring the reader to also track site class. Top-level (not
+  // nested in setupTitrationPanel) since both the titration table rows
+  // and the microstate structure modal need it.
+  function describeMicrostate(sitesForCurve, microstate) {
+    return sitesForCurve.map(function (site, i) {
+      return site.name.replace(/_/g, ' ') + ': ' + (microstate.protonation[i] ? 'protonated' : 'deprotonated');
+    }).join(', ');
+  }
+
+  function formatMetric(entry) {
+    if (!entry.metrics || !entry.metrics.primary) return '';
+    const p = entry.metrics.primary;
+    return p.name + ' ' + (typeof p.value === 'number' ? p.value.toFixed(3) : p.value);
+  }
+
+  // Builds the content shown behind every predictive model's "[?]" popup
+  // (see setupPropertyInfoModal): what it predicts, its training dataset,
+  // reported metrics/expected accuracy, and any documented domain-of-
+  // applicability caveats -- all sourced directly from registry.json,
+  // which is the same data validate_registry.py checks and the model
+  // list's one-line summary is drawn from, just shown in full here. Top-
+  // level (not nested in setupPropertiesPanel) so both the Properties
+  // panel's model list/results table AND the Titration tab's own "[?]"
+  // can build the same content for the same registry entry.
+  function buildPropertyInfoBox(entry) {
+    const box = document.createElement('div');
+    box.className = 'property-info-box';
+
+    function section(title, contentEl) {
+      if (!contentEl) return;
+      const h = document.createElement('div');
+      h.className = 'property-info-heading';
+      h.textContent = title;
+      box.appendChild(h);
+      box.appendChild(contentEl);
+    }
+
+    function textBlock(text) {
+      if (!text) return null;
+      const p = document.createElement('p');
+      p.textContent = text;
+      return p;
+    }
+
+    function defList(pairs) {
+      const rows = pairs.filter(function (p) { return p[1] !== null && p[1] !== undefined && p[1] !== ''; });
+      if (rows.length === 0) return null;
+      const dl = document.createElement('dl');
+      dl.className = 'property-info-deflist';
+      rows.forEach(function (pair) {
+        const dt = document.createElement('dt');
+        dt.textContent = pair[0];
+        const dd = document.createElement('dd');
+        if (pair[2] === 'link') {
+          const a = document.createElement('a');
+          a.href = pair[1]; a.textContent = pair[1]; a.target = '_blank'; a.rel = 'noopener noreferrer';
+          dd.appendChild(a);
+        } else {
+          dd.textContent = pair[1];
+        }
+        dl.appendChild(dt);
+        dl.appendChild(dd);
+      });
+      return dl;
+    }
+
+    section('What this predicts', textBlock(entry.description));
+
+    const ds = entry.dataset || {};
+    section('Dataset', defList([
+      ['Name', ds.name],
+      ['Size', ds.size ? ds.size + ' molecules' : null],
+      ['Split strategy', ds.splitStrategy],
+      ['Source', ds.sourceUrl, 'link'],
+    ]));
+
+    const training = entry.training || {};
+    const hp = training.hyperparameters;
+    section('Model', defList([
+      ['Architecture', entry.engine === 'nagl' ? 'GraphSAGE + electronegativity equalization' : 'Chemprop D-MPNN'],
+      ['Hyperparameters', hp ? (typeof hp === 'string' ? hp : JSON.stringify(hp)) : null],
+      ['Date trained', training.dateTrained],
+    ]));
+
+    if (entry.metrics) {
+      const m = entry.metrics;
+      const rows = [];
+      if (m.primary) rows.push([m.primary.name, m.primary.value + (m.primary.units ? ' ' + m.primary.units : '')]);
+      if (m.testSetSize) rows.push(['Test set size', m.testSetSize]);
+      section('Reported metrics (expected accuracy)', defList(rows));
+      if (m.note) section('', textBlock(m.note));
+    }
+
+    section('Notes, known limitations & domain of application', textBlock(entry.notes));
+
+    return box;
+  }
+
+  // Generic "[?]" popup used everywhere a registry entry (predictive
+  // model) is shown -- the GNN results table, the model "Load" list, and
+  // section headings like the Titration tab's -- so there's exactly one
+  // popup implementation and one place to change its look, no matter
+  // which panel triggered it.
+  function setupPropertyInfoModal() {
+    const modal = document.getElementById('property-info-modal');
+    const title = document.getElementById('property-info-modal-title');
+    const closeBtn = document.getElementById('property-info-modal-close');
+    const body = document.getElementById('property-info-modal-body');
+    if (!modal) return;
+
+    function close() { modal.style.display = 'none'; }
+
+    openPropertyInfoModal = function (displayName, contentEl) {
+      title.textContent = displayName;
+      body.innerHTML = '';
+      body.appendChild(contentEl);
+      modal.style.display = '';
+    };
+
+    closeBtn.addEventListener('click', close);
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display !== 'none') close();
+    });
+  }
+
+  // Aqueous pKa / titration curve panel -- its own tab (per the user's
+  // explicit request for a separate panel, not folded into the GNN
+  // atom-heatmap system every other atom-level property uses). Own
+  // "Compute" button rather than auto-running on every edit: like SASA,
+  // this loads a model (~1.2MB, once) and runs real chemistry
+  // (SMARTS site detection + a titration-curve computation), not the
+  // instant kind of thing that belongs behind an always-live button.
+  function setupTitrationPanel() {
+    const computeBtn = document.getElementById('compute-titration-btn');
+    const status = document.getElementById('titration-status');
+    const sitesSection = document.getElementById('titration-sites-section');
+    const sitesOutput = document.getElementById('titration-sites-output');
+    const curveSection = document.getElementById('titration-curve-section');
+    const chartContainer = document.getElementById('titration-chart-container');
+    const piNote = document.getElementById('titration-pi-note');
+    const microstatesSection = document.getElementById('titration-microstates-section');
+    const microstatesOutput = document.getElementById('titration-microstates-output');
+    const infoBtn = document.getElementById('titration-info-btn');
+    if (infoBtn) {
+      infoBtn.addEventListener('click', function () {
+        const entry = CC.GNN.getRegistryEntry('aqueous-pka');
+        if (entry) openPropertyInfoModal(entry.displayName, buildPropertyInfoBox(entry));
+      });
+    }
+
+    function reset() {
+      status.textContent = '';
+      sitesSection.style.display = 'none';
+      curveSection.style.display = 'none';
+      microstatesSection.style.display = 'none';
+      sitesOutput.innerHTML = '';
+      chartContainer.innerHTML = '';
+      piNote.textContent = '';
+      microstatesOutput.innerHTML = '';
+    }
+    invalidateTitration = reset;
+
+    // "View structure" button for one microstate row -- deliberately
+    // on-demand (opens the shared modal, see setupMicrostateModal) rather
+    // than a small thumbnail embedded directly in every row: rendering a
+    // full 2D depiction per row unconditionally means a molecule with
+    // several ionizable sites (2^N microstates, though only the ones
+    // that actually dominate somewhere get a row at all -- still often
+    // 4-6+ rows for a real drug-like molecule) pays for several structure
+    // renders on every curve computation whether anyone looks at them or
+    // not, and small inline sketches of anything but a tiny molecule are
+    // too cramped to read anyway.
+    function buildMicrostateViewButton(sitesForCurve, microstate, region) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-small';
+      btn.type = 'button';
+      btn.textContent = 'View';
+      btn.addEventListener('click', function () {
+        openMicrostateModal(sitesForCurve, microstate, region);
+      });
+      return btn;
+    }
+
+    computeBtn.addEventListener('click', async function () {
+      if (controller.molecule.isEmpty()) {
+        status.textContent = 'Draw a structure first.';
+        return;
+      }
+
+      const sites = CC.PKAMicrostates.findIonizableSites(controller.molecule);
+      if (sites.length === 0) {
+        reset();
+        status.textContent = 'No ionizable groups detected in this structure.';
+        return;
+      }
+
+      computeBtn.disabled = true;
+      status.textContent = 'Loading pKa model…';
+
+      try {
+        if (!CC.GNN.hasChempropModel('aqueous-pka')) {
+          const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.id === 'aqueous-pka'; });
+          if (!entry) throw new Error('aqueous-pka model not found in the registry');
+          await CC.GNN.loadRegistryModel(entry.id);
+          refreshRegistryList();
+        }
+
+        status.textContent = 'Predicting pKa values…';
+        const result = CC.GNN.predictChemprop(controller.molecule, 'aqueous-pka');
+        const pkaByAtomId = {};
+        result.atomIds.forEach(function (atomId, i) {
+          const props = result.atomProperties[i];
+          if (props && typeof props.pka === 'number') pkaByAtomId[atomId] = props.pka;
+        });
+
+        const validSites = [];
+        const validPKa = [];
+        sites.forEach(function (site) {
+          if (typeof pkaByAtomId[site.atomId] === 'number') {
+            validSites.push(site);
+            validPKa.push(pkaByAtomId[site.atomId]);
+          }
+        });
+
+        sitesOutput.innerHTML = '';
+        sites.forEach(function (site) {
+          const row = document.createElement('tr');
+          const nameCell = document.createElement('td');
+          nameCell.textContent = site.name.replace(/_/g, ' ') + ' (' + site.element + ')';
+          const classCell = document.createElement('td');
+          classCell.textContent = site.cls === 'acid' ? 'acidic' : 'basic';
+          const pkaCell = document.createElement('td');
+          const pkaValue = pkaByAtomId[site.atomId];
+          pkaCell.textContent = typeof pkaValue === 'number' ? pkaValue.toFixed(1) : '—';
+          row.appendChild(nameCell);
+          row.appendChild(classCell);
+          row.appendChild(pkaCell);
+          sitesOutput.appendChild(row);
+        });
+        sitesSection.style.display = '';
+
+        const missingCount = sites.length - validSites.length;
+        status.textContent = missingCount > 0
+          ? missingCount + ' of ' + sites.length + ' detected site(s) had no predicted pKa — omitted from the curve.'
+          : '';
+
+        if (validSites.length > 0) {
+          const curve = CC.PKATitration.computeCurve(validSites, validPKa);
+          CC.renderTitrationChart(chartContainer, curve);
+          const pI = CC.PKATitration.isoelectricPoint(curve);
+          piNote.textContent = pI !== null
+            ? 'Isoelectric point (average net charge = 0): pH ' + pI.toFixed(1)
+            : 'Net charge never crosses zero across pH 0–14 (' +
+              (curve.avgCharge[0] > 0 ? 'stays positive' : 'stays negative') + ' throughout).';
+          curveSection.style.display = '';
+
+          const regions = CC.PKATitration.dominantMicrostateRegions(curve);
+          microstatesOutput.innerHTML = '';
+          regions.forEach(function (region, i) {
+            const microstate = curve.microstates[region.microstateIndex];
+            const row = document.createElement('tr');
+
+            const structureCell = document.createElement('td');
+            structureCell.appendChild(buildMicrostateViewButton(validSites, microstate, region));
+
+            const rangeCell = document.createElement('td');
+            rangeCell.textContent = 'pH ' + region.pHStart.toFixed(1) + '–' + region.pHEnd.toFixed(1);
+
+            const chargeCell = document.createElement('td');
+            chargeCell.textContent = (microstate.netCharge > 0 ? '+' : '') + microstate.netCharge;
+
+            const stateCell = document.createElement('td');
+            stateCell.textContent = describeMicrostate(validSites, microstate);
+
+            row.appendChild(structureCell);
+            row.appendChild(rangeCell);
+            row.appendChild(chargeCell);
+            row.appendChild(stateCell);
+            microstatesOutput.appendChild(row);
+          });
+          microstatesSection.style.display = regions.length > 0 ? '' : 'none';
+          CC.Logger.success('Computed titration curve: ' + validSites.length + ' site(s), ' + regions.length + ' dominant microstate region(s)');
+        } else {
+          curveSection.style.display = 'none';
+          microstatesSection.style.display = 'none';
+        }
+      } catch (err) {
+        status.textContent = 'Failed: ' + err.message;
+        console.error('[ChemCanvas] Titration curve computation failed', err);
+        CC.Logger.error('Titration curve computation failed: ' + err.message);
+      } finally {
+        computeBtn.disabled = false;
+      }
     });
   }
 
@@ -541,14 +1131,17 @@
         mol = RDKit.get_mol(smiles);
         if (!mol || !mol.is_valid()) {
           status.textContent = 'Not a valid SMILES string.';
+          CC.Logger.warning('SMILES load failed (invalid): ' + smiles);
           return;
         }
         const molblock = mol.get_molblock();
         const loaded = CC.molblockToMolecule(molblock);
         loadNewMolecule(loaded);
+        CC.Logger.success('Loaded structure from SMILES: ' + smiles);
       } catch (err) {
         status.textContent = 'Could not parse that SMILES: ' + err.message;
         console.error('[ChemCanvas] SMILES load failed', err);
+        CC.Logger.error('SMILES load failed: ' + err.message);
       } finally {
         if (mol) mol.delete();
       }
@@ -642,8 +1235,10 @@
         try {
           const loaded = CC.molblockToMolecule(String(reader.result));
           loadNewMolecule(loaded);
+          CC.Logger.success('Loaded structure from file: ' + file.name);
         } catch (err) {
           window.alert('Could not read that file as a molfile: ' + err.message);
+          CC.Logger.error('Failed to load file "' + file.name + '": ' + err.message);
         }
         fileInput.value = '';
       };
@@ -661,6 +1256,7 @@
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      CC.Logger.info('Saved structure.mol');
     });
   }
 
@@ -668,7 +1264,13 @@
     validityDot = document.getElementById('validity-dot');
     validityText = document.getElementById('validity-text');
     smilesOutput = document.getElementById('smiles-output');
+    smilesToggleBtn = document.getElementById('smiles-toggle-btn');
     copySmilesBtn = document.getElementById('copy-smiles-btn');
+
+    smilesToggleBtn.addEventListener('click', function () {
+      smilesExpanded = !smilesExpanded;
+      renderSmilesDisplay();
+    });
 
     copySmilesBtn.addEventListener('click', function () {
       if (!currentSmiles) return;
@@ -680,97 +1282,345 @@
     });
   }
 
+  // ---------- structure validation panel ----------
+
+  const SEVERITY_RANK = { error: 3, warning: 2, info: 1 };
+  const TIER_LABEL = { compatible: 'Compatible', warning: 'Caution', blocked: 'Blocked' };
+
+  function setupValidationPanel() {
+    const banner = document.getElementById('validation-status-banner');
+    const issuesList = document.getElementById('validation-issues-list');
+    const issuesNote = document.getElementById('validation-issues-note');
+    const compatTable = document.getElementById('validation-compat-table');
+    const compatBody = document.getElementById('validation-compat-body');
+    const compatNote = document.getElementById('validation-compat-note');
+    if (!banner) return;
+
+    function renderIssue(issue) {
+      const row = document.createElement('div');
+      row.className = 'validation-issue-row';
+
+      const badge = document.createElement('div');
+      badge.className = 'validation-issue-badge sev-' + issue.severity;
+      row.appendChild(badge);
+
+      const body = document.createElement('div');
+      body.className = 'validation-issue-body';
+      const label = document.createElement('div');
+      label.className = 'validation-issue-label';
+      label.textContent = issue.label;
+      body.appendChild(label);
+      const message = document.createElement('div');
+      message.className = 'validation-issue-message';
+      message.textContent = issue.message;
+      body.appendChild(message);
+      row.appendChild(body);
+
+      if (issue.atomIds && issue.atomIds.length > 0) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'validation-highlight-btn';
+        btn.textContent = 'Highlight';
+        btn.addEventListener('click', function () {
+          CC.highlightSmartsMatch(svg, controller.molecule, issue.atomIds);
+        });
+        row.appendChild(btn);
+      }
+
+      return row;
+    }
+
+    function renderCompatRow(entry) {
+      const tr = document.createElement('tr');
+      const nameCell = document.createElement('td');
+      nameCell.textContent = entry.displayName;
+      const statusCell = document.createElement('td');
+      const tierBadge = document.createElement('span');
+      tierBadge.className = 'tier-badge tier-' + entry.tier;
+      tierBadge.textContent = TIER_LABEL[entry.tier] || entry.tier;
+      statusCell.appendChild(tierBadge);
+      if (entry.reasons && entry.reasons.length > 0) {
+        const reasons = document.createElement('div');
+        reasons.className = 'validation-compat-reasons';
+        reasons.textContent = entry.reasons.join('; ');
+        statusCell.appendChild(reasons);
+      }
+      tr.appendChild(nameCell);
+      tr.appendChild(statusCell);
+      return tr;
+    }
+
+    refreshValidationPanel = function () {
+      const mol = controller.molecule;
+      issuesList.innerHTML = '';
+      CC.clearSmartsHighlight(svg);
+
+      if (mol.isEmpty()) {
+        banner.className = 'validation-status-banner status-idle';
+        banner.textContent = 'Draw a structure to check it.';
+        issuesNote.style.display = '';
+        issuesNote.textContent = 'Nothing drawn yet.';
+        compatTable.style.display = 'none';
+        compatNote.style.display = '';
+        compatNote.textContent = 'Draw a structure to see per-model compatibility.';
+        return;
+      }
+
+      const report = lastStructureReport;
+      if (!report || !report.available) {
+        banner.className = 'validation-status-banner status-idle';
+        banner.textContent = 'RDKit.js still loading…';
+        issuesNote.style.display = '';
+        issuesNote.textContent = '';
+        compatTable.style.display = 'none';
+        compatNote.style.display = '';
+        compatNote.textContent = '';
+        return;
+      }
+
+      // Banner: worst severity present, or a clean bill of health.
+      if (report.counts.error > 0) {
+        banner.className = 'validation-status-banner status-error';
+        banner.textContent = '✗ Structure incompatible — predictions blocked until fixed.';
+      } else if (report.counts.warning > 0) {
+        banner.className = 'validation-status-banner status-warning';
+        banner.textContent = '⚠ Structure valid, ' + report.counts.warning + ' issue(s) worth a look — some models may be outside their applicability domain.';
+      } else if (report.counts.info > 0) {
+        banner.className = 'validation-status-banner status-ok';
+        banner.textContent = '✓ Structure valid, ' + report.counts.info + ' informational note(s).';
+      } else {
+        banner.className = 'validation-status-banner status-ok';
+        banner.textContent = '✓ Structure valid — no issues found.';
+      }
+
+      if (report.issues.length === 0) {
+        issuesNote.style.display = '';
+        issuesNote.textContent = 'No structural issues found.';
+      } else {
+        issuesNote.style.display = 'none';
+        report.issues
+          .slice()
+          .sort(function (a, b) { return SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]; })
+          .forEach(function (issue) { issuesList.appendChild(renderIssue(issue)); });
+      }
+
+      // Model compatibility table -- needs the registry loaded, which may
+      // still be in flight on first paint (registryStatus fetch is async).
+      if (!window.CC.GNN || !CC.GNN.getRegistryEntries || CC.GNN.getRegistryEntries().length === 0) {
+        compatTable.style.display = 'none';
+        compatNote.style.display = '';
+        compatNote.textContent = 'Model registry not loaded yet.';
+        return;
+      }
+
+      const compat = CC.Validate.checkModelCompatibility(mol, report);
+      compatBody.innerHTML = '';
+      compat
+        .slice()
+        .sort(function (a, b) {
+          const tierRank = { blocked: 3, warning: 2, compatible: 1 };
+          return tierRank[b.tier] - tierRank[a.tier];
+        })
+        .forEach(function (entry) { compatBody.appendChild(renderCompatRow(entry)); });
+      compatTable.style.display = '';
+      compatNote.style.display = 'none';
+    };
+  }
+
   // ---------- 2D -> 3D generation ----------
 
   function setup3DPanel() {
-    generate3dBtn = document.getElementById('generate-3d-btn');
+    generate3dBtn = document.getElementById('quick-preview-btn');
     viewer3dNote = document.getElementById('viewer3d-note');
-    const gen3dMethodSelect = document.getElementById('gen3d-method-select');
-    const optimizeBtn = document.getElementById('optimize-3d-btn');
+    const quickPreviewSelect = document.getElementById('quick-preview-select');
+    const conformerModelSelect = document.getElementById('conformer-model-select');
+    const conformerSearchBtn = document.getElementById('conformer-search-btn');
+    const conformerSearchNote = document.getElementById('conformer-search-note');
+    const conformerListTable = document.getElementById('conformer-list-table');
+    const conformerListBody = document.getElementById('conformer-list-body');
     const progressWrap = document.getElementById('viewer3d-progress');
     const progressFill = document.getElementById('viewer3d-progress-fill');
     const progressNote = document.getElementById('viewer3d-progress-note');
-    const ani2xBtn = document.getElementById('ani2x-optimize-btn');
-    const ani2xNote = document.getElementById('ani2x-note');
+    const measureDistanceBtn = document.getElementById('measure-distance-btn');
+    const clearMeasurementsBtn = document.getElementById('clear-measurements-btn');
+    const measureDistanceStatus = document.getElementById('measure-distance-status');
+    const shape3dTable = document.getElementById('shape3d-table');
+    const shape3dOutput = document.getElementById('shape3d-output');
+    const shape3dNote = document.getElementById('shape3d-note');
 
-    let lastInitial = null; // CC.buildInitial3D() result -- kept as-is (has .molecule/.rotatableBonds/.aromaticSet, which CC.optimize3D needs) so the classical optimizer can always be re-run, independent of whatever's currently on screen.
-    let currentGeometry = null; // {atoms, bonds} actually on screen right now -- what "Optimize with ANI-2x" should start from, kept separate from lastInitial specifically so overwriting it (with a classical-optimize or ANI result, neither of which carries molecule/rotatableBonds/aromaticSet) can never corrupt lastInitial's shape.
-    let currentGeometryOptimized = false; // whether currentGeometry has already been through the classical force field -- see the ANI-2x click handler's pre-relax step below.
+    // Non-planarity / 3D shape descriptors -- "unlocked" (shown) only
+    // once a real 3D structure exists, since PBF/NPR are meaningless on
+    // the 2D-seeded z=0-ish placeholder buildInitial3D alone produces
+    // before any relaxation. Uses ALL atoms including implicit H
+    // (matching RDKit's own CalcPBF convention -- see molecular-shape.js).
+    function renderShapeMetrics(atoms) {
+      if (!atoms || atoms.length < 3) {
+        shape3dTable.style.display = 'none';
+        shape3dNote.style.display = '';
+        shape3dNote.textContent = 'Generate a 3D structure to see plane-of-best-fit and shape descriptors.';
+        return;
+      }
+      const pbf = CC.Shape.planeOfBestFit(atoms);
+      const npr = CC.Shape.principalMomentRatios(atoms);
+      shape3dOutput.innerHTML = '';
+      [
+        ['Plane of best fit (PBF)', pbf.toFixed(3) + ' Å'],
+        ['NPR1 (rod ↔ disc/sphere)', npr.npr1.toFixed(3)],
+        ['NPR2 (disc ↔ sphere)', npr.npr2.toFixed(3)],
+      ].forEach(function (pair) {
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td'); td1.textContent = pair[0];
+        const td2 = document.createElement('td'); td2.textContent = pair[1];
+        tr.appendChild(td1); tr.appendChild(td2);
+        shape3dOutput.appendChild(tr);
+      });
+      shape3dTable.style.display = '';
+      shape3dNote.style.display = 'none';
+    }
+
+    let lastInitial = null; // CC.buildInitial3D() result for the quick-preview "Classical seed" path -- CC.ConformerSearch.run builds its own internally, so this is only needed here for the quick-preview button.
+    let currentGeometry = null; // {atoms, bonds} of whatever conformer is currently rendered/selected.
+    let currentGeometryOptimized = false; // whether currentGeometry has been through a real energy-model optimization (vs. just a raw seed) -- SASA and similar panels check this via getCurrent3DGeometry.
+    let currentGeometryConverged = false; // whether that optimization pass actually settled (vs. just hit its time/iteration budget).
 
     function renderResult(result) {
       viewer3d = window.chemCanvasLibs && window.chemCanvasLibs.viewer3d;
       if (viewer3d) CC.render3D(viewer3d, result);
       currentGeometry = { atoms: result.atoms, bonds: result.bonds };
+      renderShapeMetrics(result.atoms);
+      // CC.render3D just cleared every drawn measurement (the old ones
+      // referred to atom positions that no longer exist) -- measure mode
+      // itself stays on if it was on (re-applied inside CC.render3D), but
+      // any distance shown as text here is now stale, so clear it too.
+      if (measureDistanceStatus) measureDistanceStatus.textContent = measureModeOn ? 'Click two atoms in the 3D view…' : '';
     }
 
-    function describeResult(result, opts) {
-      opts = opts || {};
-      const convergedNote = opts.optimized
-        ? (result.converged
-          ? ' \u2014 converged (settled on its own, not just cut off by the time budget)'
-          : ' \u2014 stopped before fully converging (hit the time budget; try Optimize again for another pass, or accept this as a reasonable approximate structure)')
-        : '';
-      return result.atoms.length + ' atoms (incl. implicit H)' +
-        (result.energy !== null && result.energy !== undefined
-          ? ', force-field energy ' + result.energy.toFixed(2) + ' (arbitrary units \u2014 not a real force field, lower is better)' + convergedNote
-          : ', not yet optimized \u2014 click "Optimize geometry\u2026" to relax it');
+    function resetConformerList() {
+      conformerListTable.style.display = 'none';
+      conformerListBody.innerHTML = '';
     }
 
-    // Enabled once there's a generated 3D structure -- clicking it loads
-    // the ANI-2x model on demand (see the click handler below) rather than
-    // requiring a separate trip to the Properties panel's model list
-    // first. Classical force-field optimization is NOT a prerequisite --
-    // ANI-2x can be the sole optimizer, run directly on buildInitial3D's
-    // output.
-    function updateAni2xButtonState() {
-      ani2xBtn.disabled = !lastInitial || lastInitial.atoms.length === 0;
+    // Renders the ensemble table and selects (views) `idx` within it --
+    // one function so both the initial "auto-view the top conformer" call
+    // and a later "View" button click go through the same selection/
+    // button-relabeling logic.
+    function selectConformer(idx, result) {
+      const c = result.conformers[idx];
+      renderResult(c);
+      currentGeometryOptimized = true;
+      currentGeometryConverged = c.converged;
+      Array.from(conformerListBody.children).forEach(function (tr, i) {
+        const btn = tr.children[3].firstChild;
+        btn.textContent = i === idx ? 'Viewing' : 'View';
+        btn.disabled = i === idx;
+      });
     }
-    notifyAni2xModelsChanged = updateAni2xButtonState;
+
+    function renderConformerList(result) {
+      conformerListBody.innerHTML = '';
+      result.conformers.forEach(function (c, idx) {
+        const tr = document.createElement('tr');
+        const rankCell = document.createElement('td'); rankCell.textContent = c.rank;
+        const energyCell = document.createElement('td'); energyCell.textContent = (c.relativeEnergyKcal >= 0 ? '+' : '') + c.relativeEnergyKcal.toFixed(2);
+        const convergedCell = document.createElement('td'); convergedCell.textContent = c.converged ? 'yes' : 'no';
+        const viewCell = document.createElement('td');
+        const viewBtn = document.createElement('button');
+        viewBtn.className = 'btn btn-ghost btn-small';
+        viewBtn.type = 'button';
+        viewBtn.addEventListener('click', function () { selectConformer(idx, result); });
+        viewCell.appendChild(viewBtn);
+        tr.appendChild(rankCell); tr.appendChild(energyCell); tr.appendChild(convergedCell); tr.appendChild(viewCell);
+        conformerListBody.appendChild(tr);
+      });
+      conformerListTable.style.display = '';
+      selectConformer(0, result);
+    }
+
+    // Distance measurement and the quick-preview/conformer-search buttons
+    // just need real 3D coordinates on screen to be usable, not an
+    // optimized structure.
+    function updateButtonState() {
+      const hasGeometry = !!(currentGeometry && currentGeometry.atoms && currentGeometry.atoms.length > 0);
+      measureDistanceBtn.disabled = !hasGeometry;
+      clearMeasurementsBtn.disabled = !hasGeometry;
+    }
+    notifyAni2xModelsChanged = updateButtonState; // kept as the same hook name other code already calls after any model finishes loading elsewhere
+
+    let measureModeOn = false;
+
+    function setMeasureButtonVisualState() {
+      measureDistanceBtn.className = measureModeOn ? 'btn btn-accent btn-small' : 'btn btn-ghost btn-small';
+      measureDistanceBtn.textContent = measureModeOn ? 'Measuring… (click two atoms)' : 'Measure distance';
+    }
+
+    // Called when the underlying 3D structure goes away entirely
+    // (invalidate3DView, on a 2D edit) -- unlike a mere regenerate/
+    // reoptimize (handled inside renderResult above, which keeps measure
+    // mode on across a re-render), there's nothing left to click on here,
+    // so this actually turns measure mode off rather than just clearing
+    // stale text. Explicitly tells viewer3d.js too (not just this
+    // panel's own toggle boolean) so the two stay in sync -- otherwise a
+    // later "Preview" click would silently come back up with
+    // atoms still clickable even though this button shows "off".
+    function resetMeasureUI() {
+      measureModeOn = false;
+      setMeasureButtonVisualState();
+      measureDistanceStatus.textContent = '';
+      CC.Viewer3D.setMeasureMode(viewer3d, false);
+    }
+
+    measureDistanceBtn.addEventListener('click', function () {
+      measureModeOn = !measureModeOn;
+      setMeasureButtonVisualState();
+      CC.Viewer3D.setMeasureMode(viewer3d, measureModeOn, function (result) {
+        measureDistanceStatus.textContent = result.element1 + '–' + result.element2 + ': ' +
+          result.distanceAngstrom.toFixed(2) + ' Å';
+      });
+      measureDistanceStatus.textContent = measureModeOn ? 'Click two atoms in the 3D view…' : '';
+    });
+
+    clearMeasurementsBtn.addEventListener('click', function () {
+      CC.Viewer3D.clearMeasurements(viewer3d);
+      measureDistanceStatus.textContent = measureModeOn ? 'Click two atoms in the 3D view…' : '';
+    });
 
     generate3dBtn.addEventListener('click', async function () {
       if (controller.molecule.isEmpty()) {
-        viewer3dNote.textContent = 'Nothing to generate yet \u2014 draw a structure first.';
-        optimizeBtn.disabled = true;
-        updateAni2xButtonState();
+        viewer3dNote.textContent = 'Nothing to preview yet \u2014 draw a structure first.';
         return;
       }
 
-      // buildInitial3D is fast (just implicit-H addition + 2D-seeded
-      // coordinates, no force-field optimization) -- computed regardless
-      // of which generation method is selected, since it's also the
-      // metadata carrier CC.optimize3D needs (.molecule/.rotatableBonds/
-      // .aromaticSet) and the classical starting point for the ANI-2x
-      // button's pre-relax safety net.
+      resetConformerList();
       lastInitial = CC.buildInitial3D(controller.molecule);
       currentGeometryOptimized = false;
-      ani2xNote.textContent = '';
+      currentGeometryConverged = false;
 
-      if (gen3dMethodSelect.value === 'geomol') {
+      if (quickPreviewSelect.value === 'geomol') {
         const compatibility = CC.GeoMol.checkCompatibility(controller.molecule);
         if (!compatibility.compatible) {
           viewer3dNote.textContent = 'Cannot use GeoMol: ' + compatibility.issues.join('; ') + '. Showing the classical seed instead.';
           renderResult(lastInitial);
-          optimizeBtn.disabled = false;
-          updateAni2xButtonState();
+          updateButtonState();
           return;
         }
 
         generate3dBtn.disabled = true;
-        optimizeBtn.disabled = true;
-        gen3dMethodSelect.disabled = true;
+        conformerSearchBtn.disabled = true;
+        quickPreviewSelect.disabled = true;
 
-        // Load-on-click, same pattern as the ANI-2x button: the model
-        // (~1MB) loads automatically the first time it's needed instead
-        // of requiring a separate trip to the Properties panel first.
+        // Load-on-click, same pattern as the conformer-search energy
+        // models below: the model (~1MB) loads automatically the first
+        // time it's needed instead of requiring a separate trip to the
+        // Properties panel first.
         if (CC.GeoMol.getLoadedModelIds().length === 0) {
           const entry = CC.GNN.getRegistryEntries().find(function (e) { return (e.engine || 'chemprop') === 'geomol'; });
           if (!entry) {
             viewer3dNote.textContent = 'No GeoMol model entry found in the model registry. Showing the classical seed instead.';
             renderResult(lastInitial);
             generate3dBtn.disabled = false;
-            optimizeBtn.disabled = false;
-            gen3dMethodSelect.disabled = false;
-            updateAni2xButtonState();
+            conformerSearchBtn.disabled = false;
+            quickPreviewSelect.disabled = false;
+            updateButtonState();
             return;
           }
           progressWrap.style.display = '';
@@ -785,9 +1635,9 @@
             renderResult(lastInitial);
             progressWrap.style.display = 'none';
             generate3dBtn.disabled = false;
-            optimizeBtn.disabled = false;
-            gen3dMethodSelect.disabled = false;
-            updateAni2xButtonState();
+            conformerSearchBtn.disabled = false;
+            quickPreviewSelect.disabled = false;
+            updateButtonState();
             return;
           }
         }
@@ -799,25 +1649,27 @@
           const modelId = CC.GeoMol.getLoadedModelIds()[0];
           const result = CC.GeoMol.generateConformer(controller.molecule, modelId);
           renderResult(result);
-          viewer3dNote.textContent = result.atoms.length + ' atoms (incl. implicit H), generated with GeoMol \u2014 a single learned prediction, not an energy-minimized structure. Click "Optimize geometry\u2026" or "Optimize with ANI-2x\u2026" to refine it, or "Generate 3D structure" again for a different sampled conformer.';
+          viewer3dNote.textContent = result.atoms.length + ' atoms (incl. implicit H), generated with GeoMol \u2014 a single learned prediction, not an energy-minimized structure. Run a conformer search below to relax/rank real conformers, or click "Preview" again for a different sampled conformer.';
+          CC.Logger.success('Quick preview: generated 3D structure with GeoMol (' + result.atoms.length + ' atoms incl. implicit H)');
         } catch (err) {
           viewer3dNote.textContent = 'GeoMol prediction failed: ' + err.message + '. Showing the classical seed instead.';
           console.error('[ChemCanvas] GeoMol conformer generation failed', err);
+          CC.Logger.error('GeoMol conformer generation failed: ' + err.message);
           renderResult(lastInitial);
         } finally {
           progressWrap.style.display = 'none';
           generate3dBtn.disabled = false;
-          optimizeBtn.disabled = false;
-          gen3dMethodSelect.disabled = false;
-          updateAni2xButtonState();
+          conformerSearchBtn.disabled = false;
+          quickPreviewSelect.disabled = false;
+          updateButtonState();
         }
         return;
       }
 
       renderResult(lastInitial);
-      viewer3dNote.textContent = describeResult(lastInitial, { optimized: false });
-      optimizeBtn.disabled = false;
-      updateAni2xButtonState();
+      viewer3dNote.textContent = lastInitial.atoms.length + ' atoms (incl. implicit H), classical seed \u2014 not optimized. Run a conformer search below to relax/rank real conformers.';
+      CC.Logger.success('Quick preview (classical seed, ' + lastInitial.atoms.length + ' atoms incl. implicit H)');
+      updateButtonState();
     });
 
     // Called on every 2D edit (see runValidation) -- a 3D structure or
@@ -825,182 +1677,150 @@
     // than no 3D view at all, since nothing on screen would indicate it's
     // now out of sync with the 2D structure you're actually looking at.
     invalidate3DView = function () {
-      if (!lastInitial) return; // nothing generated yet -- nothing to invalidate
+      if (!lastInitial && !currentGeometry) return; // nothing generated yet -- nothing to invalidate
       lastInitial = null;
       currentGeometry = null;
       currentGeometryOptimized = false;
+      currentGeometryConverged = false;
       if (viewer3d) CC.render3D(viewer3d, { atoms: [], bonds: [] });
-      viewer3dNote.textContent = 'Structure has changed \u2014 click "Generate 3D structure" to update.';
-      optimizeBtn.disabled = true;
-      ani2xNote.textContent = '';
-      updateAni2xButtonState();
+      viewer3dNote.textContent = 'Structure has changed \u2014 click "Preview" or run a conformer search to update.';
+      conformerSearchNote.textContent = '';
+      resetConformerList();
+      resetMeasureUI();
+      renderShapeMetrics(null); // re-locks the 3D shape section until a fresh structure exists
+      updateButtonState();
     };
 
-    ani2xBtn.addEventListener('click', async function () {
-      if (!lastInitial || lastInitial.atoms.length === 0) {
-        ani2xNote.textContent = 'Click "Generate 3D structure" first.';
+    // Runs the selected energy model's conformer search (see
+    // js/conformer-search.js) -- loads whatever model-specific weights it
+    // needs (NAGL-MBIS for smirnoff, ANI-2x for ani2x) on demand first,
+    // same load-on-click pattern this panel's GeoMol quick-preview above
+    // already uses, rather than requiring a separate trip to the
+    // Properties panel first.
+    conformerSearchBtn.addEventListener('click', async function () {
+      if (controller.molecule.isEmpty()) {
+        conformerSearchNote.textContent = 'Nothing to search yet \u2014 draw a structure first.';
         return;
       }
 
-      const compatibility = CC.ANI.checkCompatibility(controller.molecule);
-      if (!compatibility.compatible) {
-        ani2xNote.textContent = 'Cannot run ANI-2x: ' + compatibility.issues.join('; ') + '.';
-        return;
-      }
+      const model = conformerModelSelect.value;
+      const modelLabelForLog = conformerModelSelect.options[conformerModelSelect.selectedIndex].textContent;
 
       generate3dBtn.disabled = true;
-      optimizeBtn.disabled = true;
-      ani2xBtn.disabled = true;
-
-      // Load-on-click: same registry entry the Properties panel's model
-      // list would load, just triggered from here instead of requiring a
-      // separate trip there first. Weights are ~50MB, so this can take a
-      // few seconds on a slow connection -- reuse the same progress note
-      // the optimization itself uses below.
-      if (CC.ANI.getLoadedModelIds().length === 0) {
-        const entry = CC.GNN.getRegistryEntries().find(function (e) { return (e.engine || 'chemprop') === 'ani2x'; });
-        if (!entry) {
-          ani2xNote.textContent = 'No ANI-2x model entry found in the model registry.';
-          updateAni2xButtonState();
-          generate3dBtn.disabled = false;
-          optimizeBtn.disabled = false;
-          return;
-        }
-        progressWrap.style.display = '';
-        progressFill.style.width = '0%';
-        progressNote.textContent = 'Loading ANI-2x model\u2026';
-        try {
-          await CC.GNN.loadRegistryModel(entry.id);
-          refreshRegistryList();
-        } catch (err) {
-          ani2xNote.textContent = 'Failed to load ANI-2x model: ' + err.message;
-          console.error('[ChemCanvas] ANI-2x model load failed', err);
-          progressWrap.style.display = 'none';
-          updateAni2xButtonState();
-          generate3dBtn.disabled = false;
-          optimizeBtn.disabled = false;
-          return;
-        }
-      }
-
-      // ANI-2x's own potential doesn't reliably hold bonds/angles together
-      // starting from a topologically raw structure -- verified directly:
-      // a plain 2D-projected seed with only a moderate steric clash (two
-      // O atoms ~1.1 A apart, nowhere near "on top of each other") was
-      // enough to make the optimizer collapse an unrelated ring C-S bond
-      // to 0.3 A while stretching the neighboring ring bond to 2.8 A, on
-      // O=C(N[C@H](C(N)=O)CO)C1=C(C)OC2=CC=C(OCC3=CN=C(C)S3)C=C21. Handing
-      // it the same structure after a classical bonds/angles/sterics
-      // relax first (even one that didn't fully converge within budget)
-      // kept every bond in a chemically sane range and let ANI-2x resolve
-      // the remaining steric clashes on its own without incident -- so
-      // that relax is not optional preprocessing here, it's load-bearing.
-      // Skipped only if currentGeometry has already been through it
-      // (either from a previous "Optimize geometry" click, or from an
-      // earlier ANI-2x pass in this same session).
-      if (!currentGeometryOptimized) {
-        progressWrap.style.display = '';
-        progressFill.style.width = '0%';
-        progressNote.textContent = 'Pre-relaxing geometry (classical force field)\u2026';
-        try {
-          const relaxed = await CC.optimize3D(lastInitial, {
-            onProgress: function (info) {
-              const pct = Math.round(((info.attempt - 1) / info.totalAttempts) * 100);
-              progressFill.style.width = pct + '%';
-              progressNote.textContent = 'Pre-relaxing \u2014 attempt ' + info.attempt + '/' + info.totalAttempts + ' \u2014 ' + info.stage;
-            },
-          });
-          renderResult(relaxed);
-          currentGeometryOptimized = true;
-        } catch (err) {
-          ani2xNote.textContent = 'Pre-relaxation failed: ' + err.message;
-          console.error('[ChemCanvas] classical pre-relax before ANI-2x failed', err);
-          progressWrap.style.display = 'none';
-          generate3dBtn.disabled = false;
-          optimizeBtn.disabled = false;
-          updateAni2xButtonState();
-          return;
-        }
-      }
-
+      conformerSearchBtn.disabled = true;
+      conformerModelSelect.disabled = true;
       progressWrap.style.display = '';
       progressFill.style.width = '0%';
-      progressNote.textContent = 'Running ANI-2x optimization\u2026';
+      progressNote.textContent = 'Preparing ' + modelLabelForLog + '\u2026';
+      resetConformerList();
+      conformerSearchNote.textContent = '';
 
       try {
-        const modelId = CC.ANI.getLoadedModelIds()[0];
-        const result = await CC.ANI.optimizeGeometry(currentGeometry.atoms, currentGeometry.bonds, modelId, {
+        const opts = {
+          energyModel: model,
           onProgress: function (info) {
-            const pct = Math.round((info.iteration / info.maxIterations) * 100);
+            const pct = Math.round(((info.seed - 1) / info.totalSeeds) * 100);
             progressFill.style.width = pct + '%';
-            progressNote.textContent = 'Iteration ' + info.iteration + '/' + info.maxIterations +
-              (info.energy !== null ? ' (energy so far: ' + info.energy.toFixed(6) + ' Hartree)' : '');
+            if (info.phase === 'seed-done') {
+              progressNote.textContent = 'Seed ' + info.seed + '/' + info.totalSeeds + ' done (energy ' + info.energyKcal.toFixed(2) + ' kcal/mol)';
+            } else {
+              progressNote.textContent = 'Seed ' + info.seed + '/' + info.totalSeeds + ' \u2014 ' + info.stage;
+            }
           },
-        });
+        };
+
+        if (model === 'smirnoff') {
+          // A missing/failed NAGL load is NOT fatal here: CC.ConformerSearch
+          // just omits electrostatics rather than refusing to run (same
+          // honest fallback OPENFF_INTEGRATION.md documents).
+          if (!CC.OpenFF.isForceFieldLoaded()) {
+            progressNote.textContent = 'Loading OpenFF Sage force field\u2026';
+            await CC.OpenFF.loadForceField();
+          }
+          let naglModelId = CC.NAGL.getLoadedModelIds()[0];
+          if (!naglModelId) {
+            const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.engine === 'nagl'; });
+            if (entry) {
+              progressNote.textContent = 'Loading NAGL-MBIS charge model\u2026';
+              try {
+                await CC.GNN.loadRegistryModel(entry.id);
+                refreshRegistryList();
+                naglModelId = CC.NAGL.getLoadedModelIds()[0];
+              } catch (err) {
+                console.error('[ChemCanvas] NAGL model load failed before conformer search \u2014 continuing without electrostatics', err);
+              }
+            }
+          }
+          opts.naglModelId = naglModelId;
+        } else if (model === 'ani2x') {
+          const compatibility = CC.ANI.checkCompatibility(controller.molecule);
+          if (!compatibility.compatible) {
+            throw new Error('Cannot use ANI-2x: ' + compatibility.issues.join('; '));
+          }
+          let aniModelId = CC.ANI.getLoadedModelIds()[0];
+          if (!aniModelId) {
+            const entry = CC.GNN.getRegistryEntries().find(function (e) { return (e.engine || 'chemprop') === 'ani2x'; });
+            if (!entry) throw new Error('No ANI-2x model entry found in the model registry.');
+            progressNote.textContent = 'Loading ANI-2x model\u2026';
+            await CC.GNN.loadRegistryModel(entry.id);
+            refreshRegistryList();
+            aniModelId = CC.ANI.getLoadedModelIds()[0];
+          }
+          opts.aniModelId = aniModelId;
+        }
+
+        progressNote.textContent = 'Generating seed geometries\u2026';
+        const result = await CC.ConformerSearch.run(controller.molecule, opts);
         progressFill.style.width = '100%';
-        renderResult(result);
-        const kcal = result.energy * 627.5094740631;
-        const convergedNote = result.converged
-          ? ' \u2014 converged'
-          : ' \u2014 stopped before fully converging (hit the iteration/time budget; try again for another pass)';
-        ani2xNote.textContent = 'ANI-2x energy: ' + result.energy.toFixed(6) + ' Hartree (' +
-          kcal.toFixed(2) + ' kcal/mol)' + convergedNote + '.';
+
+        if (result.conformers.length === 0) {
+          conformerSearchNote.textContent = 'No conformers found (' + result.seedsGenerated + ' seed(s) generated, ' +
+            result.seedsOptimized + ' optimized) \u2014 try again, or a different energy model.';
+          CC.Logger.warning('Conformer search (' + modelLabelForLog + '): no conformers found');
+        } else {
+          renderConformerList(result);
+          const chargeNote = (model === 'smirnoff' && !result.chargesAvailable)
+            ? ' (no NAGL-MBIS charges loaded \u2014 electrostatics omitted)' : '';
+          conformerSearchNote.textContent = result.modelLabel + ': ' + result.seedsGenerated + ' seed(s) generated, ' +
+            result.seedsOptimized + ' optimized, ' + result.conformersWithinWindow + ' within the 6 kcal/mol energy window, ' +
+            result.conformers.length + ' distinct conformer(s) kept' + chargeNote + '. Energies in ' + result.energyUnit + '.';
+          CC.Logger.success('Conformer search (' + result.modelLabel + '): ' + result.conformers.length +
+            ' conformer(s), best ' + result.conformers[0].energy.toFixed(2) + ' ' + result.energyUnit);
+        }
       } catch (err) {
-        ani2xNote.textContent = 'ANI-2x optimization failed: ' + err.message;
-        console.error('[ChemCanvas] ANI-2x optimization failed', err);
+        conformerSearchNote.textContent = 'Conformer search failed: ' + err.message;
+        console.error('[ChemCanvas] conformer search failed', err);
+        CC.Logger.error('Conformer search failed: ' + err.message);
       } finally {
         generate3dBtn.disabled = false;
-        optimizeBtn.disabled = false;
+        conformerSearchBtn.disabled = false;
+        conformerModelSelect.disabled = false;
         progressWrap.style.display = 'none';
-        updateAni2xButtonState();
+        updateButtonState();
       }
     });
 
-    updateAni2xButtonState();
+    updateButtonState();
 
-    optimizeBtn.addEventListener('click', async function () {
-      if (!lastInitial || lastInitial.atoms.length === 0) {
-        viewer3dNote.textContent = 'Click "Generate 3D structure" first.';
-        return;
-      }
-
-      generate3dBtn.disabled = true;
-      optimizeBtn.disabled = true;
-      progressWrap.style.display = '';
-      progressFill.style.width = '0%';
-      progressNote.textContent = 'Starting conformer search\u2026';
-
-      try {
-        const result = await CC.optimize3D(lastInitial, {
-          onProgress: function (info) {
-            // No single well-defined "percent done" for a multi-attempt,
-            // multi-stage, time-budgeted search -- attempt progress is
-            // the honest, legible proxy rather than a fake-precise number.
-            const pct = Math.round(((info.attempt - 1) / info.totalAttempts) * 100);
-            progressFill.style.width = pct + '%';
-            progressNote.textContent = 'Attempt ' + info.attempt + '/' + info.totalAttempts +
-              ' \u2014 ' + info.stage +
-              (info.bestEnergySoFar !== null ? ' (best so far: ' + info.bestEnergySoFar.toFixed(2) + ')' : '');
-          },
-        });
-        progressFill.style.width = '100%';
-        renderResult(result);
-        currentGeometryOptimized = true;
-        viewer3dNote.textContent = describeResult(result, { optimized: true });
-      } catch (err) {
-        viewer3dNote.textContent = 'Optimization failed: ' + err.message;
-        console.error('[ChemCanvas] 3D optimization failed', err);
-      } finally {
-        generate3dBtn.disabled = false;
-        optimizeBtn.disabled = false;
-        progressWrap.style.display = 'none';
-      }
-    });
+    // currentGeometry is reliably null'd out by invalidate3DView() on every
+    // 2D edit (see above), so any non-null value here is guaranteed to
+    // still match the molecule currently on the canvas -- safe for another
+    // panel (SASA) to reuse without re-deriving/re-checking that itself.
+    getCurrent3DGeometry = function () {
+      if (!currentGeometry || !currentGeometry.atoms || currentGeometry.atoms.length === 0) return null;
+      return {
+        atoms: currentGeometry.atoms,
+        bonds: currentGeometry.bonds,
+        optimized: currentGeometryOptimized,
+        converged: currentGeometryConverged,
+      };
+    };
   }
 
   // ---------- GNN prediction (demo D-MPNN + optional ONNX model) ----------
 
   let lastAtomProperties = null; // atomId -> {propName: value}, for heatmap re-render
+  let lastBondProperties = null; // bondId -> {propName: value}, for bond heatmap re-render
   let lastMolecularProperties = null; // {propName: value} + propertyMeta, for the radar chart
 
   function setupGNNPanel() {
@@ -1017,6 +1837,11 @@
     const heatmapRow = document.getElementById('gnn-atom-heatmap-row');
     const heatmapSelect = document.getElementById('heatmap-property-select');
     const clearHeatmapBtn = document.getElementById('clear-heatmap-btn');
+    const bondHeatmapRow = document.getElementById('gnn-bond-heatmap-row');
+    const bondHeatmapSelect = document.getElementById('bond-heatmap-property-select');
+    const clearBondHeatmapBtn = document.getElementById('clear-bond-heatmap-btn');
+    const computeSasaBtn = document.getElementById('compute-sasa-btn');
+    const sasaStatus = document.getElementById('sasa-status');
 
     // molOutput is a <tbody> now (folded into the same table styling as
     // the RDKit descriptors above it) -- a <tbody> can only contain
@@ -1037,105 +1862,74 @@
       CC.GNN.predictMolecule(controller.molecule)
         .then(function (result) {
           renderGNNOutput(result);
+          const nMol = Object.keys(result.molecularProperties || {}).length;
+          const nAtom = (result.atomProperties || []).length;
+          const nBond = (result.bondProperties || []).length;
+          let msg = 'Ran prediction: ' + nMol + ' molecular, ' + nAtom + ' atom-level, ' + nBond + ' bond-level propert' + (nMol + nAtom + nBond === 1 ? 'y' : 'ies');
+          if (result.warnings && result.warnings.length) {
+            CC.Logger.warning(msg + ' — ' + result.warnings.length + ' model warning(s): ' + result.warnings.join('; '));
+          } else {
+            CC.Logger.success(msg);
+          }
         })
         .catch(function (err) {
           showGnnMessage('Prediction failed: ' + err.message);
           console.error('[ChemCanvas] GNN prediction failed', err);
+          CC.Logger.error('GNN prediction failed: ' + err.message);
         })
         .finally(function () {
           runDemoBtn.disabled = false;
         });
     }
 
-    /**
-     * An expandable <tr> (hidden by default, toggled by the property's
-     * info button) showing everything the registry already knows about
-     * that model: definition, dataset provenance, architecture/training,
-     * metrics, and any honest caveats -- all sourced directly from
-     * registry.json, which is the same data validate_registry.py checks
-     * and the model list already summarizes, just shown in full here
-     * instead of the one-line summary.
-     */
-    function buildPropertyInfoRow(entry) {
-      const tr = document.createElement('tr');
-      tr.className = 'property-info-row';
-      tr.style.display = 'none';
-      const td = document.createElement('td');
-      td.colSpan = 2;
+    // Merges a batch of per-atom properties (GNN/NAGL/pKa atom-level
+    // results, or the SASA button's own results) into the SAME
+    // atomId -> {propName: value} map the atom heatmap reads, ADDING to
+    // whatever's already there for each atom rather than replacing it --
+    // so e.g. NAGL charges computed via "Run prediction" and steric
+    // accessibility computed via the separate "Compute (SASA)" button
+    // both stay selectable in the same dropdown regardless of which was
+    // run first. Rebuilds the dropdown from the union of every key
+    // across every atom (not just atom 0 -- a sparse property, e.g.
+    // shift_19f present only on F atoms, can easily be absent from
+    // whichever atom happens to be first), preserving the current
+    // selection if it's still a valid option.
+    function mergeAtomHeatmapProperties(atomIds, atomProperties) {
+      if (!lastAtomProperties) lastAtomProperties = {};
+      atomIds.forEach(function (atomId, i) {
+        lastAtomProperties[atomId] = Object.assign(lastAtomProperties[atomId] || {}, atomProperties[i]);
+      });
 
-      const box = document.createElement('div');
-      box.className = 'property-info-box';
+      const propNameSet = {};
+      Object.keys(lastAtomProperties).forEach(function (atomId) {
+        Object.keys(lastAtomProperties[atomId]).forEach(function (name) { propNameSet[name] = true; });
+      });
+      // aqueous-pka predicts a value at EVERY heavy atom (per its own
+      // registry description), but most of those aren't chemically
+      // meaningful -- only the specific atoms js/pka-microstates.js's
+      // SMARTS detector identifies as real ionizable sites are, and
+      // those already get a correct, filtered display in the Titration
+      // tab. Showing the raw per-atom "pka" property here as a
+      // selectable heatmap just surfaces noise (a real report: a user
+      // couldn't tell what it meant, since most colored atoms have no
+      // real pKa). Excluded from the dropdown only -- still kept in
+      // lastAtomProperties itself for CSV/PDF/SDF export, where a power
+      // user exporting raw data can reasonably want it with context.
+      // pka-ch (js/pka-model.js) is NOT excluded: it already restricts
+      // itself to candidate C-H sites rather than every atom.
+      const propNames = Object.keys(propNameSet).filter(function (name) { return name !== 'pka'; });
+      const previousSelection = heatmapSelect.value;
+      heatmapSelect.innerHTML = '';
+      propNames.forEach(function (name) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        heatmapSelect.appendChild(opt);
+      });
+      if (propNames.indexOf(previousSelection) !== -1) heatmapSelect.value = previousSelection;
 
-      function section(title, contentEl) {
-        if (!contentEl) return;
-        const h = document.createElement('div');
-        h.className = 'property-info-heading';
-        h.textContent = title;
-        box.appendChild(h);
-        box.appendChild(contentEl);
-      }
-
-      function textBlock(text) {
-        if (!text) return null;
-        const p = document.createElement('p');
-        p.textContent = text;
-        return p;
-      }
-
-      function defList(pairs) {
-        const rows = pairs.filter(function (p) { return p[1] !== null && p[1] !== undefined && p[1] !== ''; });
-        if (rows.length === 0) return null;
-        const dl = document.createElement('dl');
-        dl.className = 'property-info-deflist';
-        rows.forEach(function (pair) {
-          const dt = document.createElement('dt');
-          dt.textContent = pair[0];
-          const dd = document.createElement('dd');
-          if (pair[2] === 'link') {
-            const a = document.createElement('a');
-            a.href = pair[1]; a.textContent = pair[1]; a.target = '_blank'; a.rel = 'noopener noreferrer';
-            dd.appendChild(a);
-          } else {
-            dd.textContent = pair[1];
-          }
-          dl.appendChild(dt);
-          dl.appendChild(dd);
-        });
-        return dl;
-      }
-
-      section('What this predicts', textBlock(entry.description));
-
-      const ds = entry.dataset || {};
-      section('Dataset', defList([
-        ['Name', ds.name],
-        ['Size', ds.size ? ds.size + ' molecules' : null],
-        ['Split strategy', ds.splitStrategy],
-        ['Source', ds.sourceUrl, 'link'],
-      ]));
-
-      const training = entry.training || {};
-      const hp = training.hyperparameters;
-      section('Model', defList([
-        ['Architecture', entry.engine === 'nagl' ? 'GraphSAGE + electronegativity equalization' : 'Chemprop D-MPNN'],
-        ['Hyperparameters', hp ? (typeof hp === 'string' ? hp : JSON.stringify(hp)) : null],
-        ['Date trained', training.dateTrained],
-      ]));
-
-      if (entry.metrics) {
-        const m = entry.metrics;
-        const rows = [];
-        if (m.primary) rows.push([m.primary.name, m.primary.value + (m.primary.units ? ' ' + m.primary.units : '')]);
-        if (m.testSetSize) rows.push(['Test set size', m.testSetSize]);
-        section('Reported metrics', defList(rows));
-        if (m.note) section('', textBlock(m.note));
-      }
-
-      section('Notes & known limitations', textBlock(entry.notes));
-
-      td.appendChild(box);
-      tr.appendChild(td);
-      return tr;
+      heatmapRow.style.display = '';
+      applyHeatmap();
     }
 
     function renderGNNOutput(result) {
@@ -1173,6 +1967,8 @@
         gnnTable.style.display = '';
         heatmapRow.style.display = 'none';
         lastAtomProperties = null;
+        bondHeatmapRow.style.display = 'none';
+        lastBondProperties = null;
         return;
       }
 
@@ -1190,7 +1986,7 @@
         const registryEntry = meta && meta.modelId ? CC.GNN.getRegistryEntry(meta.modelId) : null;
         labelCell.textContent = registryEntry ? registryEntry.displayName : name;
 
-        // Info toggle: only shown for registry-loaded models, since an
+        // Info popup: only shown for registry-loaded models, since an
         // ad-hoc "load from files" model has no dataset/training/notes
         // metadata to show in the first place -- nothing to click into.
         if (registryEntry) {
@@ -1198,8 +1994,10 @@
           infoBtn.type = 'button';
           infoBtn.className = 'property-info-btn';
           infoBtn.setAttribute('aria-label', 'About this property');
-          infoBtn.setAttribute('aria-expanded', 'false');
-          infoBtn.textContent = '\u24d8'; // circled small "i"
+          infoBtn.textContent = '[?]';
+          infoBtn.addEventListener('click', function () {
+            openPropertyInfoModal(registryEntry.displayName, buildPropertyInfoBox(registryEntry));
+          });
           labelCell.appendChild(infoBtn);
         }
 
@@ -1229,21 +2027,28 @@
           unitSpan.textContent = ' ' + registryEntry.units;
           valueCell.appendChild(unitSpan);
         }
+        // HOMO-LUMO gap: also show the photon-energy-equivalent
+        // wavelength (E(eV) = 1239.84198 / lambda(nm), the standard
+        // hc constant in eV·nm -- a real physical relation, not a
+        // fitted one) alongside the eV value the model directly
+        // predicts. This is the wavelength of a photon whose ENERGY
+        // matches the frontier-orbital gap -- a useful, standard way to
+        // express a HOMO-LUMO gap, but not the same thing as a computed
+        // UV-Vis absorption maximum (which includes excited-state
+        // relaxation/electron-correlation effects this simple gap
+        // doesn't capture) -- the info panel's notes say this too.
+        if (registryEntry && registryEntry.propertyKey === 'gap' && value > 0) {
+          const nm = 1239.84198 / value;
+          const nmSpan = document.createElement('span');
+          nmSpan.className = 'property-units';
+          nmSpan.title = 'Wavelength of a photon whose energy equals this gap (E[eV] = 1239.84 / λ[nm]) -- not a computed UV-Vis absorption maximum.';
+          nmSpan.textContent = ' (≈ ' + nm.toFixed(0) + ' nm)';
+          valueCell.appendChild(nmSpan);
+        }
 
         row.appendChild(labelCell);
         row.appendChild(valueCell);
         molOutput.appendChild(row);
-
-        if (registryEntry) {
-          const infoRow = buildPropertyInfoRow(registryEntry);
-          molOutput.appendChild(infoRow);
-          const infoBtn = labelCell.querySelector('.property-info-btn');
-          infoBtn.addEventListener('click', function () {
-            const isOpen = infoRow.style.display !== 'none';
-            infoRow.style.display = isOpen ? 'none' : '';
-            infoBtn.setAttribute('aria-expanded', String(!isOpen));
-          });
-        }
       });
 
       const hasAtomProperties = result.atomProperties && result.atomProperties.length > 0;
@@ -1256,33 +2061,42 @@
         gnnTable.style.display = '';
       }
 
-      // Build atomId -> {propName: value} map for the heatmap, and
-      // populate the property dropdown.
+      // Merge into the SAME atomId -> {propName: value} map the heatmap
+      // reads, rather than replacing it outright -- a prior SASA
+      // computation (see mergeAtomHeatmapProperties below) is still
+      // valid for the current structure even if this particular
+      // "Run prediction" click had no atom-level GNN/NAGL/pKa models
+      // loaded, so a run with zero atom properties of its own leaves
+      // whatever's already there alone instead of hiding it.
       if (hasAtomProperties && result.atomIds) {
-        lastAtomProperties = {};
-        result.atomIds.forEach(function (atomId, i) {
-          lastAtomProperties[atomId] = result.atomProperties[i];
+        mergeAtomHeatmapProperties(result.atomIds, result.atomProperties);
+      }
+
+      // Same idea as the atom heatmap above, but keyed by bondId (e.g.
+      // bond dissociation enthalpy) -- this app's first bond-level
+      // property, so a molecule with none loaded just hides the row.
+      const hasBondProperties = result.bondProperties && result.bondProperties.length > 0;
+      if (hasBondProperties && result.bondIds) {
+        lastBondProperties = {};
+        result.bondIds.forEach(function (bondId, i) {
+          lastBondProperties[bondId] = result.bondProperties[i];
         });
-        // Union of keys across every atom, not just atom 0 -- a sparse
-        // property (e.g. shift_19f, present only on F atoms) can easily
-        // be absent from whichever atom happens to be first.
-        const propNameSet = {};
-        result.atomProperties.forEach(function (props) {
-          Object.keys(props).forEach(function (name) { propNameSet[name] = true; });
+        const bondPropNameSet = {};
+        result.bondProperties.forEach(function (props) {
+          Object.keys(props).forEach(function (name) { bondPropNameSet[name] = true; });
         });
-        const propNames = Object.keys(propNameSet);
-        heatmapSelect.innerHTML = '';
-        propNames.forEach(function (name) {
+        bondHeatmapSelect.innerHTML = '';
+        Object.keys(bondPropNameSet).forEach(function (name) {
           const opt = document.createElement('option');
           opt.value = name;
           opt.textContent = name;
-          heatmapSelect.appendChild(opt);
+          bondHeatmapSelect.appendChild(opt);
         });
-        heatmapRow.style.display = '';
-        applyHeatmap();
+        bondHeatmapRow.style.display = '';
+        applyBondHeatmap();
       } else {
-        heatmapRow.style.display = 'none';
-        lastAtomProperties = null;
+        bondHeatmapRow.style.display = 'none';
+        lastBondProperties = null;
       }
     }
 
@@ -1299,20 +2113,40 @@
 
       const showTextCheckbox = document.getElementById('heatmap-show-text');
       if (showTextCheckbox && showTextCheckbox.checked) {
-        CC.renderAtomValueLabels(svg, controller.molecule, values);
+        CC.renderAtomValueLabels(svg, controller.molecule, values, propName);
       } else {
         CC.clearAtomValueLabels(svg);
       }
     }
-    reapplyHeatmap = applyHeatmap;
+
+    function applyBondHeatmap() {
+      if (!lastBondProperties || bondHeatmapRow.style.display === 'none') return;
+      const propName = bondHeatmapSelect.value;
+      const values = {};
+      Object.keys(lastBondProperties).forEach(function (bondId) {
+        values[bondId] = lastBondProperties[bondId][propName];
+      });
+      const scale = CC.renderBondHeatmap(svg, controller.molecule, values, propName);
+      const legendEl = document.getElementById('bond-heatmap-legend-container');
+      if (legendEl) CC.renderHeatmapLegend(legendEl, scale);
+
+      const showTextCheckbox = document.getElementById('bond-heatmap-show-text');
+      if (showTextCheckbox && showTextCheckbox.checked) {
+        CC.renderBondValueLabels(svg, controller.molecule, values, propName);
+      } else {
+        CC.clearBondValueLabels(svg);
+      }
+    }
+    reapplyHeatmap = function () { applyHeatmap(); applyBondHeatmap(); };
 
     // Called on every 2D edit (see runValidation) -- same reasoning as
     // invalidate3DView: a prediction table or atom heatmap for whatever
     // the molecule *used* to be is actively misleading once the
     // structure has changed, not just outdated.
     invalidateGNNResults = function () {
-      if (!lastAtomProperties && gnnTable.style.display === 'none') return; // nothing to invalidate
+      if (!lastAtomProperties && !lastBondProperties && gnnTable.style.display === 'none') return; // nothing to invalidate
       lastAtomProperties = null;
+      lastBondProperties = null;
       lastMolecularProperties = null;
       molOutput.innerHTML = '';
       showGnnMessage('Structure has changed \u2014 click "Run prediction" to update.');
@@ -1321,6 +2155,15 @@
       CC.clearAtomValueLabels(svg);
       const legendEl = document.getElementById('heatmap-legend-container');
       if (legendEl) legendEl.innerHTML = '';
+      bondHeatmapRow.style.display = 'none';
+      CC.clearBondHeatmap(svg);
+      CC.clearBondValueLabels(svg);
+      const bondLegendEl = document.getElementById('bond-heatmap-legend-container');
+      if (bondLegendEl) bondLegendEl.innerHTML = '';
+      // Steric accessibility was computed from a 3D conformer built off
+      // the OLD 2D structure -- no longer valid once that's changed
+      // (same reasoning invalidate3DView already applies to the 3D tab).
+      sasaStatus.textContent = '';
       refreshRadarChart();
     };
 
@@ -1334,6 +2177,68 @@
       const legendEl = document.getElementById('heatmap-legend-container');
       if (legendEl) legendEl.innerHTML = '';
     });
+    bondHeatmapSelect.addEventListener('change', applyBondHeatmap);
+    const bondShowTextCheckbox = document.getElementById('bond-heatmap-show-text');
+    if (bondShowTextCheckbox) bondShowTextCheckbox.addEventListener('change', applyBondHeatmap);
+    clearBondHeatmapBtn.addEventListener('click', function () {
+      CC.clearBondHeatmap(svg);
+      CC.clearBondValueLabels(svg);
+      const bondLegendEl = document.getElementById('bond-heatmap-legend-container');
+      if (bondLegendEl) bondLegendEl.innerHTML = '';
+    });
+
+    // Steric accessibility (SASA) -- deliberately its own button, not
+    // folded into "Run prediction". Deliberately does NOT build its own
+    // 3D structure either (it used to: a from-scratch conformer search
+    // via CC.SASA.predict, real find from earlier in this project's own
+    // history -- that path was slow (several seconds to tens of
+    // seconds) AND its own time budget routinely still wasn't enough to
+    // reach real convergence, silently producing unreliable numbers).
+    // SASA only ever makes sense on top of a REAL, already-relaxed
+    // conformer, and building/refining that is the 3D tab's whole job
+    // (with its own convergence chart and "Optimize further" control) --
+    // this button now only ever measures whatever's already there,
+    // pointing the user to the 3D tab instead of quietly doing that work
+    // (badly) itself.
+    computeSasaBtn.addEventListener('click', function () {
+      if (controller.molecule.isEmpty()) {
+        sasaStatus.textContent = 'Draw a structure first.';
+        return;
+      }
+
+      const existing = getCurrent3DGeometry();
+      if (!existing || !existing.optimized) {
+        sasaStatus.style.color = 'var(--danger)';
+        sasaStatus.textContent = 'No optimized 3D structure yet — go to the 3D view tab and run a conformer search.';
+        CC.Logger.warning('SASA: no optimized 3D structure available yet');
+        return;
+      }
+
+      sasaStatus.textContent = '';
+      sasaStatus.style.color = '';
+      try {
+        const result = CC.SASA.predictFromAtoms(controller.molecule, existing.atoms, {});
+        result.converged = existing.converged;
+        if (result.atomProperties.length > 0) {
+          mergeAtomHeatmapProperties(result.atomIds, result.atomProperties);
+        }
+        sasaStatus.style.color = result.converged ? '' : 'var(--danger)';
+        const convergedNote = result.converged
+          ? 'converged'
+          : '⚠ that 3D structure did NOT fully converge — the resulting values may be unreliable, not ' +
+            'just imprecise (an unrelaxed structure has spurious close contacts between atoms that a real ' +
+            'conformer wouldn’t, which artificially lowers exposure everywhere); try "Optimize further…" ' +
+            'in the 3D tab first';
+        sasaStatus.textContent = 'Computed steric accessibility from the existing ' + result.numAtomsIncludingH +
+          '-atom (incl. implicit H) conformer — ' + convergedNote + '. See "steric_accessibility" ' +
+          '(0–1, fraction exposed) and "sasa" (Å²) in the atom heatmap above.';
+        CC.Logger[result.converged ? 'success' : 'warning']('Computed SASA (' + result.numAtomsIncludingH + ' atoms, ' + (result.converged ? 'converged' : 'did not converge') + ')');
+      } catch (err) {
+        sasaStatus.textContent = 'Steric accessibility computation failed: ' + err.message;
+        console.error('[ChemCanvas] SASA computation failed', err);
+        CC.Logger.error('SASA computation failed: ' + err.message);
+      }
+    });
 
     function updateRunButtonLabel() {
       const n = CC.GNN.getLoadedChempropModelIds().length;
@@ -1343,73 +2248,142 @@
     }
     updateRunButtonLabel();
 
-    function formatMetric(entry) {
-      if (!entry.metrics || !entry.metrics.primary) return '';
-      const p = entry.metrics.primary;
-      return p.name + ' ' + (typeof p.value === 'number' ? p.value.toFixed(3) : p.value);
-    }
+    // Purely a UI grouping -- see registry.json's "categories" field (and
+    // model-registry.js's schema doc) for what each bucket means. An
+    // entry lists ONE OR MORE categories and appears in every matching
+    // section -- e.g. melting point shows under both "Environmental &
+    // analytical" and "Characterization" on purpose (the user explicitly
+    // wants that redundancy, not a single home per model). An entry with
+    // no recognized category at all falls back to "general" rather than
+    // silently vanishing from the panel entirely (mirrors
+    // CC.GNN.loadModelRegistry's own "skip a malformed entry, don't
+    // break everything else" philosophy, just applied to a cosmetic
+    // field instead of a structural one).
+    const REGISTRY_CATEGORIES = [
+      { key: 'general', containerId: 'model-registry-list-general' },
+      { key: 'characterization', containerId: 'model-registry-list-characterization' },
+      { key: 'environmental-analytical', containerId: 'model-registry-list-environmental-analytical' },
+      { key: 'medicinal', containerId: 'model-registry-list-medicinal' },
+      { key: 'structure-tools', containerId: 'model-registry-list-structure-tools' },
+    ];
 
     function renderRegistryList(entries) {
-      const container = document.getElementById('model-registry-list');
-      container.innerHTML = '';
-      if (entries.length === 0) {
-        container.innerHTML = '<p class="side-panel-note">No models in the registry yet.</p>';
-        return;
+      // Computed once per render (not once per entry -- checkModelCompatibility
+      // already covers every entry in one pass) so each row can show a
+      // compact tier badge without gating the Load button itself: loading
+      // weights is harmless regardless of the CURRENT molecule (you might
+      // load a model now and draw a compatible structure later) -- the
+      // Validation tab is the authoritative place to see WHY.
+      let compatByModelId = null;
+      if (window.CC.Validate && controller && !controller.molecule.isEmpty() && lastStructureReport) {
+        try {
+          compatByModelId = {};
+          CC.Validate.checkModelCompatibility(controller.molecule, lastStructureReport).forEach(function (c) {
+            compatByModelId[c.id] = c;
+          });
+        } catch (err) {
+          compatByModelId = null;
+        }
       }
 
+      const byCategory = {};
+      REGISTRY_CATEGORIES.forEach(function (c) { byCategory[c.key] = []; });
       entries.forEach(function (entry) {
-        const row = document.createElement('div');
-        row.className = 'model-registry-row';
-
-        const info = document.createElement('div');
-        info.className = 'model-registry-info';
-        const nameEl = document.createElement('div');
-        nameEl.className = 'model-registry-name';
-        nameEl.textContent = entry.displayName;
-        info.appendChild(nameEl);
-
-        const subEl = document.createElement('div');
-        subEl.className = 'model-registry-sub';
-        const datasetName = entry.dataset && entry.dataset.name;
-        const metricText = formatMetric(entry);
-        const bits = [entry.taskType];
-        if (datasetName) bits.push(datasetName);
-        if (metricText) bits.push(metricText);
-        subEl.textContent = bits.join(' \u00b7 ');
-        info.appendChild(subEl);
-
-        row.appendChild(info);
-
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-ghost btn-small model-registry-load-btn';
-        btn.textContent = CC.GNN.isRegistryModelLoaded(entry.id) ? 'Loaded' : 'Load';
-        btn.disabled = CC.GNN.isRegistryModelLoaded(entry.id);
-        btn.addEventListener('click', function () {
-          btn.disabled = true;
-          btn.textContent = 'Loading\u2026';
-          CC.GNN.loadRegistryModel(entry.id)
-            .then(function () {
-              btn.textContent = 'Loaded';
-              updateRunButtonLabel();
-              notifyAni2xModelsChanged();
-            })
-            .catch(function (err) {
-              btn.textContent = 'Load';
-              btn.disabled = false;
-              console.error('[ChemCanvas] Failed to load registry model "' + entry.id + '"', err);
-              const errEl = document.createElement('div');
-              errEl.className = 'model-registry-error';
-              errEl.textContent = 'Failed: ' + err.message;
-              row.appendChild(errEl);
-            });
+        const cats = (entry.categories || []).filter(function (c) { return byCategory[c]; });
+        (cats.length ? cats : ['general']).forEach(function (key) {
+          byCategory[key].push(entry);
         });
-        row.appendChild(btn);
+      });
 
-        container.appendChild(row);
+      REGISTRY_CATEGORIES.forEach(function (c) {
+        const container = document.getElementById(c.containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        const categoryEntries = byCategory[c.key];
+        if (categoryEntries.length === 0) {
+          container.innerHTML = '<p class="side-panel-note">No models in this category yet.</p>';
+          return;
+        }
+
+        categoryEntries.forEach(function (entry) {
+          const row = document.createElement('div');
+          row.className = 'model-registry-row';
+
+          const info = document.createElement('div');
+          info.className = 'model-registry-info';
+          const nameEl = document.createElement('div');
+          nameEl.className = 'model-registry-name';
+          nameEl.textContent = entry.displayName;
+          const infoBtn = document.createElement('button');
+          infoBtn.type = 'button';
+          infoBtn.className = 'property-info-btn';
+          infoBtn.setAttribute('aria-label', 'About this model');
+          infoBtn.textContent = '[?]';
+          infoBtn.addEventListener('click', function () {
+            openPropertyInfoModal(entry.displayName, buildPropertyInfoBox(entry));
+          });
+          nameEl.appendChild(infoBtn);
+          const compat = compatByModelId && compatByModelId[entry.id];
+          if (compat && compat.tier !== 'compatible') {
+            const tierBadge = document.createElement('span');
+            tierBadge.className = 'tier-badge tier-' + compat.tier;
+            tierBadge.textContent = TIER_LABEL[compat.tier] || compat.tier;
+            tierBadge.title = compat.reasons.join('; ');
+            nameEl.appendChild(tierBadge);
+          }
+          info.appendChild(nameEl);
+
+          const subEl = document.createElement('div');
+          subEl.className = 'model-registry-sub';
+          const datasetName = entry.dataset && entry.dataset.name;
+          const metricText = formatMetric(entry);
+          const bits = [entry.taskType];
+          if (datasetName) bits.push(datasetName);
+          if (metricText) bits.push(metricText);
+          subEl.textContent = bits.join(' \u00b7 ');
+          info.appendChild(subEl);
+
+          row.appendChild(info);
+
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-small model-registry-load-btn';
+          btn.textContent = CC.GNN.isRegistryModelLoaded(entry.id) ? 'Loaded' : 'Load';
+          btn.disabled = CC.GNN.isRegistryModelLoaded(entry.id);
+          btn.addEventListener('click', function () {
+            btn.disabled = true;
+            btn.textContent = 'Loading\u2026';
+            CC.Logger.info('Loading model: ' + entry.displayName + '\u2026');
+            CC.GNN.loadRegistryModel(entry.id)
+              .then(function () {
+                // A full re-render, not just mutating this one button --
+                // an entry listed under more than one category (see
+                // REGISTRY_CATEGORIES above) has a SEPARATE row/button
+                // per section, and every copy needs to flip to "Loaded"
+                // together, not just whichever one was actually clicked.
+                refreshRegistryList();
+                updateRunButtonLabel();
+                notifyAni2xModelsChanged();
+                CC.Logger.success('Loaded model: ' + entry.displayName);
+              })
+              .catch(function (err) {
+                btn.textContent = 'Load';
+                btn.disabled = false;
+                console.error('[ChemCanvas] Failed to load registry model "' + entry.id + '"', err);
+                CC.Logger.error('Failed to load model "' + entry.displayName + '": ' + err.message);
+                const errEl = document.createElement('div');
+                errEl.className = 'model-registry-error';
+                errEl.textContent = 'Failed: ' + err.message;
+                row.appendChild(errEl);
+              });
+          });
+          row.appendChild(btn);
+
+          container.appendChild(row);
+        });
       });
     }
 
-    // Lets other panels (the 3D view's "Optimize with ANI-2x" auto-load,
+    // Lets other panels (the 3D view's conformer-search auto-load,
     // see setup3DPanel) re-render this list after loading a model from
     // outside this panel, so its "Load"/"Loaded" button state stays honest.
     refreshRegistryList = function () { renderRegistryList(CC.GNN.getRegistryEntries()); };
@@ -1423,6 +2397,7 @@
       .then(function (entries) {
         registryStatus.textContent = '';
         renderRegistryList(entries);
+        refreshValidationPanel(); // registry just arrived -- the model-compatibility table couldn't be filled in until now
       })
       .catch(function (err) {
         registryStatus.textContent = 'Could not load model registry: ' + err.message;
@@ -1489,6 +2464,158 @@
       };
       reader.readAsArrayBuffer(file);
       onnxFileInput.value = '';
+    });
+  }
+
+  // ---------- Implicit solvation (GB/SA) ----------
+
+  // Cross-checks that the current 3D geometry's own implicit-hydrogen
+  // bookkeeping (per heavy atom) matches the MBIS model's expanded-graph
+  // bookkeeping for the SAME molecule, before zipping their two arrays
+  // together position-by-position. They come from independently-derived
+  // H-perception paths that usually agree for ordinary neutral organics
+  // but aren't guaranteed to: embed3d.js's classical force field uses a
+  // simple valence-table heuristic (elements.js), GeoMol uses RDKit's own
+  // AddHs, and the MBIS model uses RDKit's own annotations -- a charged,
+  // hypervalent, or otherwise unusual atom could give the classical path
+  // a different implicit-H count than RDKit's. Silently zipping mismatched
+  // arrays together would misassign every charge after the first
+  // divergence rather than just failing loudly, so this is checked, not
+  // assumed (same "don't silently produce an unreliable number" reasoning
+  // steric-accessibility.js's own header documents for SASA).
+  function hCountsMatchNaglCharges(numHeavyAtoms, atoms3D, bonds3D, naglResult) {
+    if (atoms3D.length !== naglResult.charges.length) return false;
+
+    const from3D = new Array(numHeavyAtoms).fill(0);
+    bonds3D.forEach(function (b) {
+      if (b.a1 < numHeavyAtoms && b.a2 >= numHeavyAtoms) from3D[b.a1]++;
+      else if (b.a2 < numHeavyAtoms && b.a1 >= numHeavyAtoms) from3D[b.a2]++;
+    });
+
+    const fromNagl = new Array(numHeavyAtoms).fill(0);
+    for (let h = numHeavyAtoms; h < naglResult.elements.length; h++) {
+      const neighbors = naglResult.adjacency[h] || [];
+      if (neighbors.length === 1 && neighbors[0] < numHeavyAtoms) fromNagl[neighbors[0]]++;
+    }
+
+    for (let i = 0; i < numHeavyAtoms; i++) {
+      if (from3D[i] !== fromNagl[i]) return false;
+    }
+    return true;
+  }
+
+  function setupSolventPanel() {
+    const enableCheckbox = document.getElementById('solvent-enable-checkbox');
+    const controls = document.getElementById('solvent-controls');
+    const solventSelect = document.getElementById('solvent-select');
+    const customRow = document.getElementById('solvent-custom-row');
+    const customEpsInput = document.getElementById('solvent-custom-eps');
+    const computeBtn = document.getElementById('compute-solvent-btn');
+    const statusEl = document.getElementById('solvent-status');
+    const outputTable = document.getElementById('solvent-output-table');
+    const outputBody = document.getElementById('solvent-output');
+
+    CC.Solvent.SOLVENTS.forEach(function (s) {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name + ' (ε=' + s.eps + ')';
+      solventSelect.appendChild(opt);
+    });
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom…';
+    solventSelect.appendChild(customOpt);
+
+    enableCheckbox.addEventListener('change', function () {
+      controls.style.display = enableCheckbox.checked ? '' : 'none';
+    });
+
+    solventSelect.addEventListener('change', function () {
+      customRow.style.display = solventSelect.value === 'custom' ? '' : 'none';
+    });
+
+    function selectedEps() {
+      if (solventSelect.value === 'custom') return parseFloat(customEpsInput.value);
+      const entry = CC.Solvent.SOLVENTS.find(function (s) { return s.id === solventSelect.value; });
+      return entry ? entry.eps : NaN;
+    }
+
+    function showError(text) {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = text;
+      outputTable.style.display = 'none';
+    }
+
+    function renderResult(result, converged) {
+      statusEl.style.color = converged ? '' : 'var(--danger)';
+      statusEl.textContent = converged
+        ? ''
+        : '⚠ the underlying 3D structure did NOT fully converge — this energy may be unreliable, not just imprecise; try "Optimize further…" in the 3D tab first.';
+
+      outputBody.innerHTML = '';
+      const rows = [
+        ['Solvent dielectric (ε)', result.epsSolvent.toFixed(2)],
+        ['Polar (GB)', result.polar.toFixed(2) + ' kcal/mol'],
+        ['Nonpolar (SASA, γ=0.0072 kcal/mol/Å²)', result.nonpolar.toFixed(2) + ' kcal/mol'],
+        ['Total ΔG (solvation)', result.total.toFixed(2) + ' kcal/mol'],
+        ['Total SASA', result.totalSasa.toFixed(1) + ' Å²'],
+      ];
+      rows.forEach(function (pair) {
+        const row = document.createElement('tr');
+        const labelCell = document.createElement('td');
+        labelCell.textContent = pair[0];
+        const valueCell = document.createElement('td');
+        valueCell.textContent = pair[1];
+        row.appendChild(labelCell);
+        row.appendChild(valueCell);
+        outputBody.appendChild(row);
+      });
+      outputTable.style.display = '';
+    }
+
+    computeBtn.addEventListener('click', function () {
+      const mol = controller.molecule;
+      if (mol.isEmpty()) { showError('Draw a structure first.'); return; }
+
+      const existing = getCurrent3DGeometry();
+      if (!existing || !existing.optimized) {
+        showError('No optimized 3D structure yet — go to the 3D view tab and run a conformer search.');
+        return;
+      }
+
+      const naglIds = CC.NAGL.getLoadedModelIds();
+      if (naglIds.length === 0) {
+        showError('No MBIS partial-charge model loaded — load "MBIS partial charges (per atom)" above first.');
+        return;
+      }
+
+      const epsSolvent = selectedEps();
+      if (!(epsSolvent >= 1)) { showError('Dielectric constant must be a number ≥ 1.'); return; }
+
+      let naglResult;
+      try {
+        naglResult = CC.NAGL.predictAll(mol, naglIds[0]);
+      } catch (err) {
+        showError('MBIS charge prediction failed: ' + err.message);
+        return;
+      }
+
+      if (!hCountsMatchNaglCharges(mol.atoms.size, existing.atoms, existing.bonds, naglResult)) {
+        showError('This 3D structure’s implicit hydrogens don’t line up with the MBIS model’s own ' +
+          'hydrogen count for the same molecule — try regenerating the 3D structure with the other 3D ' +
+          'generation method (3D view tab) and running MBIS again.');
+        return;
+      }
+
+      try {
+        const result = CC.Solvent.predict(existing.atoms, naglResult.charges, epsSolvent);
+        renderResult(result, existing.converged);
+        CC.Logger.success('Computed implicit solvation energy (ε=' + epsSolvent.toFixed(1) + '): ' +
+          'ΔG = ' + result.total.toFixed(2) + ' kcal/mol');
+      } catch (err) {
+        showError('Solvation energy computation failed: ' + err.message);
+        console.error('[ChemCanvas] implicit solvent computation failed', err);
+      }
     });
   }
 
@@ -1615,6 +2742,122 @@
     }
   }
 
+  // App-wide event log console -- pure rendering + download here;
+  // CC.Logger (js/logger.js) owns the actual entries and is what every
+  // other file calls into. Backfills whatever was already logged before
+  // this ran (RDKit/ONNX/3Dmol readiness from lib-loader.js fire well
+  // before DOMContentLoaded's setup functions get here), then subscribes
+  // for everything after.
+  function setupLogConsole() {
+    const toggleBtn = document.getElementById('log-toggle-btn');
+    const toggleDot = toggleBtn.querySelector('.status-dot');
+    const toggleSummary = document.getElementById('log-toggle-summary');
+    const consolePanel = document.getElementById('log-console');
+    const consoleBody = document.getElementById('log-console-body');
+    const consoleSummary = document.getElementById('log-console-summary');
+    const clearBtn = document.getElementById('log-clear-btn');
+    const downloadBtn = document.getElementById('log-download-btn');
+    const closeBtn = document.getElementById('log-close-btn');
+
+    function summaryText(entries) {
+      const n = entries.length;
+      const errors = entries.filter(function (e) { return e.level === 'error'; }).length;
+      const warnings = entries.filter(function (e) { return e.level === 'warning'; }).length;
+      let text = n + ' ' + (n === 1 ? 'entry' : 'entries');
+      if (errors) text += ' · ' + errors + ' error' + (errors === 1 ? '' : 's');
+      else if (warnings) text += ' · ' + warnings + ' warning' + (warnings === 1 ? '' : 's');
+      return text;
+    }
+
+    function updateSummary() {
+      const entries = CC.Logger.getEntries();
+      const text = summaryText(entries);
+      toggleSummary.textContent = text;
+      consoleSummary.textContent = text;
+      const hasError = entries.some(function (e) { return e.level === 'error'; });
+      const hasWarning = entries.some(function (e) { return e.level === 'warning'; });
+      toggleDot.classList.remove('is-error', 'is-warning', 'is-ready');
+      if (hasError) toggleDot.classList.add('is-error');
+      else if (hasWarning) toggleDot.classList.add('is-warning');
+      else if (entries.length) toggleDot.classList.add('is-ready');
+    }
+
+    function isScrolledNearBottom() {
+      return consoleBody.scrollHeight - consoleBody.scrollTop - consoleBody.clientHeight < 40;
+    }
+
+    function appendEntryRow(entry) {
+      const wasNearBottom = isScrolledNearBottom();
+      const row = document.createElement('div');
+      row.className = 'log-entry log-entry-' + entry.level;
+      const timeEl = document.createElement('span');
+      timeEl.className = 'log-entry-time';
+      timeEl.textContent = CC.Logger.formatTime(entry.time);
+      const levelEl = document.createElement('span');
+      levelEl.className = 'log-entry-level';
+      levelEl.textContent = entry.level.toUpperCase();
+      const messageEl = document.createElement('span');
+      messageEl.className = 'log-entry-message';
+      messageEl.textContent = entry.message;
+      row.appendChild(timeEl);
+      row.appendChild(levelEl);
+      row.appendChild(messageEl);
+      consoleBody.appendChild(row);
+      if (wasNearBottom) consoleBody.scrollTop = consoleBody.scrollHeight;
+    }
+
+    function renderAll() {
+      consoleBody.innerHTML = '';
+      const entries = CC.Logger.getEntries();
+      if (entries.length === 0) {
+        consoleBody.innerHTML = '<p class="log-console-empty">No log entries yet.</p>';
+      } else {
+        entries.forEach(appendEntryRow);
+        consoleBody.scrollTop = consoleBody.scrollHeight;
+      }
+      updateSummary();
+    }
+
+    renderAll();
+    CC.Logger.subscribe(function (entry) {
+      if (entry === null) {
+        renderAll(); // clear()
+        return;
+      }
+      const emptyNote = consoleBody.querySelector('.log-console-empty');
+      if (emptyNote) emptyNote.remove();
+      appendEntryRow(entry);
+      updateSummary();
+    });
+
+    function setConsoleOpen(open) {
+      consolePanel.style.display = open ? 'flex' : 'none';
+      if (open) consoleBody.scrollTop = consoleBody.scrollHeight;
+    }
+
+    toggleBtn.addEventListener('click', function () {
+      setConsoleOpen(consolePanel.style.display === 'none');
+    });
+    closeBtn.addEventListener('click', function () { setConsoleOpen(false); });
+
+    clearBtn.addEventListener('click', function () {
+      CC.Logger.clear();
+    });
+
+    downloadBtn.addEventListener('click', function () {
+      const blob = new Blob([CC.Logger.toText()], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.download = 'chemcanvas-log-' + stamp + '.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     svg = document.getElementById('structure-svg');
     canvasStats = document.getElementById('canvas-stats');
@@ -1624,6 +2867,7 @@
       onSelectionChanged: function () { renderNow(); },
       onToolShortcut: activateTool,
       onCleanupShortcut: cleanupStructure,
+      onHoverChanged: function (target) { CC.updateHoverHighlight(svg, target); },
     });
 
     setupToolRail();
@@ -1636,7 +2880,11 @@
     setupPropertiesPanel();
     setupExportPanel();
     setupHRMSModal();
+    setupDrugLikenessModal();
+    setupMicrostateModal();
     setupSmartsFiltersModal();
+    setupPropertyInfoModal();
+    setupTitrationPanel();
 
     // Loaded once at startup, same as the model registry -- data-only
     // (no weights to fetch on demand), so there's no reason to defer it.
@@ -1649,9 +2897,12 @@
       });
     setupPropertiesNav();
     setupSidePanelTabs();
+    setupValidationPanel();
     setup3DPanel();
     setupGNNPanel();
+    setupSolventPanel();
     setupCanvasNavigation();
+    setupLogConsole();
     updateUndoRedoButtons();
     renderNow();
 
@@ -1667,6 +2918,17 @@
       .then(function () { runValidation(); })
       .catch(function (err) {
         console.warn('[ChemCanvas] SA Score table failed to load; synthetic accessibility will be omitted.', err);
+      });
+
+    // Same pattern as the SA Score table above: a static reference
+    // dataset (FDA-approved-drug percentile distributions), fetched once
+    // at startup, re-rendering the drug-likeness section once it lands
+    // so a molecule drawn before it finishes loading gets its
+    // percentiles filled in retroactively rather than staying blank.
+    CC.DrugLikeness.loadReference()
+      .then(function () { renderDrugLikeness(currentDescriptors); })
+      .catch(function (err) {
+        console.warn('[ChemCanvas] Drug-likeness reference distribution failed to load; percentiles will be omitted.', err);
       });
   });
 

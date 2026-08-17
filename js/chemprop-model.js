@@ -37,6 +37,16 @@
  * atom on that atom's own embedding, instead of once on the
  * NormAggregation-pooled molecule vector.
  *
+ * A third level, outputLevel === "bond" (e.g. bond dissociation
+ * enthalpy — see BDE_INTEGRATION.md), reads the per-directed-edge
+ * embedding dmpnn.js's edge_finalize step produces (needs the
+ * checkpoint's extra W_eo/W_eo_bias tensors, absent from every
+ * molecule-/atom-level manifest). Confirmed directly from chemprop's own
+ * installed source (chemprop/models/mol_atom_bond.py): the bond
+ * predictor's input is concat([H_e[edge], H_e[reverse_edge]]), and the
+ * final per-bond value averages the FFN's output over both directions,
+ * `(pred[forward] + pred[backward]) / 2` — see runOneBondLevel().
+ *
  * Why not ONNX? See gnn-inference.js's header: exporting a D-MPNN's
  * dynamic scatter/gather ops to ONNX and running them in onnxruntime-web
  * is genuinely fragile. This app's D-MPNN is small (hidden~300, depth~3)
@@ -46,7 +56,7 @@
  *
  * Expected checkpoint shape (what the conversion script must produce):
  *   manifest.taskType = "regression" | "classification"
- *   manifest.outputLevel = "molecule" | "atom" (default "molecule")
+ *   manifest.outputLevel = "molecule" | "atom" | "bond" (default "molecule")
  *   manifest.graphType = "heavy" | "explicit-h" (default "heavy",
  *                    atom-level only) — "explicit-h" means the checkpoint
  *                    was trained with chemprop's --add-h (every hydrogen
@@ -67,6 +77,14 @@
  *                      since there's no pooling step to normalize.
  *   manifest.tensors.{W_i, W_h, W_o_weight, W_o_bias,
  *                      ffn0_weight, ffn0_bias, ffn1_weight, ffn1_bias} = { shape, offset, length }
+ *   manifest.tensors.{W_eo_weight, W_eo_bias} = { shape, offset, length }
+ *                      — bond-level (outputLevel === "bond") only; this
+ *                        is the extra edge_finalize projection plain
+ *                        molecule-/atom-level checkpoints never needed.
+ *                        ffn0_weight's input dim is 2*d_h for a
+ *                        bond-level checkpoint (concat of an edge's own
+ *                        embedding with its reverse edge's), vs d_h for
+ *                        atom/molecule.
  *   manifest.tensors.{out_mean, out_scale} = { shape, offset, length }
  *                      — regression only; absent for classification,
  *                        since BinaryClassificationFFN's output_transform
@@ -140,8 +158,12 @@ CC.GNN = window.CC.GNN || {};
       dims: manifest.dims,
       Wi: toRows(tensor('W_i'), tensorShape('W_i')), WiBias: null,
       Wh: toRows(tensor('W_h'), tensorShape('W_h')), WhBias: null,
-      Wo: toRows(tensor('W_o_weight'), tensorShape('W_o_weight')),
-      WoBias: Array.from(tensor('W_o_bias')),
+      // A bond-level (BDE) checkpoint has no atom-output layer at all --
+      // Chemprop never builds message_passing.W_vo without a mol/atom
+      // predictor attached -- so this manifest simply has no W_o_weight
+      // tensor, and dmpnn.js treats Wo/WoBias as optional accordingly.
+      Wo: manifest.outputLevel === 'bond' ? null : toRows(tensor('W_o_weight'), tensorShape('W_o_weight')),
+      WoBias: manifest.outputLevel === 'bond' ? null : Array.from(tensor('W_o_bias')),
       ffn0: toRows(tensor('ffn0_weight'), tensorShape('ffn0_weight')),
       ffn0Bias: Array.from(tensor('ffn0_bias')),
       ffn1: toRows(tensor('ffn1_weight'), tensorShape('ffn1_weight')),
@@ -150,6 +172,10 @@ CC.GNN = window.CC.GNN || {};
     if (model.taskType === 'regression') {
       model.outMean = tensor('out_mean')[0];
       model.outScale = tensor('out_scale')[0];
+    }
+    if (model.outputLevel === 'bond') {
+      model.Weo = toRows(tensor('W_eo_weight'), tensorShape('W_eo_weight'));
+      model.WeoBias = Array.from(tensor('W_eo_bias'));
     }
 
     models.set(id, model);
@@ -203,6 +229,7 @@ CC.GNN = window.CC.GNN || {};
       Wi: model.Wi, WiBias: model.WiBias,
       Wh: model.Wh, WhBias: model.WhBias,
       Wo: model.Wo, WoBias: model.WoBias,
+      Weo: model.Weo, WeoBias: model.WeoBias,
     };
     return CC.GNN.runDMPNN(graph, dmpnnWeights, { depth: model.dims.depth });
   }
@@ -246,6 +273,34 @@ CC.GNN = window.CC.GNN || {};
       const sum = hIndices.reduce(function (s, hIdx) { return s + values[hIdx]; }, 0);
       return sum / hIndices.length;
     });
+  }
+
+  // Bond-level (e.g. BDE), "explicit-h" graph only (a bond-level
+  // checkpoint always needs the real per-hydrogen graph -- C-H bonds are
+  // most of what's chemically interesting here, e.g. finding the weakest
+  // C-H in a molecule). graph.edgeSrc/edgeFeatures store each canonical
+  // (undirected) bond as a consecutive forward/backward pair -- edges 2k
+  // and 2k+1 -- exactly matching Chemprop's own BatchMolGraph edge
+  // ordering, so this replicates its bond predictor precisely (confirmed
+  // from chemprop/models/mol_atom_bond.py): each direction's fingerprint
+  // is concat([own edge embedding, reverse edge's embedding]), run
+  // through the FFN head separately, then the two directions' outputs
+  // are averaged. Returns one value per canonical bond (heavy-heavy AND
+  // heavy-H), in graph.bondIds/hBondCanonicalIndexByHeavyIndex order --
+  // callers slice the first graph.numRealBonds off for the visible
+  // (heavy-heavy) bonds and use the rest for the per-atom aggregate.
+  function runOneBondLevel(model, graph) {
+    const out = runDMPNNFor(model, graph);
+    const He = out.edgeEmbeddings;
+    const numCanonicalBonds = He.length / 2;
+    const values = new Array(numCanonicalBonds);
+    for (let k = 0; k < numCanonicalBonds; k++) {
+      const eFwd = 2 * k, eBack = 2 * k + 1;
+      const predFwd = applyHead(model, He[eFwd].concat(He[eBack]));
+      const predBack = applyHead(model, He[eBack].concat(He[eFwd]));
+      values[k] = (predFwd + predBack) / 2;
+    }
+    return values;
   }
 
   // Builds (and lazily caches) whichever graph(s) the currently-loaded
@@ -295,10 +350,39 @@ CC.GNN = window.CC.GNN || {};
     return { values: values, atomIds: graph.atomIds, mask: mask };
   }
 
+  // Bond-level (e.g. BDE): always needs the explicit-H graph (a bond-
+  // level checkpoint's whole point is per-bond values including C-H).
+  // Returns the visible (heavy-heavy, drawn-on-canvas) bond values in
+  // molecule.bonds order, plus a per-heavy-atom "weakest attached-H bond"
+  // aggregate (min, not mean -- unlike the 1H shift aggregate, where
+  // several equivalent protons genuinely share one true value, several
+  // C-H's on the same atom generally do NOT share one true BDE, and the
+  // chemically useful number here is "how easy is it to break the
+  // weakest bond on this atom", not their average).
+  // Display key for the per-atom "weakest attached-H bond" aggregate,
+  // e.g. task "bde" -> "BDE-XH" (X-H, since it covers whichever element
+  // that heavy atom's own attached hydrogens are bonded through -- C-H,
+  // N-H, O-H, ... not just carbon).
+  function weakestHKey(model) { return model.task.toUpperCase() + '-XH'; }
+
+  function runBondLevelModel(molecule, model, graphs) {
+    const graph = graphs.forGraphType('explicit-h');
+    const values = runOneBondLevel(model, graph);
+    const bondValues = values.slice(0, graph.numRealBonds);
+    const atomAggregate = graph.hBondCanonicalIndexByHeavyIndex.map(function (canonicalIdxs) {
+      if (canonicalIdxs.length === 0) return NaN;
+      return canonicalIdxs.reduce(function (min, idx) { return Math.min(min, values[idx]); }, Infinity);
+    });
+    return { bondValues: bondValues, bondIds: graph.bondIds, atomAggregate: atomAggregate, atomIds: graph.atomIds };
+  }
+
   /**
    * Run one specific loaded model on a molecule.
    * Molecule-level: { molecularProperties: { [task]: number }, propertyMeta, atomIds, backend: 'chemprop', modelId }.
    * Atom-level:      { atomProperties: [{ [task]: number }, ...] (one per atom, matching atomIds), atomIds, backend: 'chemprop', modelId }.
+   * Bond-level:      { bondProperties: [{ [task]: number }, ...] (one per bond, matching bondIds), bondIds,
+   *                    atomProperties (the per-atom "weakest attached-H bond" aggregate, key `TASK + '-XH'`, e.g. "BDE-XH"), atomIds,
+   *                    backend: 'chemprop', modelId }.
    */
   CC.GNN.predictChemprop = function (molecule, id) {
     const model = models.get(id);
@@ -307,9 +391,24 @@ CC.GNN = window.CC.GNN || {};
     const graphs = buildGraphsForMolecule(molecule);
 
     if (molecule.atoms.size === 0) {
-      return model.outputLevel === 'atom'
-        ? { atomProperties: [], atomIds: [], backend: 'chemprop', modelId: id }
-        : { molecularProperties: {}, propertyMeta: {}, atomIds: [], backend: 'chemprop', modelId: id };
+      if (model.outputLevel === 'atom') return { atomProperties: [], atomIds: [], backend: 'chemprop', modelId: id };
+      if (model.outputLevel === 'bond') return { bondProperties: [], bondIds: [], atomProperties: [], atomIds: [], backend: 'chemprop', modelId: id };
+      return { molecularProperties: {}, propertyMeta: {}, atomIds: [], backend: 'chemprop', modelId: id };
+    }
+
+    if (model.outputLevel === 'bond') {
+      const result = runBondLevelModel(molecule, model, graphs);
+      const bondProperties = result.bondValues.map(function (v) {
+        const obj = {};
+        obj[model.task] = v;
+        return obj;
+      });
+      const atomProperties = result.atomAggregate.map(function (v) {
+        const obj = {};
+        if (v === v && v !== Infinity) obj[weakestHKey(model)] = v; // v === v excludes NaN (no attached H's)
+        return obj;
+      });
+      return { bondProperties: bondProperties, bondIds: result.bondIds, atomProperties: atomProperties, atomIds: result.atomIds, backend: 'chemprop', modelId: id };
     }
 
     if (model.outputLevel === 'atom') {
@@ -342,7 +441,7 @@ CC.GNN = window.CC.GNN || {};
    * the later one (in load order) wins that key — give models distinct
    * task names to avoid this in practice.
    *
-   * Returns { molecularProperties, propertyMeta, atomProperties, atomIds, backend: 'chemprop' } --
+   * Returns { molecularProperties, propertyMeta, atomProperties, atomIds, bondProperties, bondIds, backend: 'chemprop' } --
    * molecularProperties/propertyMeta cover any molecule-level models loaded,
    * atomProperties (one object per atom, matching atomIds) covers any
    * atom-level models loaded, merged together if both kinds are loaded
@@ -351,13 +450,18 @@ CC.GNN = window.CC.GNN || {};
    * individual model's own forward pass used internally). propertyMeta
    * lets callers (see app.js's renderGNNOutput) render a classification
    * model's output as Positive/Negative + score rather than a plain
-   * regression number.
+   * regression number. bondProperties (one object per bond, matching
+   * bondIds -- the molecule's own drawn bonds) covers any bond-level
+   * models loaded (e.g. BDE); those also contribute a
+   * `TASK + '-XH'` (e.g. "BDE-XH") entry into the SAME atomProperties as any
+   * atom-level model would (the per-atom weakest-attached-H-bond
+   * aggregate -- see runBondLevelModel()).
    */
   CC.GNN.predictAllChempropModels = function (molecule) {
     if (models.size === 0) throw new Error('No Chemprop models loaded');
 
     if (molecule.atoms.size === 0) {
-      return { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], backend: 'chemprop' };
+      return { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], bondProperties: [], bondIds: [], backend: 'chemprop' };
     }
 
     const graphs = buildGraphsForMolecule(molecule);
@@ -365,10 +469,21 @@ CC.GNN = window.CC.GNN || {};
 
     const molecularProperties = {};
     const propertyMeta = {};
-    let atomProperties = null; // built lazily -- most predictions won't have any atom-level models loaded
+    let atomProperties = null; // built lazily -- most predictions won't have any atom-level (or bond-level) models loaded
+    let bondProperties = null;
+    let bondIds = [];
 
     models.forEach(function (model) {
-      if (model.outputLevel === 'atom') {
+      if (model.outputLevel === 'bond') {
+        const result = runBondLevelModel(molecule, model, graphs);
+        if (!bondProperties) bondProperties = result.bondValues.map(function () { return {}; });
+        result.bondValues.forEach(function (v, i) { bondProperties[i][model.task] = v; });
+        bondIds = result.bondIds;
+        if (!atomProperties) atomProperties = heavyAtomIds.map(function () { return {}; });
+        result.atomAggregate.forEach(function (v, i) {
+          if (v === v && v !== Infinity) atomProperties[i][weakestHKey(model)] = v;
+        });
+      } else if (model.outputLevel === 'atom') {
         const result = runAtomLevelModel(molecule, model, graphs);
         if (!atomProperties) atomProperties = heavyAtomIds.map(function () { return {}; });
         result.values.forEach(function (v, i) {
@@ -386,6 +501,8 @@ CC.GNN = window.CC.GNN || {};
       propertyMeta: propertyMeta,
       atomProperties: atomProperties || [],
       atomIds: heavyAtomIds,
+      bondProperties: bondProperties || [],
+      bondIds: bondIds,
       backend: 'chemprop',
     };
   };

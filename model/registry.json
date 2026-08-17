@@ -3,6 +3,9 @@
   "models": [
     {
       "id": "logp-v1",
+      "categories": [
+        "general"
+      ],
       "displayName": "logP (octanol-water partition coefficient)",
       "propertyKey": "logP",
       "taskType": "regression",
@@ -37,6 +40,9 @@
     },
     {
       "id": "electrophile-reactivity-v1",
+      "categories": [
+        "medicinal"
+      ],
       "displayName": "Protein reactivity (electrophile / covalent warhead)",
       "propertyKey": "label",
       "taskType": "classification",
@@ -97,6 +103,9 @@
     },
     {
       "id": "logs-aqsoldb",
+      "categories": [
+        "environmental-analytical"
+      ],
       "displayName": "Aqueous solubility (logS)",
       "propertyKey": "Solubility",
       "taskType": "regression",
@@ -133,6 +142,10 @@
     },
     {
       "id": "melting-point",
+      "categories": [
+        "environmental-analytical",
+        "characterization"
+      ],
       "displayName": "Melting point",
       "propertyKey": "mp",
       "taskType": "regression",
@@ -185,6 +198,9 @@
     },
     {
       "id": "nagl-mbis-charges",
+      "categories": [
+        "general"
+      ],
       "displayName": "MBIS partial charges (per atom)",
       "propertyKey": "mbis-charges",
       "engine": "nagl",
@@ -221,6 +237,9 @@
     },
     {
       "id": "pka-ch-nagl",
+      "categories": [
+        "medicinal"
+      ],
       "displayName": "Carbon acid pKa, C-H bonds (per atom)",
       "propertyKey": "pka-ch",
       "engine": "pka",
@@ -268,6 +287,10 @@
     },
     {
       "id": "nmr-13c",
+      "categories": [
+        "environmental-analytical",
+        "characterization"
+      ],
       "displayName": "13C NMR chemical shift (per atom)",
       "propertyKey": "shift_13c",
       "engine": "chemprop",
@@ -320,6 +343,10 @@
     },
     {
       "id": "nmr-19f",
+      "categories": [
+        "environmental-analytical",
+        "characterization"
+      ],
       "displayName": "19F NMR chemical shift (per atom)",
       "propertyKey": "shift_19f",
       "engine": "chemprop",
@@ -372,6 +399,10 @@
     },
     {
       "id": "nmr-1h",
+      "categories": [
+        "environmental-analytical",
+        "characterization"
+      ],
       "displayName": "1H NMR chemical shift (per atom, aggregated)",
       "propertyKey": "shift_1h",
       "engine": "chemprop",
@@ -425,6 +456,9 @@
     },
     {
       "id": "ani2x-v1",
+      "categories": [
+        "structure-tools"
+      ],
       "displayName": "ANI-2x (neural network potential)",
       "propertyKey": "aniEnergy",
       "engine": "ani2x",
@@ -461,6 +495,9 @@
     },
     {
       "id": "geomol-drugs-v1",
+      "categories": [
+        "structure-tools"
+      ],
       "displayName": "GeoMol (learned 3D conformer generator)",
       "propertyKey": "geomolConformer",
       "engine": "geomol",
@@ -492,6 +529,628 @@
         "geometry-generation",
         "graph-neural-network",
         "conformer-generation"
+      ]
+    },
+    {
+      "id": "bde-chemprop-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "Bond dissociation enthalpy (BDE)",
+      "propertyKey": "bde",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "bond",
+      "graphType": "explicit-h",
+      "units": "kcal/mol",
+      "description": "Predicts homolytic bond dissociation enthalpy for every bond, including C-H/N-H/O-H bonds (via an explicit-hydrogen graph) -- the visible (heavy-heavy) bonds are colored/labeled directly on the 2D structure via the bond heatmap; each heavy atom also gets a 'BDE-XH' value (the minimum BDE among its own attached-H bonds, e.g. the weakest C-H on that carbon) surfaced through the existing atom heatmap. Inspired by ALFABET (St. John et al., Nature Communications 2020) but this is an independently-trained checkpoint on a different, broader dataset -- not a port of ALFABET's own published weights.",
+      "files": {
+        "manifest": "bde-chemprop/bde-manifest.json",
+        "weights": "bde-chemprop/bde.bin"
+      },
+      "dataset": {
+        "name": "BDE-db2 (patonlab/BDE-db2, Model 3 -- final, broadest-coverage dataset)",
+        "citationKey": "Sowndarya2023",
+        "size": "65740 molecules, 834066 bond-level BDE/BDFE labels (DFT-computed)",
+        "splitStrategy": "Reused the source dataset's own train/valid/test split (63740/1000/1000 molecules), not re-split",
+        "sourceUrl": "https://github.com/patonlab/BDE-db2"
+      },
+      "metrics": {
+        "testSetSize": 12586,
+        "primary": {
+          "name": "Test MAE",
+          "value": 1.2,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMSE": 4.46946382522583,
+          "testRMSE": 2.114,
+          "testMAE": 1.2025385607285914
+        },
+        "note": "Real held-out test-set metrics (12586 individual bond labels across 1000 held-out molecules), computed directly from this checkpoint's own predictions, not estimated. Higher error than ALFABET's own published 0.58 kcal/mol MAE -- expected, since this is a single untuned 40-epoch training run (no ensembling, no hyperparameter search) on a broader multi-halogen chemical space (C/H/N/O/S/P/F/Cl/Br/I) than ALFABET's original C/H/N/O-only domain, not a like-for-like comparison."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 40,
+          "addH": true,
+          "bondTargetColumns": [
+            "bde"
+          ]
+        },
+        "dateTrained": "2026-08-05"
+      },
+      "notes": "This app's first BOND-level (not atom- or molecule-level) checkpoint, using Chemprop's MolAtomBondMPNN bond_predictor head (js/chemprop-model.js's runOneBondLevel, js/dmpnn.js's edge_finalize/W_eo projection) rather than a port of ALFABET's own TensorFlow+nfp architecture -- validated bit-exact (~1e-6, float32 precision) against real chemprop output on ethane/toluene/methanol during conversion. Domain of validity is whatever elements/bond types BDE-db2 covers (see dataset.size) -- no explicit out-of-vocabulary gating exists yet for this model the way chemprop-features.js's checkChempropCompatibility does for the fixed one-hot molecule-level featurizers, since Chemprop's own MultiHotAtomFeaturizer degrades gracefully (pads to an 'other' bucket) rather than hard-failing on an unseen element. BDFE (bond dissociation free energy, which BDE-db2 also provides) was not trained in this first pass -- a natural follow-on using the identical pipeline.",
+      "tags": [
+        "physicochemical",
+        "bond-level",
+        "reactivity",
+        "thermochemistry"
+      ]
+    },
+    {
+      "id": "qm9-polarizability",
+      "categories": [
+        "general"
+      ],
+      "displayName": "Isotropic polarizability",
+      "propertyKey": "alpha",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "\u00c5\u00b3",
+      "description": "Predicts isotropic molecular polarizability (how much the electron cloud distorts in a uniform electric field), computed at the B3LYP/6-31G(2df,p) level of theory in the source dataset. Domain of validity is QM9's own coverage -- small organic molecules of C/H/O/N/F, at most 9 heavy atoms -- predictions on larger/other-element molecules are extrapolations outside the training distribution and should be treated with proportionally less confidence.",
+      "files": {
+        "manifest": "qm9-polarizability/alpha-manifest.json",
+        "weights": "qm9-polarizability/alpha.bin"
+      },
+      "dataset": {
+        "name": "QM9 (Ramakrishnan et al. 2014, Scientific Data)",
+        "citationKey": "Ramakrishnan2014",
+        "size": "133885 molecules, B3LYP/6-31G(2df,p) DFT-computed properties",
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.978904"
+      },
+      "metrics": {
+        "testSetSize": null,
+        "primary": {
+          "name": "Test RMSE",
+          "value": 0.1051,
+          "units": "\u00c5\u00b3"
+        },
+        "all": {
+          "testMSE": 0.011046359315514565,
+          "testRMSE": 0.1051
+        },
+        "note": "Real held-out test-set metric from chemprop train's own logged test/mse, on the Bohr^3->Angstrom^3-converted target this checkpoint was trained on (see scripts/prepare_qm9_training_data.py)."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 30
+        },
+        "dateTrained": "2026-08-05"
+      },
+      "notes": "Raw QM9 alpha values are in Bohr^3 (atomic units) -- converted to Angstrom^3 during data prep (see scripts/prepare_qm9_training_data.py's header for the exact conversion factor and a direct sanity check against benzene's known polarizability). B3LYP/6-31G(2df,p) is known to somewhat underestimate polarizability relative to experiment at this basis set size; that's a property of the underlying DFT method/basis, not this port.",
+      "tags": [
+        "physicochemical",
+        "quantum-chemistry",
+        "qm9"
+      ]
+    },
+    {
+      "id": "qm9-homo-lumo-gap",
+      "categories": [
+        "environmental-analytical",
+        "characterization"
+      ],
+      "displayName": "HOMO-LUMO gap",
+      "propertyKey": "gap",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "eV",
+      "description": "Predicts the HOMO-LUMO gap (energy difference between the highest occupied and lowest unoccupied molecular orbitals), computed at the B3LYP/6-31G(2df,p) level of theory in the source dataset. The app also shows the photon-energy-equivalent wavelength in nm alongside the eV value (E[eV] = 1239.84 / \u03bb[nm], a standard physical relation) -- this is the wavelength of a photon whose energy equals the gap, not a computed UV-Vis absorption maximum (real electronic transitions include excited-state relaxation/electron-correlation effects a simple frontier-orbital gap doesn't capture). Domain of validity is QM9's own coverage -- small organic molecules of C/H/O/N/F, at most 9 heavy atoms.",
+      "files": {
+        "manifest": "qm9-homo-lumo-gap/gap-manifest.json",
+        "weights": "qm9-homo-lumo-gap/gap.bin"
+      },
+      "dataset": {
+        "name": "QM9 (Ramakrishnan et al. 2014, Scientific Data)",
+        "citationKey": "Ramakrishnan2014",
+        "size": "133885 molecules, B3LYP/6-31G(2df,p) DFT-computed properties",
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.978904"
+      },
+      "metrics": {
+        "testSetSize": null,
+        "primary": {
+          "name": "Test RMSE",
+          "value": 0.2618,
+          "units": "eV"
+        },
+        "all": {
+          "testMSE": 0.06852912157773972,
+          "testRMSE": 0.2618
+        },
+        "note": "Real held-out test-set metric from chemprop train's own logged test/mse, on the Hartree->eV-converted target this checkpoint was trained on (see scripts/prepare_qm9_training_data.py)."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 30
+        },
+        "dateTrained": "2026-08-05"
+      },
+      "notes": "Raw QM9 gap values are in Hartree -- converted to eV during data prep (1 Hartree = 27.211386245988 eV) and validated directly against known literature B3LYP HOMO-LUMO gaps for benzene (6.81 eV, computed from the raw dataset) and methane (13.74 eV) before training (see scripts/prepare_qm9_training_data.py's header). Specialized architectures (SchNet, DimeNet, etc.) trained specifically for QM9 benchmarks report lower MAE (~0.05-0.1 eV) than this checkpoint's RMSE with much larger training budgets -- this is a straightforward D-MPNN run once, not a QM9-leaderboard optimization effort.",
+      "tags": [
+        "physicochemical",
+        "quantum-chemistry",
+        "qm9",
+        "spectroscopy"
+      ]
+    },
+    {
+      "id": "aqueous-pka",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "Aqueous pKa (per ionizable site)",
+      "propertyKey": "pka",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "atom",
+      "units": "pKa",
+      "description": "Predicts aqueous pKa at any heavy atom -- one unified model covering both acidic sites (carboxylic acid, phenol, thiol, sulfonic/sulfinic/phosphoric acid, tetrazole) and basic sites (aliphatic/aromatic amine, pyridine-type N, guanidine, amidine). For a basic site, the predicted value is the pKa of the conjugate acid (pKaH) -- the pH at which that site is 50% protonated -- the conventional way amine basicity is reported as a single pKa number. Feeds js/pka-microstates.js's SMARTS-based ionizable-site detector and js/pka-titration.js's titration-curve panel, which look up this model's prediction only at the specific atoms the SMARTS detector identifies as ionizable (this model itself predicts a value at every heavy atom; most of those are not chemically meaningful and are not used).",
+      "files": {
+        "manifest": "aqueous-pka/pka-manifest.json",
+        "weights": "aqueous-pka/pka.bin"
+      },
+      "dataset": {
+        "name": "Baltruschat & Czodrowski 2020 (DataWarrior + ChEMBL25 combined training set)",
+        "citationKey": "Baltruschat2020",
+        "size": "5994 (molecule, ionizable atom, pKa) records, 2398 acidic + 3596 basic",
+        "splitStrategy": "Grouped-by-molecule random 80/10/10 train/val/test (a molecule's multiple ionizable-site records are never split across train/test)",
+        "sourceUrl": "https://github.com/czodrowskilab/Machine-learning-meets-pKa"
+      },
+      "metrics": {
+        "testSetSize": 592,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.7,
+          "units": "pKa units"
+        },
+        "all": {
+          "testMSE": 1.0374,
+          "testRMSE": 1.019,
+          "testMAE": 0.695
+        },
+        "note": "Real held-out test-set metrics (592 records), computed directly from this checkpoint's own predictions. Retrained (2026-08-06) to fix a real, root-caused bug: 45.0% of acidic-labeled atoms and 58.8% of basic-labeled atoms in the source SDF were drawn in their IONIZED form (e.g. a carboxylic acid's acidic O as the anion -C(=O)[O-] rather than neutral -C(=O)OH), while ChemCanvas always queries this model on a neutral drawn molecule -- a charge/H-count feature mismatch between training and inference for the exact atom being predicted. This was caught from a live symptom (simple aliphatic carboxylic acids over-predicted by ~4 pKa units) and confirmed as the cause by spot-checking both oxygens of several acids: the never-mislabeled carbonyl O predicted close to the real value while the mislabeled hydroxyl O predicted ~8-9 regardless of molecule. Fixed in scripts/prepare_pka_training_data.py by neutralizing the labeled atom's charge before training. Before/after spot-check on 8 real carboxylic acids (none in the training set): acetic acid 8.91->4.93 (real 4.76), propanoic acid 8.92->4.95 (real 4.87), butanoic acid 8.38->4.89 (real 4.82), benzoic acid 6.29->4.03 (real 4.20), formic acid 7.47->4.11 (real 3.75), ibuprofen 8.91->5.05 (real ~4.4-4.9), phenylacetic acid 8.53->4.99 (real 4.31). Glycine's COOH improved too (7.49->3.87) but is still off from its real 2.34 -- a separate, known effect (the adjacent protonated alpha-amino group's charge depresses the real pKa via a zwitterion interaction this model, and the SMARTS site-independence assumption generally, doesn't capture) not addressed by this fix. Overall aggregate test MAE/RMSE barely moved (0.72->0.70 / 1.04->1.02) since the affected atoms are a minority of the full dataset, but this specific chemical class -- one of the most common functional groups a user would actually draw -- is now far more reliable."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60
+        },
+        "dateTrained": "2026-08-06"
+      },
+      "notes": "Trained on a real, previously-published open dataset combining DataWarrior's own curated pKa training set with ChEMBL25 (Baltruschat AM, Czodrowski P, 'Machine learning meets pKa', J. Cheminformatics 2020). A single unified regression target covers both acid and base chemistry -- the model doesn't need to be told which type a site is; js/pka-microstates.js's own SMARTS detector handles that classification separately, for the charge-sign logic the titration curve needs. Training data quirk found and fixed during development, not glossed over: the dataset's own `marvin_atom` site index is 0-indexed (confirmed empirically against 2000 real records: 99%+ plausible under a 0-indexed reading vs. under 2% for a 1-indexed reading) -- and a naive 'canonical=False preserves atom order' assumption (mirroring an approach used elsewhere in this project) turned out to be wrong for this specific dataset and silently mislabeled 47.7% of rows until caught by a round-trip self-check and fixed using RDKit's real `_smilesAtomOutputOrder` property instead. A third, more consequential quirk was found and fixed after this model shipped: the labeled ionizable atom itself is frequently drawn in its charged/ionized form rather than the neutral form ChemCanvas actually queries at inference time -- see metrics.note for the full root-cause and fix (scripts/prepare_pka_training_data.py now neutralizes the labeled atom's charge before training).",
+      "knownLimitations": [
+        "Biguanides (e.g. metformin, CN(C)C(=N)NC(=N)N): the training SDF has ZERO biguanide examples (confirmed by direct SMARTS search), vs. 129 real examples of simple isolated guanidines (which predict correctly, matching their real ~9.6-11.3 pKa range). js/pka-microstates.js's guanidine SMARTS matches biguanide's two fused C(=N)N units as two INDEPENDENT guanidine sites (metformin: predicted 8.4/7.3), but a biguanide's strong basicity (real pKaH ~11.5) comes from delocalization across the whole fused system, which neither the site-independence assumption nor this training set's coverage captures. Out-of-distribution extrapolation, not a labeling bug -- no existing training row to relabel.",
+        "Tetracycline and likely other polyketide-derived natural products (C[C@]1(c2cccc(c2C(=O)C3=C([C@]4([C@@H](C[C@@H]31)[C@@H](C(=C(C4=O)C(=O)N)O)N(C)C)O)O)O)O): real tetracycline has 3 macroscopic pKas (3.3 tricarbonylmethane C1-C3, 7.7-7.8 phenolic diketone C10-C12, 9.6-9.7 dimethylamino C4). js/pka-microstates.js's SMARTS PATTERNS list has no pattern at all for the tricarbonylmethane/vinylogous-enol-acid class -- that site (pKa1, the most acidic) is never detected or shown, a real site-detector coverage gap, not a model-accuracy issue (a nearby atom in this model's own raw, undetected per-atom output predicts ~3.06, suggesting the model itself has learned something reasonable here that the detector never surfaces). The two sites that ARE detected (phenol, dimethylamino) predict 8.65 and 8.69 vs. real 7.7-7.8 and 9.6-9.7 -- off by ~0.9-1.9 pKa units, worse than the 0.7 overall test MAE but not the smoking-gun magnitude of the carboxylic-acid bug fixed above; plausibly just normal-to-elevated error for a large, densely conjugated, multi-ring natural-product scaffold this training set has few close analogs of. Not fixed here: adding a new SMARTS pattern for a rare functional class without a broad validated example set to check precision/recall against risked false positives elsewhere in the app more than it was worth guessing at."
+      ],
+      "tags": [
+        "physicochemical",
+        "atom-level",
+        "acid-base",
+        "pka",
+        "titration"
+      ]
+    },
+    {
+      "id": "cyp1a2-inhibition-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP1A2 inhibition",
+      "propertyKey": "cyp1a2",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule inhibits cytochrome P450 1A2, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP1A2 substrates include caffeine, theophylline, clozapine, tizanidine).",
+      "files": {
+        "manifest": "cyp-cyp1a2/cyp1a2-manifest.json",
+        "weights": "cyp-cyp1a2/cyp1a2.bin"
+      },
+      "dataset": {
+        "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP1A2 sub-readout",
+        "citationKey": "Veith2009",
+        "size": 12673,
+        "positiveCount": 5880,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split, 10139/1267/1267)",
+        "sourceUrl": "https://pubchem.ncbi.nlm.nih.gov/bioassay/1851"
+      },
+      "metrics": {
+        "testSetSize": 1267,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.9227
+        },
+        "all": {
+          "testROC": 0.9227,
+          "testPRC": 0.8895,
+          "testAccuracy": 0.8485,
+          "testF1": 0.7922
+        },
+        "note": "Real held-out test-set metrics from chemprop train's own logged test/* scores (not just validation, unlike electrophile-reactivity-v1)."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-15"
+      },
+      "notes": "One of five single-task CYP450 inhibition classifiers (CYP1A2/2C9/2C19/2D6/3A4) trained from the same PubChem AID 1851 qHTS panel assay (scripts/prepare_cyp_training_data.py), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine. 'Inconclusive' assay outcomes were dropped rather than coerced into a binary label; CIDs with disagreeing replicate outcomes for this isoform were resolved by majority vote (exact ties dropped). Domain of validity is bounded by the source qHTS library's own chemical space (drug-like small molecules screened in a luminescence-based P450-Glo assay) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp2c9-inhibition-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP2C9 inhibition",
+      "propertyKey": "cyp2c9",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule inhibits cytochrome P450 2C9, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2C9 substrates include warfarin, phenytoin, most NSAIDs; a narrow-therapeutic-index isozyme where inhibition is a clinically significant concern).",
+      "files": {
+        "manifest": "cyp-cyp2c9/cyp2c9-manifest.json",
+        "weights": "cyp-cyp2c9/cyp2c9.bin"
+      },
+      "dataset": {
+        "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2C9 sub-readout",
+        "citationKey": "Veith2009",
+        "size": 12170,
+        "positiveCount": 4031,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split, 9736/1217/1217)",
+        "sourceUrl": "https://pubchem.ncbi.nlm.nih.gov/bioassay/1851"
+      },
+      "metrics": {
+        "testSetSize": 1217,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.8673
+        },
+        "all": {
+          "testROC": 0.8673,
+          "testPRC": 0.7589,
+          "testAccuracy": 0.7946,
+          "testF1": 0.7185
+        },
+        "note": "Real held-out test-set metrics from chemprop train's own logged test/* scores (not just validation, unlike electrophile-reactivity-v1)."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-15"
+      },
+      "notes": "One of five single-task CYP450 inhibition classifiers (CYP1A2/2C9/2C19/2D6/3A4) trained from the same PubChem AID 1851 qHTS panel assay (scripts/prepare_cyp_training_data.py), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine. 'Inconclusive' assay outcomes were dropped rather than coerced into a binary label; CIDs with disagreeing replicate outcomes for this isoform were resolved by majority vote (exact ties dropped). Domain of validity is bounded by the source qHTS library's own chemical space (drug-like small molecules screened in a luminescence-based P450-Glo assay) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp2c19-inhibition-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP2C19 inhibition",
+      "propertyKey": "cyp2c19",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule inhibits cytochrome P450 2C19, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2C19 substrates include clopidogrel, omeprazole and other proton-pump inhibitors, several SSRIs; a well-known pharmacogenomically polymorphic isozyme).",
+      "files": {
+        "manifest": "cyp-cyp2c19/cyp2c19-manifest.json",
+        "weights": "cyp-cyp2c19/cyp2c19.bin"
+      },
+      "dataset": {
+        "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2C19 sub-readout",
+        "citationKey": "Veith2009",
+        "size": 12739,
+        "positiveCount": 5796,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split, 10193/1273/1273)",
+        "sourceUrl": "https://pubchem.ncbi.nlm.nih.gov/bioassay/1851"
+      },
+      "metrics": {
+        "testSetSize": 1273,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.9026
+        },
+        "all": {
+          "testROC": 0.9026,
+          "testPRC": 0.8253,
+          "testAccuracy": 0.8492,
+          "testF1": 0.7966
+        },
+        "note": "Real held-out test-set metrics from chemprop train's own logged test/* scores (not just validation, unlike electrophile-reactivity-v1)."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-15"
+      },
+      "notes": "One of five single-task CYP450 inhibition classifiers (CYP1A2/2C9/2C19/2D6/3A4) trained from the same PubChem AID 1851 qHTS panel assay (scripts/prepare_cyp_training_data.py), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine. 'Inconclusive' assay outcomes were dropped rather than coerced into a binary label; CIDs with disagreeing replicate outcomes for this isoform were resolved by majority vote (exact ties dropped). Domain of validity is bounded by the source qHTS library's own chemical space (drug-like small molecules screened in a luminescence-based P450-Glo assay) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp2d6-inhibition-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP2D6 inhibition",
+      "propertyKey": "cyp2d6",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule inhibits cytochrome P450 2D6, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2D6 substrates include codeine, tamoxifen, metoprolol, and many antidepressants/antipsychotics; the isozyme is highly pharmacogenomically polymorphic, with poor- and ultrarapid-metabolizer phenotypes common in the population).",
+      "files": {
+        "manifest": "cyp-cyp2d6/cyp2d6-manifest.json",
+        "weights": "cyp-cyp2d6/cyp2d6.bin"
+      },
+      "dataset": {
+        "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2D6 sub-readout",
+        "citationKey": "Veith2009",
+        "size": 13200,
+        "positiveCount": 2577,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split, 10560/1320/1320)",
+        "sourceUrl": "https://pubchem.ncbi.nlm.nih.gov/bioassay/1851"
+      },
+      "metrics": {
+        "testSetSize": 1320,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.8463
+        },
+        "all": {
+          "testROC": 0.8463,
+          "testPRC": 0.67,
+          "testAccuracy": 0.8674,
+          "testF1": 0.5902
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as CYP1A2/2C9/2C19, whose scores this reproduces exactly, and consistent with the class imbalance here (2577/13200 positive) driving a lower F1/PRC than the other isoforms despite a comparable AUROC."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-15"
+      },
+      "notes": "One of five single-task CYP450 inhibition classifiers (CYP1A2/2C9/2C19/2D6/3A4) trained from the same PubChem AID 1851 qHTS panel assay (scripts/prepare_cyp_training_data.py), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine. 'Inconclusive' assay outcomes were dropped rather than coerced into a binary label; CIDs with disagreeing replicate outcomes for this isoform were resolved by majority vote (exact ties dropped). Domain of validity is bounded by the source qHTS library's own chemical space (drug-like small molecules screened in a luminescence-based P450-Glo assay) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp3a4-inhibition-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP3A4 inhibition",
+      "propertyKey": "cyp3a4",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule inhibits cytochrome P450 3A4, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP3A4 is the single most important human drug-metabolizing enzyme by volume, responsible for the majority of marketed small-molecule drugs' oxidative clearance, including many statins, calcium channel blockers, benzodiazepines, and macrolide antibiotics; the classic grapefruit-juice interaction is CYP3A4-mediated).",
+      "files": {
+        "manifest": "cyp-cyp3a4/cyp3a4-manifest.json",
+        "weights": "cyp-cyp3a4/cyp3a4.bin"
+      },
+      "dataset": {
+        "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP3A4 sub-readout",
+        "citationKey": "Veith2009",
+        "size": 12421,
+        "positiveCount": 5108,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split, 9937/1242/1242)",
+        "sourceUrl": "https://pubchem.ncbi.nlm.nih.gov/bioassay/1851"
+      },
+      "metrics": {
+        "testSetSize": 1242,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.8802
+        },
+        "all": {
+          "testROC": 0.8802,
+          "testPRC": 0.8375,
+          "testAccuracy": 0.7971,
+          "testF1": 0.7654
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as CYP1A2/2C9/2C19, whose scores this reproduces exactly."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-15"
+      },
+      "notes": "One of five single-task CYP450 inhibition classifiers (CYP1A2/2C9/2C19/2D6/3A4) trained from the same PubChem AID 1851 qHTS panel assay (scripts/prepare_cyp_training_data.py), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine. 'Inconclusive' assay outcomes were dropped rather than coerced into a binary label; CIDs with disagreeing replicate outcomes for this isoform were resolved by majority vote (exact ties dropped). Domain of validity is bounded by the source qHTS library's own chemical space (drug-like small molecules screened in a luminescence-based P450-Glo assay) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "herg-inhibition-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "hERG channel inhibition",
+      "propertyKey": "herg",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule blocks the hERG (KCNH2) cardiac potassium channel -- the standard early-stage cardiotoxicity liability screen in drug discovery, since hERG block prolongs the cardiac QT interval and is a leading cause of small-molecule drug attrition/withdrawal (e.g. terfenadine, cisapride). A positive prediction flags a compound for closer scrutiny, not an automatic rejection -- many marketed drugs have measurable hERG activity at some concentration.",
+      "files": {
+        "manifest": "herg-inhibition/herg-manifest.json",
+        "weights": "herg-inhibition/herg.bin"
+      },
+      "dataset": {
+        "name": "PubChem BioAssay AID 588834 (NIH Chemical Genomics Center / NIEHS / NTP) -- qHTS assay for small-molecule inhibitors of the human hERG channel, confirmatory tier",
+        "citationKey": "NCGC-AID588834",
+        "size": 4120,
+        "positiveCount": 584,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split, 3296/412/412)",
+        "sourceUrl": "https://pubchem.ncbi.nlm.nih.gov/bioassay/588834"
+      },
+      "metrics": {
+        "testSetSize": 412,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.8886
+        },
+        "all": {
+          "testROC": 0.8886,
+          "testPRC": 0.6696,
+          "testAccuracy": 0.8786,
+          "testF1": 0.6324
+        },
+        "note": "Real held-out test-set metrics from chemprop train's own logged test/* scores (not just validation, unlike electrophile-reactivity-v1). PRC/F1 are lower than the CYP450 panel's own scores mainly because this dataset is more imbalanced (584/4120 positive, 14%) -- same class-imbalance caveat as CYP2D6's entry."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-15"
+      },
+      "notes": "A single-task classifier trained the same way as this project's CYP450 panel (scripts/prepare_herg_training_data.py, scripts/train_herg_chemprop.sh) but from a different assay (PubChem AID 588834, one confirmatory-tier hERG qHTS run rather than the CYP panel's five-isoform AID 1851). 'Inconclusive' assay outcomes were dropped rather than coerced into a binary label; CIDs with disagreeing replicate outcomes were resolved by majority vote (exact ties dropped). One compound (an ammonium hexafluorosilicate salt) that RDKit's newer valence model parses but chemprop's own (older, pinned) RDKit rejects as hypervalent silicon was excluded during data prep -- validated with the SAME RDKit version chemprop trains with, not just any RDKit, to avoid silently shipping a row that would crash training. Domain of validity is bounded by the source qHTS library's own chemical space (drug-like small molecules screened in a fluorescence-based thallium-flux assay) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "cardiotoxicity",
+        "herg",
+        "safety",
+        "medicinal-chemistry"
       ]
     }
   ]

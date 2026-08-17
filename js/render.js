@@ -251,7 +251,35 @@ window.CC = window.CC || {};
         layer.appendChild(createLine(pts[i], pts[i + 1], { class: 'bond-preview' }));
       }
       const last = pts[pts.length - 1];
-      layer.appendChild(el('circle', { cx: last.x, cy: last.y, r: 3, class: 'atom-ghost' }));
+      if (!drag.snapAtomId) {
+        layer.appendChild(el('circle', { cx: last.x, cy: last.y, r: 3, class: 'atom-ghost' }));
+      }
     }
+  };
+
+  // A single persistent, non-interactive circle showing whatever atom or
+  // bond midpoint the pointer is currently near -- independent of
+  // CC.render/CC.renderPreview so it can be repositioned on every
+  // pointermove without rebuilding the whole molecule's SVG each time.
+  // Because CC.render() tears down and rebuilds the SVG's own children on
+  // every molecule edit, this element is looked up lazily rather than
+  // cached, and re-appended as needed -- it heals itself on the next
+  // pointermove after any full re-render.
+  CC.updateHoverHighlight = function (svg, target) {
+    let circle = svg.querySelector('#hover-highlight');
+    if (!target) {
+      if (circle) circle.style.display = 'none';
+      return;
+    }
+    if (!circle) {
+      circle = el('circle', { id: 'hover-highlight', class: 'hover-highlight' });
+      svg.appendChild(circle);
+    } else if (svg.lastChild !== circle) {
+      svg.appendChild(circle); // keep it topmost
+    }
+    circle.setAttribute('cx', target.x);
+    circle.setAttribute('cy', target.y);
+    circle.setAttribute('r', target.r);
+    circle.style.display = '';
   };
 })();

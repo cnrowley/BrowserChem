@@ -199,15 +199,11 @@ window.CC = window.CC || {};
 
     container.appendChild(svg);
 
-    const hasComplexity = radarData.some(function (d) { return d.axis.key === 'complexity'; });
     const hasMissing = radarData.some(function (d) { return !d.available; });
-    if (hasComplexity || hasMissing) {
+    if (hasMissing) {
       const caption = document.createElement('p');
       caption.className = 'side-panel-note radar-caption';
-      const parts = [];
-      if (hasComplexity) parts.push('*Complexity is a simple proxy (rings + stereocenters + heteroatoms per heavy atom), not RDKit\u2019s BertzCT.');
-      if (hasMissing) parts.push('Hollow points: load the corresponding model (melting point / logP / logS) and run a prediction to fill in.');
-      caption.textContent = parts.join(' ');
+      caption.textContent = 'Hollow points: load the corresponding model (melting point / logP / logS) and run a prediction to fill in.';
       container.appendChild(caption);
     }
   };

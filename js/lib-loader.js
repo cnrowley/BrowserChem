@@ -35,6 +35,7 @@ function initRDKit() {
   setStatus('status-rdkit', 'loading', 'initializing\u2026');
   if (typeof window.initRDKitModule !== 'function') {
     setStatus('status-rdkit', 'error', 'script failed to load');
+    CC.Logger.error('RDKit.js script failed to load (network/CDN issue?)');
     return;
   }
   window.initRDKitModule()
@@ -42,10 +43,12 @@ function initRDKit() {
       window.chemCanvasLibs.RDKit = RDKit;
       setStatus('status-rdkit', 'ready', RDKit.version());
       console.log('[ChemCanvas] RDKit.js ready, version', RDKit.version());
+      CC.Logger.success('RDKit.js ready (v' + RDKit.version() + ')');
     })
     .catch(function (err) {
       setStatus('status-rdkit', 'error', 'init failed');
       console.error('[ChemCanvas] RDKit.js failed to initialize', err);
+      CC.Logger.error('RDKit.js failed to initialize: ' + err.message);
     });
 }
 
@@ -53,6 +56,7 @@ function initOrt() {
   setStatus('status-ort', 'loading', 'checking\u2026');
   if (typeof window.ort === 'undefined') {
     setStatus('status-ort', 'error', 'script failed to load');
+    CC.Logger.error('onnxruntime-web script failed to load (network/CDN issue?)');
     return;
   }
   // ort.min.js executes synchronously and exposes the global immediately —
@@ -60,17 +64,20 @@ function initOrt() {
   window.chemCanvasLibs.ort = window.ort;
   setStatus('status-ort', 'ready', 'ready (no model loaded)');
   console.log('[ChemCanvas] onnxruntime-web ready');
+  CC.Logger.success('onnxruntime-web ready');
 }
 
 function init3Dmol() {
   setStatus('status-3dmol', 'loading', 'checking\u2026');
   if (typeof window.$3Dmol === 'undefined') {
     setStatus('status-3dmol', 'error', 'script failed to load');
+    CC.Logger.error('3Dmol.js script failed to load (network/CDN issue?)');
     return;
   }
   window.chemCanvasLibs.$3Dmol = window.$3Dmol;
   setStatus('status-3dmol', 'ready', 'ready (viewer idle)');
   console.log('[ChemCanvas] 3Dmol.js ready');
+  CC.Logger.success('3Dmol.js ready');
 
   // Instantiate an empty viewer in the 3D panel so the container is proven
   // to work, but don't load any molecule into it yet.

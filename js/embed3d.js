@@ -962,6 +962,31 @@ window.CC = window.CC || {};
    * iterations") -- real information, not just "here's a structure,
    * trust it."
    */
+  // The single-seed body CC.optimize3D's attempt loop below runs once per
+  // attempt -- factored out so js/conformer-search.js can run the exact
+  // same, already-validated classical energy/minimization path against
+  // its own seed geometries (systematic/randomized torsion states, not
+  // just the per-attempt randomization this file's own loop does)
+  // without duplicating buildAngles/buildTorsions/buildImproperTerms/
+  // buildNonBondedPairs/minimizeStaged wiring a second time.
+  async function optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress) {
+    const angles = buildAngles(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+    const torsions = buildTorsions(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+    const impropers = buildImproperTerms(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+    const pairs = buildNonBondedPairs(bonds3d, angles, torsions, atoms3d.length);
+    const result = await minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, onProgress);
+    return {
+      energy: result.energy,
+      converged: result.converged,
+      gradNorm: result.gradNorm,
+      exitReason: result.exitReason,
+      atoms: atoms3d.map(function (a, i) {
+        return { element: a.element, x: result.positions[i].x, y: result.positions[i].y, z: result.positions[i].z };
+      }),
+      bonds: bonds3d,
+    };
+  }
+
   CC.optimize3D = async function (initial, opts) {
     opts = opts || {};
     const molecule = initial.molecule;
@@ -993,13 +1018,8 @@ window.CC = window.CC || {};
       // rotamer state for real conformer diversity.
       if (attempt > 0) randomizeRotatableBonds(atoms3d, bonds3d, rotatableBonds);
 
-      const angles = buildAngles(atoms3d, bonds3d, atoms3d.length, aromaticSet);
-      const torsions = buildTorsions(atoms3d, bonds3d, atoms3d.length, aromaticSet);
-      const impropers = buildImproperTerms(atoms3d, bonds3d, atoms3d.length, aromaticSet);
-      const pairs = buildNonBondedPairs(bonds3d, angles, torsions, atoms3d.length);
-
       const attemptDeadline = Math.min(overallDeadline, performance.now() + perAttemptBudgetMs);
-      const result = await minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, attemptDeadline, function (stage) {
+      const result = await optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, attemptDeadline, function (stage) {
         if (opts.onProgress) {
           opts.onProgress({
             attempt: attempt + 1,
@@ -1010,18 +1030,7 @@ window.CC = window.CC || {};
         }
       });
 
-      if (!best || result.energy < best.energy) {
-        best = {
-          energy: result.energy,
-          converged: result.converged,
-          gradNorm: result.gradNorm,
-          exitReason: result.exitReason,
-          atoms: atoms3d.map(function (a, i) {
-            return { element: a.element, x: result.positions[i].x, y: result.positions[i].y, z: result.positions[i].z };
-          }),
-          bonds: bonds3d,
-        };
-      }
+      if (!best || result.energy < best.energy) best = result;
     }
 
     return best;
@@ -1039,5 +1048,27 @@ window.CC = window.CC || {};
     const initial = CC.buildInitial3D(molecule);
     if (initial.atoms.length === 0) return { atoms: [], bonds: [], energy: 0, converged: true };
     return CC.optimize3D(initial, opts);
+  };
+
+  // Exposed for js/openff-forcefield.js to reuse this file's already-
+  // validated implicit-H placement, rotatable-bond detection/seeding, and
+  // generic numeric-optimization plumbing -- rather than re-deriving a
+  // second copy of BFS side-splitting, the atan2 dihedral formula, etc.
+  // for a different energy model. The hand-tuned bonds/angles/torsions/LJ
+  // energy functions above stay private to this file; only the
+  // model-independent pieces are shared here.
+  CC.Embed3DShared = {
+    withImplicitHydrogens: withImplicitHydrogens,
+    findRotatableBonds: findRotatableBonds,
+    randomizeRotatableBonds: randomizeRotatableBonds,
+    flatten: flatten,
+    unflatten: unflatten,
+    yieldToUI: yieldToUI,
+    angleBetween: angleBetween,
+    dihedralAngle: dihedralAngle,
+    planeDeviation: planeDeviation,
+    ljShape: ljShape,
+    optimizeSeedClassical: optimizeGivenSeed,
+    sideAtoms: sideAtoms,
   };
 })();

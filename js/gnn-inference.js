@@ -158,7 +158,7 @@ CC.GNN = window.CC.GNN || {};
     const hasPka = window.CC.PKA && CC.PKA.hasModel && CC.PKA.hasModel();
 
     if (hasChemprop || hasNagl || hasPka) {
-      const merged = { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], backend: 'chemprop', warnings: [] };
+      const merged = { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], bondProperties: [], bondIds: [], backend: 'chemprop', warnings: [] };
 
       if (hasChemprop) {
         try {
@@ -168,6 +168,10 @@ CC.GNN = window.CC.GNN || {};
           if (cpResult.atomIds.length > 0) merged.atomIds = cpResult.atomIds;
           if (cpResult.atomProperties.length > 0) {
             merged.atomProperties = cpResult.atomProperties.map(function (p) { return Object.assign({}, p); });
+          }
+          if (cpResult.bondIds && cpResult.bondIds.length > 0) merged.bondIds = cpResult.bondIds;
+          if (cpResult.bondProperties && cpResult.bondProperties.length > 0) {
+            merged.bondProperties = cpResult.bondProperties.map(function (p) { return Object.assign({}, p); });
           }
         } catch (err) {
           merged.warnings.push('Chemprop models: ' + err.message);

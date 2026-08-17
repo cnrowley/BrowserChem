@@ -1,2 +1,6 @@
 data/
 checkpoints/
+properties/
+scripts/data_cache/
+scripts/__pycache__/
+__pycache__/
