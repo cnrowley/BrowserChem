@@ -1557,6 +1557,13 @@
     }
 
     function renderConformerList(result) {
+      // The static "ΔE (kcal/mol)" header is only true for smirnoff/
+      // ani2x -- classical's relativeEnergyKcal is a relative difference
+      // of its own arbitrary units, not real kcal/mol (see conformer-
+      // search.js's MODELS.classical.energyUnit).
+      const energyHeader = document.getElementById('conformer-energy-header');
+      if (energyHeader) energyHeader.textContent = result.model === 'classical' ? 'Δ (arb. units)' : 'ΔE (kcal/mol)';
+
       conformerListBody.innerHTML = '';
       result.conformers.forEach(function (c, idx) {
         const tr = document.createElement('tr');
@@ -1852,6 +1859,16 @@
 
       const model = conformerModelSelect.value;
       const modelLabelForLog = conformerModelSelect.options[conformerModelSelect.selectedIndex].textContent;
+      // Compact per-seed display unit -- NOT the same string as
+      // result.energyUnit's full, honest caveat (used verbatim in the
+      // final summary below): the classical force field's own energy is
+      // arbitrary hand-tuned units, not a real physical energy, so
+      // labeling its live per-seed ticker "kcal/mol" would be a real,
+      // literal falsehood a user could reasonably act on (e.g. reading
+      // "1306 kcal/mol" as an absurdly strained structure in real
+      // physical terms, rather than "just a big number on a scale this
+      // model never claimed was calibrated to kcal/mol").
+      const shortEnergyUnit = model === 'classical' ? 'arb. units' : 'kcal/mol';
 
       generate3dBtn.disabled = true;
       conformerSearchBtn.disabled = true;
@@ -1871,7 +1888,7 @@
             const pct = Math.round(((info.seed - 1) / info.totalSeeds) * 100);
             progressFill.style.width = pct + '%';
             if (info.phase === 'seed-done') {
-              progressNote.textContent = 'Seed ' + info.seed + '/' + info.totalSeeds + ' done (energy ' + info.energyKcal.toFixed(2) + ' kcal/mol)';
+              progressNote.textContent = 'Seed ' + info.seed + '/' + info.totalSeeds + ' done (energy ' + info.energyKcal.toFixed(2) + ' ' + shortEnergyUnit + ')';
             } else {
               progressNote.textContent = 'Seed ' + info.seed + '/' + info.totalSeeds + ' \u2014 ' + info.stage;
             }
@@ -1913,7 +1930,7 @@
               ' omitted)'
             : (solvent.enabled ? ' (implicit solvent included)' : '');
           conformerSearchNote.textContent = result.modelLabel + ': ' + result.seedsGenerated + ' seed(s) generated, ' +
-            result.seedsOptimized + ' optimized, ' + result.conformersWithinWindow + ' within the 6 kcal/mol energy window, ' +
+            result.seedsOptimized + ' optimized, ' + result.conformersWithinWindow + ' within the 6-' + shortEnergyUnit + ' energy window, ' +
             result.conformers.length + ' distinct conformer(s) kept' + chargeNote + '. Energies in ' + result.energyUnit + '.';
           CC.Logger.success('Conformer search (' + result.modelLabel + '): ' + result.conformers.length +
             ' conformer(s), best ' + result.conformers[0].energy.toFixed(2) + ' ' + result.energyUnit);

@@ -187,7 +187,7 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
   };
 
   CC.ConformerSearch.getModelOptions = function () {
-    return Object.keys(MODELS).map(function (id) { return { id: id, label: MODELS[id].label }; });
+    return Object.keys(MODELS).map(function (id) { return { id: id, label: MODELS[id].label, energyUnit: MODELS[id].energyUnit }; });
   };
 
   // ---------- seed generation: systematic (small n) or randomized (large n) rotatable-bond torsion sampling ----------
