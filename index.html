@@ -343,6 +343,7 @@
       <div class="properties-section">
         <h3 class="properties-section-title">Solvation free energy (multi-solvent)</h3>
         <p class="side-panel-note">COSMO-RS-trained, one learned model per solvent (solute SMILES in, ΔGsolv out) &mdash; not the from-scratch GB/SA physics calculation above. Load any of the 21 "&hellip; solvation free energy" models below (Environmental &amp; analytical section) and run prediction to populate this table.</p>
+        <p class="side-panel-note"><strong>Draw the exact protonation state you want.</strong> This model has no built-in pKa/ionization logic and was trained almost entirely on neutral solutes &mdash; predictions on a net-charged species (e.g. a deprotonated acid) are unreliable, not just less precise (see the "?" info popup on any solvent model for specifics).</p>
         <div id="solvation-table-container"></div>
         <button class="btn btn-ghost btn-small" id="transfer-matrix-btn">View transfer matrix&hellip;</button>
       </div>
