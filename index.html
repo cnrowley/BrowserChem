@@ -103,33 +103,17 @@
   <!-- Right: tabbed panel for 3D view / properties -->
   <aside class="side-panel" aria-label="3D view and properties">
     <div class="side-panel-tabs" role="tablist">
-      <button class="side-tab" role="tab" aria-selected="false" data-panel="validation">Validation</button>
       <button class="side-tab is-active" role="tab" aria-selected="true" data-panel="view3d">3D view</button>
       <button class="side-tab" role="tab" aria-selected="false" data-panel="properties">Properties</button>
       <button class="side-tab" role="tab" aria-selected="false" data-panel="titration">Titration</button>
-    </div>
-
-    <div class="side-panel-content is-hidden" id="panel-validation" role="tabpanel">
-      <div class="validation-status-banner status-idle" id="validation-status-banner">Draw a structure to check it.</div>
-
-      <div class="properties-section-title">Structural issues</div>
-      <div id="validation-issues-list"></div>
-      <p class="side-panel-note" id="validation-issues-note" style="display:none;"></p>
-
-      <div class="properties-section-title">Model compatibility</div>
-      <table class="descriptor-table" id="validation-compat-table" style="display:none;">
-        <thead><tr><th>Model</th><th>Status</th></tr></thead>
-        <tbody id="validation-compat-body"></tbody>
-      </table>
-      <p class="side-panel-note" id="validation-compat-note">Draw a structure to see per-model compatibility.</p>
     </div>
 
     <div class="side-panel-content" id="panel-view3d" role="tabpanel">
       <div class="viewer3d-method-row">
         <label for="quick-preview-select">Quick preview</label>
         <select id="quick-preview-select" title="A single, fast, unoptimized-or-lightly-optimized starting structure — for a quick look, not a real search. Classical: 2D-projected seed with implicit hydrogens, no force-field relaxation. GeoMol: a learned model that predicts a conformer directly from the 2D graph in one pass (loads a ~1MB model automatically on first use).">
-          <option value="classical" selected>Classical seed</option>
-          <option value="geomol">GeoMol (learned)</option>
+          <option value="classical">Classical seed</option>
+          <option value="geomol" selected>GeoMol (learned)</option>
         </select>
         <button class="btn btn-ghost btn-small" id="quick-preview-btn">Preview</button>
       </div>
@@ -144,13 +128,13 @@
       <div class="properties-section-title">Conformer search</div>
       <div class="viewer3d-method-row">
         <label for="conformer-model-select">Energy model</label>
-        <select id="conformer-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model. ANI-2x: a neural network potential (H/C/N/O/F/S/Cl, neutral molecules only) — each conformer gets a quick classical pre-relax first, since ANI-2x needs a chemically sane starting point.">
-          <option value="classical" selected>Classical force field</option>
+        <select id="conformer-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model.">
+          <option value="classical" selected>Classical force field (MMFF-style)</option>
           <option value="smirnoff">OpenFF Sage (SMIRNOFF)</option>
-          <option value="ani2x">ANI-2x</option>
         </select>
       </div>
       <div class="viewer3d-toolbar">
+        <button class="btn btn-ghost btn-small" id="optimize-only-btn" title="Locally optimize whatever single structure is currently shown above with the selected energy model — one structure in, one relaxed structure out. No multi-seed rotamer sampling or ensemble pruning (see &quot;Run conformer search…&quot; for that).">Optimize</button>
         <button class="btn btn-accent btn-small" id="conformer-search-btn">Run conformer search&hellip;</button>
       </div>
       <div class="viewer3d-progress" id="viewer3d-progress" style="display:none;">
@@ -174,6 +158,21 @@
     </div>
 
     <div class="side-panel-content is-hidden" id="panel-properties" role="tabpanel">
+      <div class="properties-section">
+        <div class="validation-status-banner status-idle" id="validation-status-banner">Draw a structure to check it.</div>
+
+        <div class="properties-section-title">Structural issues</div>
+        <div id="validation-issues-list"></div>
+        <p class="side-panel-note" id="validation-issues-note" style="display:none;"></p>
+
+        <div class="properties-section-title">Model compatibility</div>
+        <table class="descriptor-table" id="validation-compat-table" style="display:none;">
+          <thead><tr><th>Model</th><th>Status</th></tr></thead>
+          <tbody id="validation-compat-body"></tbody>
+        </table>
+        <p class="side-panel-note" id="validation-compat-note">Draw a structure to see per-model compatibility.</p>
+      </div>
+
       <div class="properties-section">
         <table class="descriptor-table">
           <thead><tr><th colspan="2" class="properties-section-title">Structure</th></tr></thead>

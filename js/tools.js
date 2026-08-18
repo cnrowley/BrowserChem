@@ -362,7 +362,7 @@ CC.Controller = class Controller {
       const atom = this.molecule.addAtom('C', p.x, p.y);
       startAtomId = atom.id;
     }
-    this.drag = { type: this.currentTool, startAtomId: startAtomId };
+    this.drag = { type: this.currentTool, startAtomId: startAtomId, startedOnExistingAtom: !!atomId };
     this.onMoleculeChanged();
   }
 
@@ -375,6 +375,22 @@ CC.Controller = class Controller {
       const pos = this.drag.previewEnd;
       if (startAtom && pos && CC.distance(startAtom, pos) > 8) {
         const newAtom = this.molecule.addAtom('C', pos.x, pos.y);
+        endAtomId = newAtom.id;
+      } else if (startAtom && !pos && this.drag.startedOnExistingAtom) {
+        // Plain click (no drag) directly on an existing atom with the
+        // Bond tool -- ChemDraw's own "click to extend": add one new bond
+        // from that atom in whatever direction is least crowded by its
+        // existing bonds, rather than silently doing nothing. A click on
+        // blank canvas (startedOnExistingAtom false) still just drops a
+        // single new atom, same as before -- nothing to bond it to yet.
+        const molecule = this.molecule;
+        const existingAngles = molecule.getBondsForAtom(startAtomId).map(function (b) {
+          const otherId = b.a1 === startAtomId ? b.a2 : b.a1;
+          const other = molecule.atoms.get(otherId);
+          return Math.atan2(other.y - startAtom.y, other.x - startAtom.x);
+        });
+        const dir = CC.bestOpenDirection(existingAngles, -Math.PI / 2);
+        const newAtom = molecule.addAtom('C', startAtom.x + Math.cos(dir) * CC.BOND_LENGTH, startAtom.y + Math.sin(dir) * CC.BOND_LENGTH);
         endAtomId = newAtom.id;
       }
     }

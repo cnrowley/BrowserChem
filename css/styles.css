@@ -1272,14 +1272,6 @@ div.properties-section-title {
   font-weight: 600;
 }
 
-.model-registry-sub {
-  font-size: 11px;
-  color: var(--text-dark-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  margin-top: 2px;
-}
-
 .model-registry-load-btn {
   flex-shrink: 0;
 }

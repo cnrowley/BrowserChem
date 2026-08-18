@@ -566,8 +566,27 @@ CC.OpenFF = window.CC.OpenFF || {};
     };
   }
 
+  // GB/SA implicit solvation added on top of the vacuum SMIRNOFF energy --
+  // see embed3d.js's solvationEnergy, which this mirrors exactly (same
+  // CC.Solvent.predict call, same "ramped in with the nonbonded strength,
+  // silently omitted without loaded charges" behavior). Kept as its own
+  // copy rather than a shared helper since the two files' `ff`/`positions`
+  // shapes differ enough (ff.charges here vs. a separate `solvent.charges`
+  // array) that sharing would need its own indirection for no real benefit.
+  function solvationEnergySMIRNOFF(positions, atoms3d, solvent, strength) {
+    // See embed3d.js's solvationEnergy -- strength===0 (bonds/angles and
+    // torsion-only stages, before the nonbonded ramp) skips the O(n^2)
+    // Born-radii computation entirely rather than computing it just to
+    // multiply by zero.
+    if (!solvent || !solvent.enabled || !solvent.charges || strength <= 0) return 0;
+    const atoms = atoms3d.map(function (a, i) {
+      return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z };
+    });
+    return strength * CC.Solvent.predict(atoms, solvent.charges, solvent.epsSolvent).total;
+  }
+
   // stage: { torsion: bool, nonbonded: 0..1 } -- see minimizeStagedSMIRNOFF.
-  function computeEnergySMIRNOFF(positions, ff, stage, shared) {
+  function computeEnergySMIRNOFF(positions, atoms3d, ff, stage, shared, solvent) {
     let energy = 0;
 
     // Harmonic bonds/angles: E = 1/2 k (x - x0)^2 -- OpenMM's
@@ -637,17 +656,19 @@ CC.OpenFF = window.CC.OpenFF || {};
       }
     }
 
+    energy += solvationEnergySMIRNOFF(positions, atoms3d, solvent, stage.nonbonded);
+
     return energy;
   }
 
-  function numericGradientSMIRNOFF(flat, ff, stage, shared) {
+  function numericGradientSMIRNOFF(flat, atoms3d, ff, stage, shared, solvent) {
     const grad = new Float64Array(flat.length);
     for (let i = 0; i < flat.length; i++) {
       const original = flat[i];
       flat[i] = original + GRAD_H;
-      const ePlus = computeEnergySMIRNOFF(shared.unflatten(flat), ff, stage, shared);
+      const ePlus = computeEnergySMIRNOFF(shared.unflatten(flat), atoms3d, ff, stage, shared, solvent);
       flat[i] = original - GRAD_H;
-      const eMinus = computeEnergySMIRNOFF(shared.unflatten(flat), ff, stage, shared);
+      const eMinus = computeEnergySMIRNOFF(shared.unflatten(flat), atoms3d, ff, stage, shared, solvent);
       flat[i] = original;
       grad[i] = (ePlus - eMinus) / (2 * GRAD_H);
     }
@@ -656,10 +677,10 @@ CC.OpenFF = window.CC.OpenFF || {};
 
   // Mirrors embed3d.js's minimize() -- see that file for why numeric
   // gradients + this exact convergence/backtracking scheme.
-  async function minimizeSMIRNOFF(atoms3d, ff, iterations, deadline, stage, startFlat, onProgress) {
+  async function minimizeSMIRNOFF(atoms3d, ff, iterations, deadline, stage, startFlat, onProgress, solvent) {
     const shared = CC.Embed3DShared;
     let flat = startFlat || shared.flatten(atoms3d);
-    let energy = computeEnergySMIRNOFF(shared.unflatten(flat), ff, stage, shared);
+    let energy = computeEnergySMIRNOFF(shared.unflatten(flat), atoms3d, ff, stage, shared, solvent);
     let step = 0.02;
     let lastGradNorm = Infinity;
     let exitReason = 'iteration-limit';
@@ -671,14 +692,14 @@ CC.OpenFF = window.CC.OpenFF || {};
         if (onProgress) onProgress();
       }
 
-      const grad = numericGradientSMIRNOFF(flat, ff, stage, shared);
+      const grad = numericGradientSMIRNOFF(flat, atoms3d, ff, stage, shared, solvent);
       const gradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
       lastGradNorm = gradNorm;
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
       const trial = new Float64Array(flat.length);
       for (let i = 0; i < flat.length; i++) trial[i] = flat[i] - step * grad[i];
-      const trialEnergy = computeEnergySMIRNOFF(shared.unflatten(trial), ff, stage, shared);
+      const trialEnergy = computeEnergySMIRNOFF(shared.unflatten(trial), atoms3d, ff, stage, shared, solvent);
 
       if (trialEnergy < energy) {
         flat = trial;
@@ -693,7 +714,7 @@ CC.OpenFF = window.CC.OpenFF || {};
     }
 
     if (!isFinite(lastGradNorm)) {
-      const grad = numericGradientSMIRNOFF(flat, ff, stage, shared);
+      const grad = numericGradientSMIRNOFF(flat, atoms3d, ff, stage, shared, solvent);
       lastGradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
     }
 
@@ -704,7 +725,7 @@ CC.OpenFF = window.CC.OpenFF || {};
     };
   }
 
-  async function minimizeStagedSMIRNOFF(atoms3d, ff, totalIterations, deadline, onProgress) {
+  async function minimizeStagedSMIRNOFF(atoms3d, ff, totalIterations, deadline, onProgress, solvent) {
     const stage1Iters = Math.round(totalIterations * 0.25);
     const stage2Iters = Math.round(totalIterations * 0.15);
     const rampSteps = 6;
@@ -724,11 +745,11 @@ CC.OpenFF = window.CC.OpenFF || {};
       if (deadline && performance.now() > deadline) break;
       report('vdW + electrostatics');
       const strength = r / rampSteps;
-      result = await minimizeSMIRNOFF(atoms3d, ff, rampItersEach, deadline, { torsion: true, nonbonded: strength }, result.flat, function () { report('vdW + electrostatics'); });
+      result = await minimizeSMIRNOFF(atoms3d, ff, rampItersEach, deadline, { torsion: true, nonbonded: strength }, result.flat, function () { report('vdW + electrostatics'); }, solvent);
     }
 
     report('final polish');
-    result = await minimizeSMIRNOFF(atoms3d, ff, remainingIters, deadline, { torsion: true, nonbonded: 1 }, result.flat, function () { report('final polish'); });
+    result = await minimizeSMIRNOFF(atoms3d, ff, remainingIters, deadline, { torsion: true, nonbonded: 1 }, result.flat, function () { report('final polish'); }, solvent);
 
     result.converged = result.settled;
     return result;
@@ -741,10 +762,18 @@ CC.OpenFF = window.CC.OpenFF || {};
   // the exact same, already-validated SMIRNOFF typing/energy path against
   // its own seed geometries without duplicating typeMolecule/
   // buildEnergyModel/minimizeStagedSMIRNOFF wiring a second time.
-  async function optimizeGivenSeedSMIRNOFF(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress) {
+  async function optimizeGivenSeedSMIRNOFF(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solventOpts) {
     const typed = typeMolecule(RDKit, atoms3d, bonds3d);
     const ff = buildEnergyModel(typed, chargesResult);
-    const result = await minimizeStagedSMIRNOFF(atoms3d, ff, iterations, deadline, onProgress);
+    // Solvation reuses the SAME NAGL-MBIS charges electrostatics above
+    // already computed -- one real charge set, two consumers -- rather
+    // than the caller supplying a second copy. Omitted (not faked) if
+    // charges weren't available in the first place, same honest fallback
+    // electrostatics already uses.
+    const solvent = solventOpts && solventOpts.enabled && chargesResult.available
+      ? { enabled: true, epsSolvent: solventOpts.epsSolvent, charges: chargesResult.charges }
+      : null;
+    const result = await minimizeStagedSMIRNOFF(atoms3d, ff, iterations, deadline, onProgress, solvent);
     return {
       energy: result.energy,
       converged: result.converged,
@@ -825,7 +854,7 @@ CC.OpenFF = window.CC.OpenFF || {};
               bestEnergySoFar: best ? best.energy : null,
             });
           }
-        });
+        }, opts.solvent);
       } catch (err) {
         throw new Error('SMIRNOFF typing failed: ' + err.message);
       }

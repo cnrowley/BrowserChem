@@ -514,7 +514,36 @@ window.CC = window.CC || {};
     return LJ_FLOOR_F0 + slope * dr + 0.5 * curv * dr * dr;
   }
 
-  function computeEnergy(positions, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage) {
+  // GB/SA implicit solvation (see implicit-solvent.js) added on top of
+  // whichever force field's own vacuum energy computeEnergy/
+  // computeEnergySMIRNOFF already computed -- a real, independent physics
+  // term (Born radii computed fresh from the current positions every call),
+  // not a fixed offset. Needs per-atom partial charges (this project's
+  // NAGL-MBIS model); if none are loaded, solvent.charges is simply absent
+  // and this contributes nothing rather than faking a charge-free
+  // approximation. Ramped in via `strength` (the same stage.lj/stage.
+  // nonbonded ramp fraction already used for the LJ/electrostatics
+  // nonbonded terms) so it doesn't fight the staged minimization's own
+  // "introduce stiff terms gradually" principle -- Born radii depend on
+  // every pairwise distance, exactly the kind of term that's badly behaved
+  // against a still-clashy freshly-randomized structure.
+  function solvationEnergy(positions, atoms3d, solvent, strength) {
+    // strength===0 during the bonds/angles and torsion-only stages
+    // (before the nonbonded ramp starts) -- skip the O(n^2) Born-radii
+    // computation entirely rather than computing it just to multiply by
+    // zero. Not just an optimization: computeEnergy runs inside
+    // numericGradient's finite differences (2*3*numAtoms calls per
+    // optimizer iteration), so a skippable O(n^2) term left unskipped
+    // would materially slow down every stage regardless of whether
+    // solvation is actually contributing anything at that stage yet.
+    if (!solvent || !solvent.enabled || !solvent.charges || strength <= 0) return 0;
+    const atoms = atoms3d.map(function (a, i) {
+      return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z };
+    });
+    return strength * CC.Solvent.predict(atoms, solvent.charges, solvent.epsSolvent).total;
+  }
+
+  function computeEnergy(positions, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent) {
     let energy = 0;
 
     for (let i = 0; i < bonds3d.length; i++) {
@@ -559,6 +588,8 @@ window.CC = window.CC || {};
       }
     }
 
+    energy += solvationEnergy(positions, atoms3d, solvent, stage.lj);
+
     return energy;
   }
 
@@ -584,16 +615,16 @@ window.CC = window.CC || {};
     return positions;
   }
 
-  function numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage) {
+  function numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent) {
     const grad = new Float64Array(flat.length);
     for (let i = 0; i < flat.length; i++) {
       const original = flat[i];
 
       flat[i] = original + GRAD_H;
-      const ePlus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+      const ePlus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
 
       flat[i] = original - GRAD_H;
-      const eMinus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+      const eMinus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
 
       flat[i] = original;
       grad[i] = (ePlus - eMinus) / (2 * GRAD_H);
@@ -601,9 +632,9 @@ window.CC = window.CC || {};
     return grad;
   }
 
-  async function minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, stage, startFlat, onProgress) {
+  async function minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, stage, startFlat, onProgress, solvent) {
     let flat = startFlat || flatten(atoms3d);
-    let energy = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+    let energy = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
     let step = 0.02;
     let lastGradNorm = Infinity;
     // What actually stopped the loop -- the honest signal for whether
@@ -631,7 +662,7 @@ window.CC = window.CC || {};
         if (onProgress) onProgress();
       }
 
-      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
       const gradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
       lastGradNorm = gradNorm;
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
@@ -639,7 +670,7 @@ window.CC = window.CC || {};
       const trial = new Float64Array(flat.length);
       for (let i = 0; i < flat.length; i++) trial[i] = flat[i] - step * grad[i];
 
-      const trialEnergy = computeEnergy(unflatten(trial), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+      const trialEnergy = computeEnergy(unflatten(trial), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
 
       if (trialEnergy < energy) {
         flat = trial;
@@ -657,7 +688,7 @@ window.CC = window.CC || {};
     // entry, or iterations=0), report a real gradient norm rather than
     // the Infinity placeholder -- one extra evaluation is cheap.
     if (!isFinite(lastGradNorm)) {
-      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage);
+      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
       lastGradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
     }
 
@@ -677,7 +708,7 @@ window.CC = window.CC || {};
    * conditioned landscape; relaxing the cheap/well-behaved terms first
    * gives the expensive/stiff ones a much saner structure to start from.
    */
-  async function minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, totalIterations, deadline, onProgress) {
+  async function minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, totalIterations, deadline, onProgress, solvent) {
     const stage1Iters = Math.round(totalIterations * 0.25);
     const stage2Iters = Math.round(totalIterations * 0.15);
     const rampSteps = 6;
@@ -695,18 +726,19 @@ window.CC = window.CC || {};
     report('torsions & ring planarity');
     result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage2Iters, deadline, { torsion: true, lj: 0 }, result.flat, function () { report('torsions & ring planarity'); });
 
-    // Stage 3: ramp LJ in gradually rather than switching it on at full
-    // strength in one step.
+    // Stage 3: ramp LJ (and, if enabled, GB/SA solvation -- see
+    // solvationEnergy) in gradually rather than switching either on at
+    // full strength in one step.
     for (let r = 1; r <= rampSteps; r++) {
       if (deadline && performance.now() > deadline) break;
       report('steric relaxation');
       const ljStrength = r / rampSteps;
-      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function () { report('steric relaxation'); });
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function () { report('steric relaxation'); }, solvent);
     }
 
     // Stage 4: full-strength final polish with whatever time remains.
     report('final polish');
-    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function () { report('final polish'); });
+    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function () { report('final polish'); }, solvent);
 
     // Only the *final* stage's outcome speaks to real convergence --
     // earlier stages are expected to hand off to the next one, not fully
@@ -969,12 +1001,12 @@ window.CC = window.CC || {};
   // just the per-attempt randomization this file's own loop does)
   // without duplicating buildAngles/buildTorsions/buildImproperTerms/
   // buildNonBondedPairs/minimizeStaged wiring a second time.
-  async function optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress) {
+  async function optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent) {
     const angles = buildAngles(atoms3d, bonds3d, atoms3d.length, aromaticSet);
     const torsions = buildTorsions(atoms3d, bonds3d, atoms3d.length, aromaticSet);
     const impropers = buildImproperTerms(atoms3d, bonds3d, atoms3d.length, aromaticSet);
     const pairs = buildNonBondedPairs(bonds3d, angles, torsions, atoms3d.length);
-    const result = await minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, onProgress);
+    const result = await minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, onProgress, solvent);
     return {
       energy: result.energy,
       converged: result.converged,
@@ -1028,7 +1060,7 @@ window.CC = window.CC || {};
             bestEnergySoFar: best ? best.energy : null,
           });
         }
-      });
+      }, opts.solvent);
 
       if (!best || result.energy < best.energy) best = result;
     }

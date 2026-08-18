@@ -105,9 +105,25 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
       label: 'Classical force field',
       energyUnit: 'arbitrary units (not real kcal/mol -- see embed3d.js)',
       toKcalMol: function (e) { return e; },
-      prepare: async function () { return {}; },
-      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress) {
-        return CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress);
+      // Solvation needs per-atom partial charges even for this engine
+      // (the classical force field itself has none of its own) -- reuses
+      // the same NAGL-MBIS charge model the smirnoff engine's
+      // electrostatics already relies on, computed once here rather than
+      // once per seed. Charges are only fetched at all if solvent is
+      // actually enabled -- no reason to require a loaded NAGL model
+      // just to run the plain classical force field.
+      prepare: async function (molecule, opts) {
+        if (!opts.solvent || !opts.solvent.enabled) return {};
+        const shared = CC.Embed3DShared;
+        const seed = shared.withImplicitHydrogens(molecule, opts.aromaticSet || new Set());
+        const chargesResult = CC.OpenFF.getChargesForAtoms3D(molecule, seed.atoms3d, seed.bonds3d, opts.naglModelId);
+        return { chargesResult: chargesResult };
+      },
+      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts) {
+        const solvent = solventOpts && solventOpts.enabled && ctx.chargesResult && ctx.chargesResult.available
+          ? { enabled: true, epsSolvent: solventOpts.epsSolvent, charges: ctx.chargesResult.charges }
+          : null;
+        return CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent);
       },
     },
 
@@ -126,8 +142,8 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
         const chargesResult = CC.OpenFF.getChargesForAtoms3D(molecule, seed.atoms3d, seed.bonds3d, opts.naglModelId);
         return { RDKit: RDKit, chargesResult: chargesResult };
       },
-      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress) {
-        return CC.OpenFF.optimizeSeed(ctx.RDKit, atoms3d, bonds3d, ctx.chargesResult, iterations, deadline, onProgress);
+      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts) {
+        return CC.OpenFF.optimizeSeed(ctx.RDKit, atoms3d, bonds3d, ctx.chargesResult, iterations, deadline, onProgress, solventOpts);
       },
     },
 
@@ -286,7 +302,7 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
       try {
         result = await modelAdapter.optimizeSeed(seed.atoms3d, seed.bonds3d, aromaticSet, ctx, perSeedIterations, seedDeadline, function (stage) {
           if (opts.onProgress) opts.onProgress({ seed: i + 1, totalSeeds: seeds.length, stage: stage, phase: 'optimizing' });
-        });
+        }, opts.solvent);
       } catch (err) {
         // One bad seed (e.g. a pathological starting geometry the
         // optimizer can't recover from) shouldn't sink the whole search

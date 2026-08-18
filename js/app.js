@@ -41,6 +41,7 @@
   let openMicrostateModal = function () {};
   let openPropertyInfoModal = function () {};
   let getCurrent3DGeometry = function () { return null; }; // set by setup3DPanel() -- lets SASA reuse an already-generated structure instead of building its own
+  let getSolventSettings = function () { return { enabled: false }; }; // set by setupSolventPanel() -- lets 3D optimize/conformer search read the checkbox+solvent pulldown without a second copy of that UI state
   let refreshValidationPanel = function () {}; // set by setupValidationPanel() -- called from runValidation() on every 2D edit
   let lastStructureReport = null; // most recent CC.Validate.checkStructure() result, for other panels (e.g. gating a Run/Load button) to read without recomputing
 
@@ -789,12 +790,6 @@
     }).join(', ');
   }
 
-  function formatMetric(entry) {
-    if (!entry.metrics || !entry.metrics.primary) return '';
-    const p = entry.metrics.primary;
-    return p.name + ' ' + (typeof p.value === 'number' ? p.value.toFixed(3) : p.value);
-  }
-
   // Builds the content shown behind every predictive model's "[?]" popup
   // (see setupPropertyInfoModal): what it predicts, its training dataset,
   // reported metrics/expected accuracy, and any documented domain-of-
@@ -1434,6 +1429,7 @@
     viewer3dNote = document.getElementById('viewer3d-note');
     const quickPreviewSelect = document.getElementById('quick-preview-select');
     const conformerModelSelect = document.getElementById('conformer-model-select');
+    const optimizeOnlyBtn = document.getElementById('optimize-only-btn');
     const conformerSearchBtn = document.getElementById('conformer-search-btn');
     const conformerSearchNote = document.getElementById('conformer-search-note');
     const conformerListTable = document.getElementById('conformer-list-table');
@@ -1584,6 +1580,113 @@
       measureDistanceStatus.textContent = measureModeOn ? 'Click two atoms in the 3D view…' : '';
     });
 
+    // Shared by the conformer-search and optimize-only handlers below --
+    // both need a loaded NAGL-MBIS model id whenever SMIRNOFF
+    // electrostatics or implicit solvent are in play, loading it on
+    // first use rather than requiring a separate trip to the Properties
+    // panel first. A missing/failed load is NOT fatal to either caller:
+    // both just omit the charge-dependent term(s) (same honest fallback
+    // OPENFF_INTEGRATION.md documents), so this returns undefined rather
+    // than throwing.
+    async function ensureNaglModelLoaded(progressNoteEl) {
+      let naglModelId = CC.NAGL.getLoadedModelIds()[0];
+      if (naglModelId) return naglModelId;
+      const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.engine === 'nagl'; });
+      if (!entry) return undefined;
+      if (progressNoteEl) progressNoteEl.textContent = 'Loading NAGL-MBIS charge model…';
+      try {
+        await CC.GNN.loadRegistryModel(entry.id);
+        refreshRegistryList();
+        return CC.NAGL.getLoadedModelIds()[0];
+      } catch (err) {
+        console.error('[ChemCanvas] NAGL model load failed — continuing without electrostatics/solvent', err);
+        return undefined;
+      }
+    }
+
+    optimizeOnlyBtn.addEventListener('click', async function () {
+      if (controller.molecule.isEmpty()) {
+        viewer3dNote.textContent = 'Nothing to optimize yet — draw a structure first.';
+        return;
+      }
+      const startGeometry = currentGeometry || lastInitial;
+      if (!startGeometry || !startGeometry.atoms || startGeometry.atoms.length === 0) {
+        viewer3dNote.textContent = 'Nothing to optimize yet — click "Preview" first to generate a starting structure.';
+        return;
+      }
+
+      const model = conformerModelSelect.value;
+      const modelLabel = conformerModelSelect.options[conformerModelSelect.selectedIndex].textContent;
+      const solvent = getSolventSettings();
+
+      generate3dBtn.disabled = true;
+      optimizeOnlyBtn.disabled = true;
+      conformerSearchBtn.disabled = true;
+      conformerModelSelect.disabled = true;
+      progressWrap.style.display = '';
+      progressFill.style.width = '0%';
+      progressNote.textContent = 'Preparing ' + modelLabel + '…';
+
+      try {
+        // Aromaticity perception only depends on the molecule's own graph
+        // (not the conformer's positions), so it's safe/cheap to
+        // recompute here rather than requiring the caller to have kept
+        // buildInitial3D's result around -- but the STARTING positions
+        // are whatever's currently on screen (a selected conformer-search
+        // result, a GeoMol prediction, etc.), not a fresh seed, since
+        // "Optimize" means "relax what's shown," not "search again."
+        const aromaticSet = CC.buildInitial3D(controller.molecule).aromaticSet || new Set();
+        const atoms3d = startGeometry.atoms.map(function (a) { return { element: a.element, x: a.x, y: a.y, z: a.z }; });
+        const bonds3d = startGeometry.bonds;
+        const heavyAtomCount = controller.molecule.atoms.size;
+        const timeBudgetMs = Math.min(25000, Math.max(5000, heavyAtomCount * 900));
+        const deadline = performance.now() + timeBudgetMs;
+        const onProgress = function (stage) { progressNote.textContent = 'Optimizing — ' + stage; };
+
+        let naglModelId;
+        if (model === 'smirnoff' || solvent.enabled) naglModelId = await ensureNaglModelLoaded(progressNote);
+
+        let result;
+        if (model === 'smirnoff') {
+          if (!CC.OpenFF.isForceFieldLoaded()) {
+            progressNote.textContent = 'Loading OpenFF Sage force field…';
+            await CC.OpenFF.loadForceField();
+          }
+          const RDKit = window.chemCanvasLibs && window.chemCanvasLibs.RDKit;
+          if (!RDKit) throw new Error('RDKit not available yet');
+          CC.OpenFF.compileAll(RDKit);
+          const chargesResult = CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId);
+          result = await CC.OpenFF.optimizeSeed(RDKit, atoms3d, bonds3d, chargesResult, 400, deadline, onProgress, solvent);
+        } else {
+          const naglSolvent = solvent.enabled && naglModelId
+            ? Object.assign({}, solvent, { charges: CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId).charges })
+            : null;
+          result = await CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, 400, deadline, onProgress, naglSolvent);
+        }
+
+        progressFill.style.width = '100%';
+        resetConformerList();
+        renderResult(result);
+        currentGeometryOptimized = true;
+        currentGeometryConverged = result.converged;
+        const solventNote = solvent.enabled ? (naglModelId ? ' (implicit solvent included)' : ' (no NAGL-MBIS charges loaded — solvation omitted)') : '';
+        viewer3dNote.textContent = modelLabel + ' optimization ' + (result.converged ? 'converged' : 'did not fully converge (ran out of time/iterations)') +
+          solventNote + '. Energy ' + result.energy.toFixed(2) + '.';
+        CC.Logger[result.converged ? 'success' : 'warning']('Optimize (' + modelLabel + '): ' + (result.converged ? 'converged' : 'did not converge') + ', energy ' + result.energy.toFixed(2));
+      } catch (err) {
+        viewer3dNote.textContent = 'Optimization failed: ' + err.message;
+        console.error('[ChemCanvas] optimize-only failed', err);
+        CC.Logger.error('Optimize failed: ' + err.message);
+      } finally {
+        generate3dBtn.disabled = false;
+        optimizeOnlyBtn.disabled = false;
+        conformerSearchBtn.disabled = false;
+        conformerModelSelect.disabled = false;
+        progressWrap.style.display = 'none';
+        updateButtonState();
+      }
+    });
+
     generate3dBtn.addEventListener('click', async function () {
       if (controller.molecule.isEmpty()) {
         viewer3dNote.textContent = 'Nothing to preview yet \u2014 draw a structure first.';
@@ -1692,10 +1795,10 @@
     };
 
     // Runs the selected energy model's conformer search (see
-    // js/conformer-search.js) -- loads whatever model-specific weights it
-    // needs (NAGL-MBIS for smirnoff, ANI-2x for ani2x) on demand first,
-    // same load-on-click pattern this panel's GeoMol quick-preview above
-    // already uses, rather than requiring a separate trip to the
+    // js/conformer-search.js) -- loads the NAGL-MBIS charge model on
+    // demand first when smirnoff electrostatics or implicit solvent need
+    // it, same load-on-click pattern this panel's GeoMol quick-preview
+    // above already uses, rather than requiring a separate trip to the
     // Properties panel first.
     conformerSearchBtn.addEventListener('click', async function () {
       if (controller.molecule.isEmpty()) {
@@ -1716,8 +1819,10 @@
       conformerSearchNote.textContent = '';
 
       try {
+        const solvent = getSolventSettings();
         const opts = {
           energyModel: model,
+          solvent: solvent,
           onProgress: function (info) {
             const pct = Math.round(((info.seed - 1) / info.totalSeeds) * 100);
             progressFill.style.width = pct + '%';
@@ -1737,36 +1842,14 @@
             progressNote.textContent = 'Loading OpenFF Sage force field\u2026';
             await CC.OpenFF.loadForceField();
           }
-          let naglModelId = CC.NAGL.getLoadedModelIds()[0];
-          if (!naglModelId) {
-            const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.engine === 'nagl'; });
-            if (entry) {
-              progressNote.textContent = 'Loading NAGL-MBIS charge model\u2026';
-              try {
-                await CC.GNN.loadRegistryModel(entry.id);
-                refreshRegistryList();
-                naglModelId = CC.NAGL.getLoadedModelIds()[0];
-              } catch (err) {
-                console.error('[ChemCanvas] NAGL model load failed before conformer search \u2014 continuing without electrostatics', err);
-              }
-            }
-          }
-          opts.naglModelId = naglModelId;
-        } else if (model === 'ani2x') {
-          const compatibility = CC.ANI.checkCompatibility(controller.molecule);
-          if (!compatibility.compatible) {
-            throw new Error('Cannot use ANI-2x: ' + compatibility.issues.join('; '));
-          }
-          let aniModelId = CC.ANI.getLoadedModelIds()[0];
-          if (!aniModelId) {
-            const entry = CC.GNN.getRegistryEntries().find(function (e) { return (e.engine || 'chemprop') === 'ani2x'; });
-            if (!entry) throw new Error('No ANI-2x model entry found in the model registry.');
-            progressNote.textContent = 'Loading ANI-2x model\u2026';
-            await CC.GNN.loadRegistryModel(entry.id);
-            refreshRegistryList();
-            aniModelId = CC.ANI.getLoadedModelIds()[0];
-          }
-          opts.aniModelId = aniModelId;
+        }
+
+        // NAGL-MBIS charges are needed for SMIRNOFF's own electrostatics
+        // AND for implicit solvent (any energy model) -- load once here
+        // either way rather than duplicating this same load-on-click
+        // logic per consumer (see ensureNaglModelLoaded above).
+        if (model === 'smirnoff' || solvent.enabled) {
+          opts.naglModelId = await ensureNaglModelLoaded(progressNote);
         }
 
         progressNote.textContent = 'Generating seed geometries\u2026';
@@ -1779,8 +1862,12 @@
           CC.Logger.warning('Conformer search (' + modelLabelForLog + '): no conformers found');
         } else {
           renderConformerList(result);
-          const chargeNote = (model === 'smirnoff' && !result.chargesAvailable)
-            ? ' (no NAGL-MBIS charges loaded \u2014 electrostatics omitted)' : '';
+          const missingCharges = (model === 'smirnoff' || solvent.enabled) && !result.chargesAvailable;
+          const chargeNote = missingCharges
+            ? ' (no NAGL-MBIS charges loaded \u2014 ' +
+              [model === 'smirnoff' ? 'electrostatics' : null, solvent.enabled ? 'solvation' : null].filter(Boolean).join(' & ') +
+              ' omitted)'
+            : (solvent.enabled ? ' (implicit solvent included)' : '');
           conformerSearchNote.textContent = result.modelLabel + ': ' + result.seedsGenerated + ' seed(s) generated, ' +
             result.seedsOptimized + ' optimized, ' + result.conformersWithinWindow + ' within the 6 kcal/mol energy window, ' +
             result.conformers.length + ' distinct conformer(s) kept' + chargeNote + '. Energies in ' + result.energyUnit + '.';
@@ -2333,16 +2420,12 @@
           }
           info.appendChild(nameEl);
 
-          const subEl = document.createElement('div');
-          subEl.className = 'model-registry-sub';
-          const datasetName = entry.dataset && entry.dataset.name;
-          const metricText = formatMetric(entry);
-          const bits = [entry.taskType];
-          if (datasetName) bits.push(datasetName);
-          if (metricText) bits.push(metricText);
-          subEl.textContent = bits.join(' \u00b7 ');
-          info.appendChild(subEl);
-
+          // Dataset name / test metric / task type used to be spelled out
+          // here as a second line under every model's name -- moved into
+          // the [?] info popup (buildPropertyInfoBox's Dataset/Reported
+          // metrics sections already have all of it) so this list reads
+          // as a scan-able list of model names, not a wall of provenance
+          // text repeated under each one.
           row.appendChild(info);
 
           const btn = document.createElement('button');
@@ -2548,6 +2631,17 @@
       const entry = CC.Solvent.SOLVENTS.find(function (s) { return s.id === solventSelect.value; });
       return entry ? entry.eps : NaN;
     }
+
+    // Read by the 3D view tab's "Optimize" / "Run conformer search" so
+    // implicit solvent, once enabled here, becomes part of the actual
+    // energy those minimize against -- not just this panel's own one-off
+    // "Compute solvation energy" calculator on an already-finished
+    // structure.
+    getSolventSettings = function () {
+      const enabled = enableCheckbox.checked;
+      const epsSolvent = enabled ? selectedEps() : NaN;
+      return { enabled: enabled && epsSolvent >= 1, epsSolvent: epsSolvent };
+    };
 
     function showError(text) {
       statusEl.style.color = 'var(--danger)';
