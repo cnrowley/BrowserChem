@@ -23,6 +23,7 @@ CC.Controller = class Controller {
     this.currentRingAromatic = false;
     this.drag = null;
     this.hoveredAtomId = null;
+    this.hoveredBondId = null; // set on pointermove, only when no atom is being hovered -- see _onPointerMove
 
     callbacks = callbacks || {};
     this.onMoleculeChanged = callbacks.onMoleculeChanged || function () {};
@@ -156,6 +157,11 @@ CC.Controller = class Controller {
   _onPointerMove(e) {
     const p = this._point(e);
     this.hoveredAtomId = CC.nearestAtomWithinRadius(this.molecule, p.x, p.y, CC.HOVER_RADIUS);
+    // Same precedence _hoverTarget() below already uses for the visual
+    // highlight: a bond is only "hovered" for keyboard-shortcut purposes
+    // when no atom is -- the two are mutually exclusive, matching how an
+    // atom's own hover-highlight circle always wins over a bond under it.
+    this.hoveredBondId = this.hoveredAtomId ? null : this._hitBond(e);
 
     if (this.drag) {
       if (this.drag.type === 'move-atom') {
@@ -226,16 +232,31 @@ CC.Controller = class Controller {
 
   _onPointerLeave() {
     this.hoveredAtomId = null;
+    this.hoveredBondId = null;
     this.onHoverChanged(null);
   }
 
-  // Keyboard interface for the whole canvas:
-  //   - hover an atom, type a letter (C/N/O/S/F) -> change that atom's
-  //     element directly
+  // Keyboard interface for the whole canvas, ChemDraw-style single-key
+  // shortcuts layered on top of the existing tool/cleanup shortcuts below
+  // rather than replacing them -- each new binding only fires while
+  // hovering the specific thing it applies to (an atom for element keys,
+  // a bond for order/stereo keys), same gating principle the original
+  // C/N/O/S/F element shortcuts already used, so 1-7/L keep their
+  // existing meaning everywhere else on the canvas:
+  //   - hover a BOND, press 1/2/3 -> set that bond's order directly
+  //     (single/double/triple); Z is an alias for 3 (ChemDraw's own
+  //     alkyne/triple shortcut)
+  //   - hover a BOND, press 4/W -> set wedge stereo; 5/H -> set hash
+  //     stereo (via molecule.setBondStereo, same setter the bond-style
+  //     click-to-cycle interaction uses)
+  //   - hover an ATOM, type a letter -> change that atom's element
+  //     directly: C/N/O/S/F/P/I/H for their own symbol, L for Cl and B
+  //     for Br (ChemDraw's own mapping -- neither halogen gets its own
+  //     first letter since C/B are already Carbon/Boron's keys)
   //   - 1-7 (no hover needed) -> switch tool, matching the tool rail's
   //     own left-to-right order (Select, Atom, Bond, Chain, Ring,
   //     Charge, Erase)
-  //   - L (no hover needed) -> clean up: redraw the whole structure with
+  //   - L (no atom hovered) -> clean up: redraw the whole structure with
   //     standard bond lengths/angles (via RDKit) and recenter it
   // All gated the same way: never when a modifier key is held (so this
   // doesn't fight Ctrl+Z etc.), and never while a text input elsewhere on
@@ -248,6 +269,31 @@ CC.Controller = class Controller {
     const tag = target && target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || (target && target.isContentEditable)) return;
 
+    const key = e.key.toUpperCase();
+
+    if (this.hoveredBondId) {
+      const bond = this.molecule.bonds.get(this.hoveredBondId);
+      if (bond) {
+        const BOND_ORDER_KEYS = { 1: 1, 2: 2, 3: 3, Z: 3 };
+        if (key in BOND_ORDER_KEYS) {
+          e.preventDefault();
+          bond.order = BOND_ORDER_KEYS[key];
+          bond.stereo = 'none'; // order>1 can't carry wedge/hash -- same rule the click-to-cycle interaction already applies
+          this._commit();
+          this.onMoleculeChanged();
+          return;
+        }
+        const BOND_STEREO_KEYS = { 4: 'wedge', W: 'wedge', 5: 'hash', H: 'hash' };
+        if (key in BOND_STEREO_KEYS) {
+          e.preventDefault();
+          this.molecule.setBondStereo(this.hoveredBondId, BOND_STEREO_KEYS[key]);
+          this._commit();
+          this.onMoleculeChanged();
+          return;
+        }
+      }
+    }
+
     const TOOL_NUMBER_KEYS = { '1': 'select', '2': 'atom', '3': 'bond', '4': 'chain', '5': 'ring', '6': 'charge', '7': 'erase' };
     if (e.key in TOOL_NUMBER_KEYS) {
       e.preventDefault();
@@ -255,7 +301,7 @@ CC.Controller = class Controller {
       return;
     }
 
-    if (e.key.toUpperCase() === 'L') {
+    if (key === 'L' && !this.hoveredAtomId) {
       e.preventDefault();
       this.onCleanupShortcut();
       return;
@@ -263,8 +309,7 @@ CC.Controller = class Controller {
 
     if (!this.hoveredAtomId) return;
 
-    const ELEMENT_KEYS = { C: 'C', N: 'N', O: 'O', S: 'S', F: 'F' };
-    const key = e.key.toUpperCase();
+    const ELEMENT_KEYS = { C: 'C', N: 'N', O: 'O', S: 'S', F: 'F', P: 'P', I: 'I', H: 'H', L: 'Cl', B: 'Br' };
     if (!(key in ELEMENT_KEYS)) return;
 
     const atom = this.molecule.atoms.get(this.hoveredAtomId);
