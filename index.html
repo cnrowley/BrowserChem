@@ -341,6 +341,13 @@
       </div>
 
       <div class="properties-section">
+        <h3 class="properties-section-title">Solvation free energy (multi-solvent)</h3>
+        <p class="side-panel-note">COSMO-RS-trained, one learned model per solvent (solute SMILES in, ΔGsolv out) &mdash; not the from-scratch GB/SA physics calculation above. Load any of the 21 "&hellip; solvation free energy" models below (Environmental &amp; analytical section) and run prediction to populate this table.</p>
+        <div id="solvation-table-container"></div>
+        <button class="btn btn-ghost btn-small" id="transfer-matrix-btn">View transfer matrix&hellip;</button>
+      </div>
+
+      <div class="properties-section">
         <h3 class="properties-section-title">Property radar</h3>
         <div id="radar-chart-container"></div>
       </div>
@@ -498,10 +505,21 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="transfer-matrix-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="transfer-matrix-modal-title">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <h3 id="transfer-matrix-modal-title">Solvent transfer matrix</h3>
+      <button class="modal-close-btn" id="transfer-matrix-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="transfer-matrix-modal-body"></div>
+  </div>
+</div>
+
 <script src="js/qed.js"></script>
 <script src="js/chemistry.js"></script>
 <script src="js/druglikeness.js"></script>
 <script src="js/radar-chart.js"></script>
+<script src="js/solvation.js"></script>
 <script src="js/hrms.js"></script>
 <script src="js/smarts-filters.js"></script>
 <script src="js/vec3.js"></script>

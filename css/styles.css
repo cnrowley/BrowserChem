@@ -1689,3 +1689,118 @@ div.properties-section-title {
   stroke: var(--danger);
   stroke-width: 1.5;
 }
+
+/* ---------- Solvation panel ---------- */
+
+.solvation-table td:first-child {
+  color: var(--text-dark);
+}
+
+.solvation-table td:last-child {
+  font-family: var(--font-mono);
+}
+
+#transfer-matrix-modal .modal-box {
+  width: 860px;
+}
+
+.transfer-matrix-readout {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-dark);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin: 0 0 12px;
+  min-height: 16px;
+}
+
+.transfer-matrix-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.transfer-matrix-grid {
+  display: grid;
+  gap: 1px;
+  background: var(--border-light);
+  border: 1px solid var(--border-light);
+  width: max-content;
+}
+
+.transfer-matrix-colhead,
+.transfer-matrix-rowhead {
+  background: #fff;
+  font-size: 10px;
+  color: var(--text-dark-muted);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.transfer-matrix-colhead {
+  height: 90px;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 4px;
+}
+
+.transfer-matrix-colhead span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+
+.transfer-matrix-rowhead {
+  justify-content: flex-end;
+  padding-right: 6px;
+  white-space: nowrap;
+}
+
+.transfer-matrix-cell {
+  width: 22px;
+  height: 22px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.transfer-matrix-cell:hover,
+.transfer-matrix-cell:focus {
+  outline: 2px solid var(--text-dark);
+  outline-offset: -2px;
+}
+
+.transfer-matrix-cell.is-diagonal {
+  background: repeating-linear-gradient(45deg, var(--border-light), var(--border-light) 3px, #fff 3px, #fff 6px);
+  cursor: default;
+}
+
+.transfer-matrix-cell.is-unavailable {
+  background: repeating-linear-gradient(135deg, #f0efe9, #f0efe9 2px, #fff 2px, #fff 4px);
+  cursor: default;
+}
+
+.transfer-matrix-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.transfer-matrix-legend-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border-light);
+}
+
+.transfer-matrix-legend-label {
+  font-size: 11px;
+  color: var(--text-dark-muted);
+  white-space: nowrap;
+}
+
+.transfer-matrix-note {
+  margin-top: 10px;
+}

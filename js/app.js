@@ -108,6 +108,7 @@
       renderDescriptorTable(null);
       updateExportButtons();
       refreshRadarChart();
+      refreshSolvationPanel();
       updateHRMSButton();
       updateSmartsFiltersButton();
       return;
@@ -122,6 +123,7 @@
       renderDescriptorTable(null);
       updateExportButtons();
       refreshRadarChart();
+      refreshSolvationPanel();
       updateHRMSButton();
       updateSmartsFiltersButton();
       return;
@@ -133,6 +135,7 @@
       renderDescriptorTable(null);
       updateExportButtons();
       refreshRadarChart();
+      refreshSolvationPanel();
       updateHRMSButton();
       updateSmartsFiltersButton();
       return;
@@ -143,6 +146,7 @@
     renderDescriptorTable(withSAScore(result.descriptors));
     updateExportButtons();
     refreshRadarChart();
+    refreshSolvationPanel();
     updateHRMSButton();
     updateSmartsFiltersButton();
   }
@@ -169,6 +173,19 @@
     }
     const radarData = CC.buildRadarData(currentDescriptors, gnnValues);
     CC.renderRadarChart(container, radarData);
+  }
+
+  /**
+   * Ranked per-solvent table, read from whichever solv{Solvent}
+   * propertyKey(s) (see solvation.js's CC.SOLVENTS) happen to be
+   * currently loaded and run -- same "matched by registry propertyKey,
+   * graceful partial state" convention refreshRadarChart uses.
+   */
+  function refreshSolvationPanel() {
+    const container = document.getElementById('solvation-table-container');
+    if (!container) return;
+    const values = lastMolecularProperties ? lastMolecularProperties.values : {};
+    CC.renderSolvationTable(container, CC.buildSolvationRows(values));
   }
 
   /**
@@ -893,6 +910,33 @@
       body.appendChild(contentEl);
       modal.style.display = '';
     };
+
+    closeBtn.addEventListener('click', close);
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display !== 'none') close();
+    });
+  }
+
+  // The wide solvent x solvent matrix (up to 21 columns) needs real
+  // horizontal room the narrow side panel doesn't have -- same "derived
+  // view over already-computed GNN results" data source as
+  // refreshSolvationPanel/refreshRadarChart (lastMolecularProperties),
+  // just rendered into a modal instead of the panel.
+  function setupTransferMatrixModal() {
+    const btn = document.getElementById('transfer-matrix-btn');
+    const modal = document.getElementById('transfer-matrix-modal');
+    const closeBtn = document.getElementById('transfer-matrix-modal-close');
+    const body = document.getElementById('transfer-matrix-modal-body');
+    if (!btn || !modal) return;
+
+    function close() { modal.style.display = 'none'; }
+
+    btn.addEventListener('click', function () {
+      const values = lastMolecularProperties ? lastMolecularProperties.values : {};
+      CC.renderTransferMatrix(body, CC.buildTransferMatrix(values));
+      modal.style.display = '';
+    });
 
     closeBtn.addEventListener('click', close);
     modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
@@ -2023,6 +2067,7 @@
       molOutput.innerHTML = '';
       lastMolecularProperties = { values: result.molecularProperties || {}, meta: result.propertyMeta || {} };
       refreshRadarChart();
+      refreshSolvationPanel();
 
       const warningsEl = document.getElementById('gnn-prediction-warnings');
       if (warningsEl) {
@@ -2252,6 +2297,7 @@
       // (same reasoning invalidate3DView already applies to the 3D tab).
       sasaStatus.textContent = '';
       refreshRadarChart();
+      refreshSolvationPanel();
     };
 
     runDemoBtn.addEventListener('click', runPrediction);
@@ -2987,6 +3033,7 @@
     setupMicrostateModal();
     setupSmartsFiltersModal();
     setupPropertyInfoModal();
+    setupTransferMatrixModal();
     setupTitrationPanel();
 
     // Loaded once at startup, same as the model registry -- data-only
