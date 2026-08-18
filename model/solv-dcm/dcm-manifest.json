@@ -1,0 +1,96 @@
+{
+  "task": "solvDcm",
+  "taskType": "regression",
+  "outputLevel": "molecule",
+  "graphType": "heavy",
+  "applicableElement": null,
+  "architecture": "chemprop-dmpnn-v2",
+  "dims": {
+    "d_v": 72,
+    "d_e": 14,
+    "d_h": 300,
+    "depth": 3,
+    "aggNorm": 100
+  },
+  "ffnHiddenDim": 300,
+  "nTasks": 1,
+  "tensors": {
+    "W_i": {
+      "shape": [
+        300,
+        86
+      ],
+      "offset": 0,
+      "length": 25800
+    },
+    "W_h": {
+      "shape": [
+        300,
+        300
+      ],
+      "offset": 25800,
+      "length": 90000
+    },
+    "W_o_weight": {
+      "shape": [
+        300,
+        372
+      ],
+      "offset": 115800,
+      "length": 111600
+    },
+    "W_o_bias": {
+      "shape": [
+        300
+      ],
+      "offset": 227400,
+      "length": 300
+    },
+    "ffn0_weight": {
+      "shape": [
+        300,
+        300
+      ],
+      "offset": 227700,
+      "length": 90000
+    },
+    "ffn0_bias": {
+      "shape": [
+        300
+      ],
+      "offset": 317700,
+      "length": 300
+    },
+    "ffn1_weight": {
+      "shape": [
+        1,
+        300
+      ],
+      "offset": 318000,
+      "length": 300
+    },
+    "ffn1_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 318300,
+      "length": 1
+    },
+    "out_mean": {
+      "shape": [
+        1
+      ],
+      "offset": 318301,
+      "length": 1
+    },
+    "out_scale": {
+      "shape": [
+        1
+      ],
+      "offset": 318302,
+      "length": 1
+    }
+  },
+  "byteLength": 1273212,
+  "dtype": "float32"
+}

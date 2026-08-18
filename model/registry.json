@@ -1603,6 +1603,1392 @@
         "safety",
         "medicinal-chemistry"
       ]
+    },
+    {
+      "id": "solv-hexane-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Hexane solvation free energy",
+      "propertyKey": "solvHexane",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Hexane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-hexane/hexane-manifest.json",
+        "weights": "solv-hexane/hexane.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Hexane slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4054,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 405,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.345,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.345,
+          "testRMSE": 0.593,
+          "testR2": 0.9757,
+          "testPearsonR": 0.9879
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-heptane-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Heptane solvation free energy",
+      "propertyKey": "solvHeptane",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Heptane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-heptane/heptane-manifest.json",
+        "weights": "solv-heptane/heptane.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Heptane slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3286,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 328,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.342,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.342,
+          "testRMSE": 0.44,
+          "testR2": 0.9828,
+          "testPearsonR": 0.9919
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-cyclohexane-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Cyclohexane solvation free energy",
+      "propertyKey": "solvCyclohexane",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Cyclohexane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-cyclohexane/cyclohexane-manifest.json",
+        "weights": "solv-cyclohexane/cyclohexane.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Cyclohexane slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3478,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 347,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.38,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.38,
+          "testRMSE": 0.502,
+          "testR2": 0.9804,
+          "testPearsonR": 0.9914
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-dioxane-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "1,4-Dioxane solvation free energy",
+      "propertyKey": "solvDioxane",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in 1,4-Dioxane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-dioxane/dioxane-manifest.json",
+        "weights": "solv-dioxane/dioxane.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- 1,4-Dioxane slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3235,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 323,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.923,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.923,
+          "testRMSE": 1.57,
+          "testR2": 0.8988,
+          "testPearsonR": 0.9489
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-toluene-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Toluene solvation free energy",
+      "propertyKey": "solvToluene",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Toluene -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-toluene/toluene-manifest.json",
+        "weights": "solv-toluene/toluene.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Toluene slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4062,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 406,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.636,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.636,
+          "testRMSE": 1.023,
+          "testR2": 0.9446,
+          "testPearsonR": 0.9722
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-diethyl-ether-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Diethyl ether solvation free energy",
+      "propertyKey": "solvDiethylEther",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Diethyl ether -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-diethyl-ether/diethyl-ether-manifest.json",
+        "weights": "solv-diethyl-ether/diethyl-ether.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Diethyl ether slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3269,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 326,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.686,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.686,
+          "testRMSE": 0.948,
+          "testR2": 0.9584,
+          "testPearsonR": 0.9798
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-chloroform-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Chloroform solvation free energy",
+      "propertyKey": "solvChloroform",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Chloroform -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-chloroform/chloroform-manifest.json",
+        "weights": "solv-chloroform/chloroform.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Chloroform slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4000,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 400,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.666,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.666,
+          "testRMSE": 0.956,
+          "testR2": 0.9439,
+          "testPearsonR": 0.9719
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-ethyl-acetate-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Ethyl acetate solvation free energy",
+      "propertyKey": "solvEthylAcetate",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Ethyl acetate -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-ethyl-acetate/ethyl-acetate-manifest.json",
+        "weights": "solv-ethyl-acetate/ethyl-acetate.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Ethyl acetate slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3341,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 334,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.816,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.816,
+          "testRMSE": 1.264,
+          "testR2": 0.9392,
+          "testPearsonR": 0.9733
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-acetic-acid-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Acetic acid solvation free energy",
+      "propertyKey": "solvAceticAcid",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Acetic acid -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-acetic-acid/acetic-acid-manifest.json",
+        "weights": "solv-acetic-acid/acetic-acid.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Acetic acid slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4194,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 419,
+        "primary": {
+          "name": "Test MAE",
+          "value": 1.164,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 1.164,
+          "testRMSE": 1.622,
+          "testR2": 0.9053,
+          "testPearsonR": 0.953
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-thf-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "THF solvation free energy",
+      "propertyKey": "solvThf",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in THF -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-thf/thf-manifest.json",
+        "weights": "solv-thf/thf.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- THF slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3210,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 321,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.766,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.766,
+          "testRMSE": 1.021,
+          "testR2": 0.9443,
+          "testPearsonR": 0.9721
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-dcm-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "DCM solvation free energy",
+      "propertyKey": "solvDcm",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in DCM -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-dcm/dcm-manifest.json",
+        "weights": "solv-dcm/dcm.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- DCM slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4023,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 402,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.742,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.742,
+          "testRMSE": 1.119,
+          "testR2": 0.957,
+          "testPearsonR": 0.9786
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-1-octanol-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "1-Octanol solvation free energy",
+      "propertyKey": "solv1Octanol",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in 1-Octanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-1-octanol/1-octanol-manifest.json",
+        "weights": "solv-1-octanol/1-octanol.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- 1-Octanol slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4030,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 403,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.844,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.844,
+          "testRMSE": 1.25,
+          "testR2": 0.9448,
+          "testPearsonR": 0.9725
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-pyridine-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Pyridine solvation free energy",
+      "propertyKey": "solvPyridine",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Pyridine -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-pyridine/pyridine-manifest.json",
+        "weights": "solv-pyridine/pyridine.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Pyridine slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3283,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 328,
+        "primary": {
+          "name": "Test MAE",
+          "value": 1.022,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 1.022,
+          "testRMSE": 1.583,
+          "testR2": 0.9211,
+          "testPearsonR": 0.962
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-2-propanol-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "2-Propanol solvation free energy",
+      "propertyKey": "solv2Propanol",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in 2-Propanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-2-propanol/2-propanol-manifest.json",
+        "weights": "solv-2-propanol/2-propanol.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- 2-Propanol slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3263,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 326,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.71,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.71,
+          "testRMSE": 0.967,
+          "testR2": 0.9485,
+          "testPearsonR": 0.9755
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-acetone-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Acetone solvation free energy",
+      "propertyKey": "solvAcetone",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Acetone -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-acetone/acetone-manifest.json",
+        "weights": "solv-acetone/acetone.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Acetone slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3993,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 399,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.954,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.954,
+          "testRMSE": 1.36,
+          "testR2": 0.9191,
+          "testPearsonR": 0.9588
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-ethanol-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Ethanol solvation free energy",
+      "propertyKey": "solvEthanol",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Ethanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-ethanol/ethanol-manifest.json",
+        "weights": "solv-ethanol/ethanol.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Ethanol slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3989,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 398,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.764,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.764,
+          "testRMSE": 1.14,
+          "testR2": 0.9446,
+          "testPearsonR": 0.9723
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-methanol-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Methanol solvation free energy",
+      "propertyKey": "solvMethanol",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Methanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-methanol/methanol-manifest.json",
+        "weights": "solv-methanol/methanol.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Methanol slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4118,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 411,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.816,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.816,
+          "testRMSE": 1.296,
+          "testR2": 0.9251,
+          "testPearsonR": 0.9619
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-dmf-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "DMF solvation free energy",
+      "propertyKey": "solvDmf",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in DMF -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-dmf/dmf-manifest.json",
+        "weights": "solv-dmf/dmf.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- DMF slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3371,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 337,
+        "primary": {
+          "name": "Test MAE",
+          "value": 1.115,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 1.115,
+          "testRMSE": 1.855,
+          "testR2": 0.8858,
+          "testPearsonR": 0.9463
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-acetonitrile-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Acetonitrile solvation free energy",
+      "propertyKey": "solvAcetonitrile",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Acetonitrile -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-acetonitrile/acetonitrile-manifest.json",
+        "weights": "solv-acetonitrile/acetonitrile.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Acetonitrile slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 4067,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 406,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.764,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.764,
+          "testRMSE": 1.202,
+          "testR2": 0.9277,
+          "testPearsonR": 0.9646
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-dmso-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "DMSO solvation free energy",
+      "propertyKey": "solvDmso",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in DMSO -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-dmso/dmso-manifest.json",
+        "weights": "solv-dmso/dmso.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- DMSO slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3348,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 334,
+        "primary": {
+          "name": "Test MAE",
+          "value": 0.955,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 0.955,
+          "testRMSE": 1.341,
+          "testR2": 0.9532,
+          "testPearsonR": 0.9764
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
+    },
+    {
+      "id": "solv-water-v1",
+      "categories": [
+        "environmental-analytical"
+      ],
+      "displayName": "Water solvation free energy",
+      "propertyKey": "solvWater",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "kcal/mol",
+      "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Water -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
+      "files": {
+        "manifest": "solv-water/water-manifest.json",
+        "weights": "solv-water/water.bin"
+      },
+      "dataset": {
+        "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Water slice",
+        "citationKey": "Vermeire2021",
+        "citationFull": "Vermeire, F. H.; Green, W. H. Transfer learning for solvation free energies: From quantum chemistry to experiments. Chem. Eng. J. 2021, 418, 129307. https://doi.org/10.1016/j.cej.2021.129307",
+        "size": 3988,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.1016/j.cej.2021.129307"
+      },
+      "metrics": {
+        "testSetSize": 398,
+        "primary": {
+          "name": "Test MAE",
+          "value": 1.322,
+          "units": "kcal/mol"
+        },
+        "all": {
+          "testMAE": 1.322,
+          "testRMSE": 2.059,
+          "testR2": 0.8828,
+          "testPearsonR": 0.9452
+        },
+        "note": "Real held-out test-set metrics, computed from this checkpoint's own test_predictions.csv joined against the true COSMO-RS dGsolv values, not estimated."
+      },
+      "training": {
+        "chempropVersion": "2.2.3",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 60,
+          "batchSize": 64,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of 21 single-task, FIXED-solvent solvation-free-energy checkpoints (see scripts/prepare_solvation_training_data.py / scripts/train_solvation_chemprop.sh), each solvent its own separate checkpoint rather than a true two-molecule solute+solvent model -- this project's JS D-MPNN (graph-builder.js/dmpnn.js/chemprop-model.js) only supports one molecular graph per checkpoint, so an arbitrary user-typed solvent is out of scope; this fixed panel is what the app's Solvation table and solvent x solvent transfer-energy matrix (js/solvation.js) are actually built from. Domain of validity is CombiSolv-QM's own coverage (drug-like and simple organic solutes, COSMO-RS/COSMOtherm's own accuracy relative to real experimental solvation free energies -- COSMO-RS is itself an approximate continuum-solvation method, not a ground truth; see the source paper's own CombiSolv-Exp comparison for how well it tracks experiment) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "physicochemical",
+        "solvation",
+        "solubility",
+        "cosmo-rs",
+        "formulation"
+      ]
     }
   ]
 }
