@@ -716,6 +716,19 @@ window.CC = window.CC || {};
     let remainingIters = totalIterations - stage1Iters - stage2Iters - rampSteps * rampItersEach;
     if (remainingIters < 0) remainingIters = Math.round(totalIterations * 0.1);
 
+    // The curriculum below (LJ OFF for stages 1-2, ramped back in only
+    // from stage 3 on) is right for a fresh/random seed, but actively
+    // WRONG for re-optimizing a seed that's already well-packed: turning
+    // sterics off first lets already-settled atoms drift into new
+    // clashes, and if the deadline lands before LJ ramps back to full
+    // strength, the run can hand back something with a HIGHER final
+    // energy than what it started from (confirmed on terfenadine: a
+    // second "Optimize" click on an already-optimized 76-atom structure
+    // went from energy 1.03 to 6.02). Guard against that regression by
+    // scoring the untouched seed at full strength up front and never
+    // returning something worse than it.
+    const seedEnergy = computeEnergy(atoms3d, atoms3d, bonds3d, angles, torsions, impropers, pairs, { torsion: true, lj: 1 }, solvent);
+
     function report(label) { if (onProgress) onProgress(label); }
 
     // Stage 1: bonds + angles only.
@@ -745,6 +758,20 @@ window.CC = window.CC || {};
     // settle on their own (stage 1's "converged" bond+angle-only
     // structure isn't the real answer once torsions/LJ are added).
     result.converged = result.settled;
+
+    // Never hand back something worse than the seed it started from --
+    // see the seedEnergy comment above. If the deadline cut the LJ ramp
+    // short and left the structure clashier than it began, this is the
+    // more useful answer for the caller either way: the unmodified seed
+    // (already known-good) with converged=false, an honest "couldn't
+    // improve this in the time available" rather than a silently
+    // worse structure with a normal-looking energy number attached.
+    if (result.energy > seedEnergy) {
+      return {
+        positions: atoms3d.map(function (a) { return { x: a.x, y: a.y, z: a.z }; }),
+        energy: seedEnergy, flat: flatten(atoms3d), gradNorm: null, exitReason: 'seed-already-better', converged: false,
+      };
+    }
     return result;
   }
 

@@ -733,6 +733,15 @@ CC.OpenFF = window.CC.OpenFF || {};
     let remainingIters = totalIterations - stage1Iters - stage2Iters - rampSteps * rampItersEach;
     if (remainingIters < 0) remainingIters = Math.round(totalIterations * 0.1);
 
+    // See embed3d.js's minimizeStaged for why this guard exists: the
+    // same bonds/angles-first, sterics-off-then-ramped-in curriculum
+    // that's right for a fresh seed can leave an ALREADY-optimized seed
+    // worse off if the deadline lands mid-ramp (steric guardrails were
+    // briefly off, atoms drifted into a clash, and there wasn't time to
+    // fully ramp electrostatics/vdW back up before returning).
+    const shared = CC.Embed3DShared;
+    const seedEnergy = computeEnergySMIRNOFF(atoms3d, atoms3d, ff, { torsion: true, nonbonded: 1 }, shared, solvent);
+
     function report(label) { if (onProgress) onProgress(label); }
 
     report('bonds & angles');
@@ -752,6 +761,15 @@ CC.OpenFF = window.CC.OpenFF || {};
     result = await minimizeSMIRNOFF(atoms3d, ff, remainingIters, deadline, { torsion: true, nonbonded: 1 }, result.flat, function () { report('final polish'); }, solvent);
 
     result.converged = result.settled;
+
+    // Never hand back something worse than the untouched seed -- see the
+    // seedEnergy comment above.
+    if (result.energy > seedEnergy) {
+      return {
+        positions: atoms3d.map(function (a) { return { x: a.x, y: a.y, z: a.z }; }),
+        energy: seedEnergy, flat: shared.flatten(atoms3d), gradNorm: null, exitReason: 'seed-already-better', converged: false,
+      };
+    }
     return result;
   }
 
