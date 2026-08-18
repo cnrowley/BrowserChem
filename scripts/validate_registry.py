@@ -160,6 +160,20 @@ def main():
                                 f"if that's genuinely intended (e.g. a per-atom property meaningful for any "
                                 f"element, unlike a nucleus-specific NMR shift model)."
                             )
+                    # Cross-check registry vs manifest applicableElement --
+                    # app.js's autoLoadApplicableModels() reads the REGISTRY
+                    # copy (to decide whether to fetch weights at all,
+                    # before any manifest is even downloaded), so a stale/
+                    # missing registry-side value after re-exporting a
+                    # checkpoint would silently break that gate (e.g. 19F
+                    # NMR loading for every molecule again, or never).
+                    registry_applicable_element = entry.get("applicableElement")
+                    tech_applicable_element = tech_manifest.get("applicableElement")
+                    if tech_applicable_element and registry_applicable_element != tech_applicable_element:
+                        errors.append(
+                            f"[{label}] registry applicableElement={registry_applicable_element!r} but "
+                            f"{manifest_path} says applicableElement={tech_applicable_element!r}"
+                        )
                     tech_task = tech_manifest.get("task")
                 elif engine == "nagl":
                     # nagl-model.js currently only implements the "charges"

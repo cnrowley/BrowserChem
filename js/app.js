@@ -891,7 +891,7 @@
   }
 
   // Generic "[?]" popup used everywhere a registry entry (predictive
-  // model) is shown -- the GNN results table, the model "Load" list, and
+  // model) is shown -- the GNN results table, the model catalog list, and
   // section headings like the Titration tab's -- so there's exactly one
   // popup implementation and one place to change its look, no matter
   // which panel triggered it.
@@ -1954,6 +1954,89 @@
   let lastBondProperties = null; // bondId -> {propName: value}, for bond heatmap re-render
   let lastMolecularProperties = null; // {propName: value} + propertyMeta, for the radar chart
 
+  // Hydrogens need their own case: this app's 2D graph almost never has
+  // an explicit H atom NODE (every drawn molecule relies on implicit
+  // hydrogens filled in from valence, same convention embed3d.js's own
+  // withImplicitHydrogens() uses) -- so a plain "is any atom.element
+  // === 'H'" scan would wrongly say "no hydrogens" for nearly every
+  // normal organic molecule and permanently skip auto-loading 1H NMR.
+  function moleculeHasElement(molecule, element) {
+    if (element !== 'H') {
+      for (const atom of molecule.atoms.values()) {
+        if (atom.element === element) return true;
+      }
+      return false;
+    }
+    for (const atom of molecule.atoms.values()) {
+      if (atom.element === 'H') return true;
+      const data = CC.elementData(atom.element);
+      if (!data) continue;
+      const usedValence = molecule.getBondsForAtom(atom.id).reduce(function (sum, b) { return sum + b.order; }, 0);
+      if (data.valence - usedValence > 0) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Load-on-demand for "Run prediction": rather than requiring a
+   * separate trip through the model list clicking "Load" on each one
+   * first (the old flow), this loads every registry entry that's
+   * actually worth running against the CURRENT molecule -- a real
+   * property model (engine 'chemprop'/'nagl'; the 'geomol'/'ani2x' 3D-
+   * structure-tool engines are a different feature, triggered from the
+   * 3D panel, not swept in here), not already loaded, not structurally
+   * BLOCKED (CC.Validate.checkModelCompatibility -- a 'warning'-tier
+   * model still loads, same as picking it manually always did), and --
+   * the concrete case this exists for -- not an atom-level model whose
+   * declared applicableElement (e.g. 19F NMR's 'F') the molecule simply
+   * doesn't contain, so a fluorine-free molecule doesn't pay to fetch
+   * and run a model that would only ever report on zero atoms.
+   *
+   * One bad/unreachable model shouldn't sink the others (Promise.
+   * allSettled, not Promise.all) -- failures are returned, not thrown,
+   * so the caller can still run prediction against whatever DID load.
+   */
+  async function autoLoadApplicableModels(onProgress) {
+    const molecule = controller.molecule;
+    const entries = CC.GNN.getRegistryEntries().filter(function (entry) {
+      return entry.engine === 'chemprop' || entry.engine === 'nagl';
+    });
+
+    let compatByModelId = {};
+    if (window.CC.Validate && lastStructureReport) {
+      try {
+        CC.Validate.checkModelCompatibility(molecule, lastStructureReport).forEach(function (c) {
+          compatByModelId[c.id] = c;
+        });
+      } catch (err) {
+        compatByModelId = {}; // don't let a compat-check failure block loading altogether
+      }
+    }
+
+    const toLoad = entries.filter(function (entry) {
+      if (CC.GNN.isRegistryModelLoaded(entry.id)) return false;
+      const compat = compatByModelId[entry.id];
+      if (compat && compat.tier === 'blocked') return false;
+      if (entry.applicableElement && !moleculeHasElement(molecule, entry.applicableElement)) return false;
+      return true;
+    });
+
+    if (toLoad.length === 0) return { loaded: 0, failed: [] };
+    if (onProgress) onProgress('Loading ' + toLoad.length + ' applicable model' + (toLoad.length === 1 ? '' : 's') + '…');
+
+    const outcomes = await Promise.allSettled(toLoad.map(function (entry) { return CC.GNN.loadRegistryModel(entry.id); }));
+    const failed = [];
+    outcomes.forEach(function (outcome, i) {
+      if (outcome.status === 'rejected') {
+        failed.push({ entry: toLoad[i], error: outcome.reason });
+        console.error('[ChemCanvas] Auto-load failed for "' + toLoad[i].id + '"', outcome.reason);
+      }
+    });
+    refreshRegistryList();
+    notifyAni2xModelsChanged();
+    return { loaded: toLoad.length - failed.length, failed: failed };
+  }
+
   function setupGNNPanel() {
     const runDemoBtn = document.getElementById('run-demo-gnn-btn');
     const loadChempropBtn = document.getElementById('load-chemprop-btn');
@@ -1984,33 +2067,44 @@
       gnnEmptyNote.style.display = '';
     }
 
-    function runPrediction() {
+    async function runPrediction() {
       if (controller.molecule.isEmpty()) {
         showGnnMessage('Draw a structure first.');
         return;
       }
       runDemoBtn.disabled = true;
-      CC.GNN.predictMolecule(controller.molecule)
-        .then(function (result) {
-          renderGNNOutput(result);
-          const nMol = Object.keys(result.molecularProperties || {}).length;
-          const nAtom = (result.atomProperties || []).length;
-          const nBond = (result.bondProperties || []).length;
-          let msg = 'Ran prediction: ' + nMol + ' molecular, ' + nAtom + ' atom-level, ' + nBond + ' bond-level propert' + (nMol + nAtom + nBond === 1 ? 'y' : 'ies');
-          if (result.warnings && result.warnings.length) {
-            CC.Logger.warning(msg + ' — ' + result.warnings.length + ' model warning(s): ' + result.warnings.join('; '));
-          } else {
-            CC.Logger.success(msg);
-          }
-        })
-        .catch(function (err) {
-          showGnnMessage('Prediction failed: ' + err.message);
-          console.error('[ChemCanvas] GNN prediction failed', err);
-          CC.Logger.error('GNN prediction failed: ' + err.message);
-        })
-        .finally(function () {
-          runDemoBtn.disabled = false;
+      try {
+        const loadSummary = await autoLoadApplicableModels(function (note) {
+          runDemoBtn.textContent = note;
         });
+        runDemoBtn.textContent = 'Running predictions…';
+
+        const result = await CC.GNN.predictMolecule(controller.molecule);
+        renderGNNOutput(result);
+        const nMol = Object.keys(result.molecularProperties || {}).length;
+        const nAtom = (result.atomProperties || []).length;
+        const nBond = (result.bondProperties || []).length;
+        let msg = 'Ran prediction: ' + nMol + ' molecular, ' + nAtom + ' atom-level, ' + nBond + ' bond-level propert' + (nMol + nAtom + nBond === 1 ? 'y' : 'ies');
+        if (loadSummary.loaded > 0) {
+          msg += ' (auto-loaded ' + loadSummary.loaded + ' applicable model' + (loadSummary.loaded === 1 ? '' : 's') + ')';
+        }
+        const warnings = (result.warnings || []).slice();
+        loadSummary.failed.forEach(function (f) {
+          warnings.push('could not load "' + f.entry.displayName + '": ' + f.error.message);
+        });
+        if (warnings.length) {
+          CC.Logger.warning(msg + ' — ' + warnings.length + ' warning(s): ' + warnings.join('; '));
+        } else {
+          CC.Logger.success(msg);
+        }
+      } catch (err) {
+        showGnnMessage('Prediction failed: ' + err.message);
+        console.error('[ChemCanvas] GNN prediction failed', err);
+        CC.Logger.error('GNN prediction failed: ' + err.message);
+      } finally {
+        runDemoBtn.disabled = false;
+        updateRunButtonLabel();
+      }
     }
 
     // Merges a batch of per-atom properties (GNN/NAGL/pKa atom-level
@@ -2374,10 +2468,8 @@
     });
 
     function updateRunButtonLabel() {
-      const n = CC.GNN.getLoadedChempropModelIds().length;
-      runDemoBtn.textContent = n === 0
-        ? 'Run prediction (demo weights)'
-        : 'Run prediction (' + n + ' model' + (n === 1 ? '' : 's') + ' loaded)';
+      const n = CC.GNN.getRegistryEntries().filter(function (e) { return CC.GNN.isRegistryModelLoaded(e.id); }).length;
+      runDemoBtn.textContent = 'Compute properties' + (n > 0 ? ' (' + n + ' model' + (n === 1 ? '' : 's') + ' loaded so far)' : '');
     }
     updateRunButtonLabel();
 
@@ -2474,38 +2566,19 @@
           // text repeated under each one.
           row.appendChild(info);
 
-          const btn = document.createElement('button');
-          btn.className = 'btn btn-ghost btn-small model-registry-load-btn';
-          btn.textContent = CC.GNN.isRegistryModelLoaded(entry.id) ? 'Loaded' : 'Load';
-          btn.disabled = CC.GNN.isRegistryModelLoaded(entry.id);
-          btn.addEventListener('click', function () {
-            btn.disabled = true;
-            btn.textContent = 'Loading\u2026';
-            CC.Logger.info('Loading model: ' + entry.displayName + '\u2026');
-            CC.GNN.loadRegistryModel(entry.id)
-              .then(function () {
-                // A full re-render, not just mutating this one button --
-                // an entry listed under more than one category (see
-                // REGISTRY_CATEGORIES above) has a SEPARATE row/button
-                // per section, and every copy needs to flip to "Loaded"
-                // together, not just whichever one was actually clicked.
-                refreshRegistryList();
-                updateRunButtonLabel();
-                notifyAni2xModelsChanged();
-                CC.Logger.success('Loaded model: ' + entry.displayName);
-              })
-              .catch(function (err) {
-                btn.textContent = 'Load';
-                btn.disabled = false;
-                console.error('[ChemCanvas] Failed to load registry model "' + entry.id + '"', err);
-                CC.Logger.error('Failed to load model "' + entry.displayName + '": ' + err.message);
-                const errEl = document.createElement('div');
-                errEl.className = 'model-registry-error';
-                errEl.textContent = 'Failed: ' + err.message;
-                row.appendChild(errEl);
-              });
-          });
-          row.appendChild(btn);
+          // Read-only status, not a Load button -- "Compute properties"
+          // above auto-loads whatever's applicable (see
+          // autoLoadApplicableModels); this list is now a browsable
+          // catalog (name, compatibility, the [?] info popup), not a
+          // second place to individually trigger a fetch. An 'unloaded'
+          // model isn't an error state, so it gets no badge at all
+          // (silence, not a gray "not loaded" chip on all 40+ others).
+          if (CC.GNN.isRegistryModelLoaded(entry.id)) {
+            const statusEl = document.createElement('span');
+            statusEl.className = 'model-registry-status is-loaded';
+            statusEl.textContent = 'Loaded';
+            row.appendChild(statusEl);
+          }
 
           container.appendChild(row);
         });
@@ -2514,7 +2587,7 @@
 
     // Lets other panels (the 3D view's conformer-search auto-load,
     // see setup3DPanel) re-render this list after loading a model from
-    // outside this panel, so its "Load"/"Loaded" button state stays honest.
+    // outside this panel, so its "Loaded" status badge stays honest.
     // Also re-renders the Validation tab's compatibility table: every
     // call site that calls refreshRegistryList() does so because a
     // model just finished loading/unloading, which is exactly the other

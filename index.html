@@ -261,12 +261,13 @@
 
       <div class="properties-section">
         <h3 class="properties-section-title">GNN prediction (D-MPNN)</h3>
+        <p class="side-panel-note">One click loads whatever's applicable to THIS molecule (skipping e.g. 19F NMR for a fluorine-free structure) and runs every model below together &mdash; no per-model "Load" step needed. Already-loaded models stay loaded for the rest of the session.</p>
         <p class="side-panel-note compatibility-warning" id="compatibility-warning" style="display:none;"></p>
         <p class="side-panel-note compatibility-warning" id="gnn-prediction-warnings" style="display:none;"></p>
         <p class="side-panel-note" id="registry-status"></p>
 
         <div class="gnn-controls">
-          <button class="btn btn-ghost btn-small" id="run-demo-gnn-btn">Run prediction</button>
+          <button class="btn btn-accent btn-small" id="run-demo-gnn-btn">Compute properties</button>
           <button class="btn btn-ghost btn-small" id="load-chemprop-btn">Load model from files&hellip;</button>
           <input type="file" id="chemprop-file-input" accept=".json,.bin" multiple hidden>
           <button class="btn btn-ghost btn-small" id="load-onnx-btn">Load ONNX model&hellip;</button>

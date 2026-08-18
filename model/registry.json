@@ -400,7 +400,8 @@
         "nmr",
         "atom-level",
         "spectroscopy"
-      ]
+      ],
+      "applicableElement": "C"
     },
     {
       "id": "nmr-19f",
@@ -456,7 +457,8 @@
         "nmr",
         "atom-level",
         "spectroscopy"
-      ]
+      ],
+      "applicableElement": "F"
     },
     {
       "id": "nmr-1h",
@@ -513,7 +515,8 @@
         "nmr",
         "atom-level",
         "spectroscopy"
-      ]
+      ],
+      "applicableElement": "H"
     },
     {
       "id": "ani2x-v1",

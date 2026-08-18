@@ -76,6 +76,16 @@
  *         "training": { "chempropVersion", "hyperparameters", "dateTrained" },  optional
  *         "notes": "...",            optional
  *         "tags": ["..."]            optional
+ *         "applicableElement": "...",  optional, an element symbol
+ *                      (e.g. "F") -- should match the checkpoint's own
+ *                      manifest.applicableElement for an atom-level
+ *                      model that only ever reports on one element
+ *                      (an NMR nucleus shift model, not a general
+ *                      per-atom property like MBIS charges). Read by
+ *                      app.js's autoLoadApplicableModels() BEFORE
+ *                      fetching weights, so e.g. 19F NMR is skipped
+ *                      entirely for a fluorine-free molecule rather
+ *                      than loaded and run for zero useful output.
  *       }
  *     ]
  *   }
