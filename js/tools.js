@@ -174,12 +174,18 @@ CC.Controller = class Controller {
       } else if (this.drag.type === 'bond') {
         const startAtom = this.molecule.atoms.get(this.drag.startAtomId);
         if (startAtom) {
-          const hoverAtomId = this._hitAtom(e);
-          const end = (hoverAtomId && hoverAtomId !== this.drag.startAtomId)
+          // Radius-based snap, same as the chain tool's ring-closing snap
+          // and the hover-highlight circle itself (_hoverTarget) -- so
+          // releasing anywhere inside the highlight actually bonds to that
+          // atom, not just when the pointer is exactly over its hit area.
+          const hoverAtomId = CC.nearestAtomWithinRadius(
+            this.molecule, p.x, p.y, CC.HOVER_RADIUS, this.drag.startAtomId
+          );
+          const end = hoverAtomId
             ? this.molecule.atoms.get(hoverAtomId)
             : CC.snapToAngle(startAtom, p);
           this.drag.previewEnd = end;
-          this.drag.hoverAtomId = (hoverAtomId && hoverAtomId !== this.drag.startAtomId) ? hoverAtomId : null;
+          this.drag.hoverAtomId = hoverAtomId;
           this.onMoleculeChanged({ preview: this.drag });
         }
       } else if (this.drag.type === 'chain') {
