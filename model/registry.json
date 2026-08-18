@@ -263,7 +263,7 @@
         },
         "all": {
           "testMAE": 0.576,
-          "testRMSE": 0.920,
+          "testRMSE": 0.92,
           "testR2": 0.9331,
           "testPearsonR": 0.9661
         },
@@ -1141,6 +1141,396 @@
         "dateTrained": "2026-08-15"
       },
       "notes": "One of five single-task CYP450 inhibition classifiers (CYP1A2/2C9/2C19/2D6/3A4) trained from the same PubChem AID 1851 qHTS panel assay (scripts/prepare_cyp_training_data.py), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine. 'Inconclusive' assay outcomes were dropped rather than coerced into a binary label; CIDs with disagreeing replicate outcomes for this isoform were resolved by majority vote (exact ties dropped). Domain of validity is bounded by the source qHTS library's own chemical space (drug-like small molecules screened in a luminescence-based P450-Glo assay) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp1a2-substrate-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP1A2 substrate",
+      "propertyKey": "cyp1a2substrate",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 1A2, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP1A2 substrates include caffeine, theophylline, clozapine, tizanidine).",
+      "files": {
+        "manifest": "cyp-substrate-1a2/cyp1a2-substrate-manifest.json",
+        "weights": "cyp-substrate-1a2/cyp1a2-substrate.bin"
+      },
+      "dataset": {
+        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP1A2 substrate/non-substrate labels",
+        "citationKey": "Xu2025",
+        "size": 2280,
+        "positiveCount": 546,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.26630515"
+      },
+      "metrics": {
+        "testSetSize": 228,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.799
+        },
+        "all": {
+          "testROC": 0.799,
+          "testPRC": 0.6978,
+          "testAccuracy": 0.7412,
+          "testF1": 0.6424
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv joined against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as the cyp1a2-inhibition-v1 panel."
+      },
+      "training": {
+        "chempropVersion": "2.3.1",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of six single-task CYP450 substrate/metabolism classifiers (CYP1A2/2C9/2C19/2D6/2E1/3A4), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine (scripts/prepare_cyp_substrate_training_data.py, scripts/train_cyp_substrate_chemprop.sh). Trained on the Figshare \"Curated CYP450 Interaction Dataset\" (Xu et al. 2025, Scientific Data, CC BY 4.0) -- a multi-source compilation (DrugBank, CYP Knowledgebase, SuperCYP, plus three published QSAR literature sets) of labeled substrates/non-substrates, deduplicated and RDKit-canonicalized here, unsplit and left to chemprop's own SCAFFOLD_BALANCED split at train time (same convention as every other checkpoint in this registry) rather than trusting the source's own pre-baked train/test split. Deliberately a SEPARATE model from cypxx-inhibition-v1, not a second head on it -- substrate status (is this molecule metabolized by the isoform) and inhibition (does it block the isoform) are different biochemical properties, and a molecule can be either, neither, or both. Domain of validity is bounded by the source compilation's own chemical space (predominantly known/marketed drugs and compounds studied in the underlying literature QSAR sets, not a broad HTS screening library the way the inhibition panel's PubChem qHTS data is) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp2c9-substrate-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP2C9 substrate",
+      "propertyKey": "cyp2c9substrate",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2C9, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP2C9 substrates include warfarin, phenytoin, most NSAIDs; a narrow-therapeutic-index isozyme where reduced clearance is a clinically significant concern).",
+      "files": {
+        "manifest": "cyp-substrate-2c9/cyp2c9-substrate-manifest.json",
+        "weights": "cyp-substrate-2c9/cyp2c9-substrate.bin"
+      },
+      "dataset": {
+        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2C9 substrate/non-substrate labels",
+        "citationKey": "Xu2025",
+        "size": 2500,
+        "positiveCount": 434,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.26630515"
+      },
+      "metrics": {
+        "testSetSize": 250,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.6931
+        },
+        "all": {
+          "testROC": 0.6931,
+          "testPRC": 0.3521,
+          "testAccuracy": 0.784,
+          "testF1": 0.129
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv joined against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as the cyp2c9-inhibition-v1 panel. At the default 0.5 probability threshold, this isoform's class imbalance in the source data (only 17% substrate-positive) leaves F1 weak (0.129) despite a non-trivial AUROC -- the model still ranks substrates above non-substrates reasonably well, but 0.5 is not a good operating threshold here; a lower cutoff trades precision for recall."
+      },
+      "training": {
+        "chempropVersion": "2.3.1",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of six single-task CYP450 substrate/metabolism classifiers (CYP1A2/2C9/2C19/2D6/2E1/3A4), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine (scripts/prepare_cyp_substrate_training_data.py, scripts/train_cyp_substrate_chemprop.sh). Trained on the Figshare \"Curated CYP450 Interaction Dataset\" (Xu et al. 2025, Scientific Data, CC BY 4.0) -- a multi-source compilation (DrugBank, CYP Knowledgebase, SuperCYP, plus three published QSAR literature sets) of labeled substrates/non-substrates, deduplicated and RDKit-canonicalized here, unsplit and left to chemprop's own SCAFFOLD_BALANCED split at train time (same convention as every other checkpoint in this registry) rather than trusting the source's own pre-baked train/test split. Deliberately a SEPARATE model from cypxx-inhibition-v1, not a second head on it -- substrate status (is this molecule metabolized by the isoform) and inhibition (does it block the isoform) are different biochemical properties, and a molecule can be either, neither, or both. Domain of validity is bounded by the source compilation's own chemical space (predominantly known/marketed drugs and compounds studied in the underlying literature QSAR sets, not a broad HTS screening library the way the inhibition panel's PubChem qHTS data is) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp2c19-substrate-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP2C19 substrate",
+      "propertyKey": "cyp2c19substrate",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2C19, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP2C19 substrates include clopidogrel, whose antiplatelet activity depends on CYP2C19-mediated bioactivation, omeprazole and other proton-pump inhibitors, and several SSRIs).",
+      "files": {
+        "manifest": "cyp-substrate-2c19/cyp2c19-substrate-manifest.json",
+        "weights": "cyp-substrate-2c19/cyp2c19-substrate.bin"
+      },
+      "dataset": {
+        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2C19 substrate/non-substrate labels",
+        "citationKey": "Xu2025",
+        "size": 2237,
+        "positiveCount": 401,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.26630515"
+      },
+      "metrics": {
+        "testSetSize": 223,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.7063
+        },
+        "all": {
+          "testROC": 0.7063,
+          "testPRC": 0.4211,
+          "testAccuracy": 0.7085,
+          "testF1": 0.0
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv joined against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as the cyp2c19-inhibition-v1 panel. At the default 0.5 probability threshold, this isoform's class imbalance in the source data (only 18% substrate-positive) makes the model predict essentially no positives, so F1 collapses to 0.0 despite a non-trivial AUROC (0.71) -- the ranking (AUROC/PRC) is the more informative number for this isoform; 0.5 is not a usable operating threshold as-is."
+      },
+      "training": {
+        "chempropVersion": "2.3.1",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of six single-task CYP450 substrate/metabolism classifiers (CYP1A2/2C9/2C19/2D6/2E1/3A4), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine (scripts/prepare_cyp_substrate_training_data.py, scripts/train_cyp_substrate_chemprop.sh). Trained on the Figshare \"Curated CYP450 Interaction Dataset\" (Xu et al. 2025, Scientific Data, CC BY 4.0) -- a multi-source compilation (DrugBank, CYP Knowledgebase, SuperCYP, plus three published QSAR literature sets) of labeled substrates/non-substrates, deduplicated and RDKit-canonicalized here, unsplit and left to chemprop's own SCAFFOLD_BALANCED split at train time (same convention as every other checkpoint in this registry) rather than trusting the source's own pre-baked train/test split. Deliberately a SEPARATE model from cypxx-inhibition-v1, not a second head on it -- substrate status (is this molecule metabolized by the isoform) and inhibition (does it block the isoform) are different biochemical properties, and a molecule can be either, neither, or both. Domain of validity is bounded by the source compilation's own chemical space (predominantly known/marketed drugs and compounds studied in the underlying literature QSAR sets, not a broad HTS screening library the way the inhibition panel's PubChem qHTS data is) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp2d6-substrate-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP2D6 substrate",
+      "propertyKey": "cyp2d6substrate",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2D6, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP2D6 substrates include codeine, whose analgesic activity depends on CYP2D6-mediated bioactivation to morphine, tamoxifen, metoprolol, and many antidepressants/antipsychotics; a highly pharmacogenomically polymorphic isozyme).",
+      "files": {
+        "manifest": "cyp-substrate-2d6/cyp2d6-substrate-manifest.json",
+        "weights": "cyp-substrate-2d6/cyp2d6-substrate.bin"
+      },
+      "dataset": {
+        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2D6 substrate/non-substrate labels",
+        "citationKey": "Xu2025",
+        "size": 2543,
+        "positiveCount": 581,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.26630515"
+      },
+      "metrics": {
+        "testSetSize": 254,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.8305
+        },
+        "all": {
+          "testROC": 0.8305,
+          "testPRC": 0.5908,
+          "testAccuracy": 0.7992,
+          "testF1": 0.5321
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv joined against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as the cyp2d6-inhibition-v1 panel."
+      },
+      "training": {
+        "chempropVersion": "2.3.1",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of six single-task CYP450 substrate/metabolism classifiers (CYP1A2/2C9/2C19/2D6/2E1/3A4), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine (scripts/prepare_cyp_substrate_training_data.py, scripts/train_cyp_substrate_chemprop.sh). Trained on the Figshare \"Curated CYP450 Interaction Dataset\" (Xu et al. 2025, Scientific Data, CC BY 4.0) -- a multi-source compilation (DrugBank, CYP Knowledgebase, SuperCYP, plus three published QSAR literature sets) of labeled substrates/non-substrates, deduplicated and RDKit-canonicalized here, unsplit and left to chemprop's own SCAFFOLD_BALANCED split at train time (same convention as every other checkpoint in this registry) rather than trusting the source's own pre-baked train/test split. Deliberately a SEPARATE model from cypxx-inhibition-v1, not a second head on it -- substrate status (is this molecule metabolized by the isoform) and inhibition (does it block the isoform) are different biochemical properties, and a molecule can be either, neither, or both. Domain of validity is bounded by the source compilation's own chemical space (predominantly known/marketed drugs and compounds studied in the underlying literature QSAR sets, not a broad HTS screening library the way the inhibition panel's PubChem qHTS data is) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp2e1-substrate-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP2E1 substrate",
+      "propertyKey": "cyp2e1substrate",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2E1, a CYP450 isozyme with a smaller but toxicologically important substrate scope -- notably ethanol and acetaminophen, whose CYP2E1-mediated oxidation to the reactive metabolite NAPQI underlies acetaminophen overdose hepatotoxicity; chlorzoxazone is the classic CYP2E1 clinical probe substrate.",
+      "files": {
+        "manifest": "cyp-substrate-2e1/cyp2e1-substrate-manifest.json",
+        "weights": "cyp-substrate-2e1/cyp2e1-substrate.bin"
+      },
+      "dataset": {
+        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2E1 substrate/non-substrate labels",
+        "citationKey": "Xu2025",
+        "size": 2175,
+        "positiveCount": 305,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.26630515"
+      },
+      "metrics": {
+        "testSetSize": 217,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.78
+        },
+        "all": {
+          "testROC": 0.78,
+          "testPRC": 0.4247,
+          "testAccuracy": 0.8986,
+          "testF1": 0.0
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv joined against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as the cyp2e1-inhibition-v1 panel. At the default 0.5 probability threshold, this isoform's severe class imbalance in the source data (only 14% substrate-positive) makes the model predict essentially no positives, so F1 collapses to 0.0 despite a non-trivial AUROC (0.78) -- the ranking (AUROC/PRC) is the more informative number for this isoform; 0.5 is not a usable operating threshold as-is."
+      },
+      "training": {
+        "chempropVersion": "2.3.1",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of six single-task CYP450 substrate/metabolism classifiers (CYP1A2/2C9/2C19/2D6/2E1/3A4), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine (scripts/prepare_cyp_substrate_training_data.py, scripts/train_cyp_substrate_chemprop.sh). Trained on the Figshare \"Curated CYP450 Interaction Dataset\" (Xu et al. 2025, Scientific Data, CC BY 4.0) -- a multi-source compilation (DrugBank, CYP Knowledgebase, SuperCYP, plus three published QSAR literature sets) of labeled substrates/non-substrates, deduplicated and RDKit-canonicalized here, unsplit and left to chemprop's own SCAFFOLD_BALANCED split at train time (same convention as every other checkpoint in this registry) rather than trusting the source's own pre-baked train/test split. Deliberately a SEPARATE model from cypxx-inhibition-v1, not a second head on it -- substrate status (is this molecule metabolized by the isoform) and inhibition (does it block the isoform) are different biochemical properties, and a molecule can be either, neither, or both. Domain of validity is bounded by the source compilation's own chemical space (predominantly known/marketed drugs and compounds studied in the underlying literature QSAR sets, not a broad HTS screening library the way the inhibition panel's PubChem qHTS data is) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "tags": [
+        "admet",
+        "metabolism",
+        "cyp450",
+        "drug-drug-interaction",
+        "medicinal-chemistry"
+      ]
+    },
+    {
+      "id": "cyp3a4-substrate-v1",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "CYP3A4 substrate",
+      "propertyKey": "cyp3a4substrate",
+      "engine": "chemprop",
+      "taskType": "classification",
+      "outputLevel": "molecule",
+      "units": "probability (positive class)",
+      "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 3A4, the single most important human drug-metabolizing enzyme by volume -- responsible for the majority of marketed small-molecule drugs' oxidative clearance, including many statins, calcium channel blockers, benzodiazepines, and macrolide antibiotics; the classic grapefruit-juice interaction affects CYP3A4 substrates.",
+      "files": {
+        "manifest": "cyp-substrate-3a4/cyp3a4-substrate-manifest.json",
+        "weights": "cyp-substrate-3a4/cyp3a4-substrate.bin"
+      },
+      "dataset": {
+        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP3A4 substrate/non-substrate labels",
+        "citationKey": "Xu2025",
+        "size": 2904,
+        "positiveCount": 1343,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
+        "sourceUrl": "https://doi.org/10.6084/m9.figshare.26630515"
+      },
+      "metrics": {
+        "testSetSize": 290,
+        "primary": {
+          "name": "Test AUROC",
+          "value": 0.8005
+        },
+        "all": {
+          "testROC": 0.8005,
+          "testPRC": 0.7435,
+          "testAccuracy": 0.7793,
+          "testF1": 0.6863
+        },
+        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv joined against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold) -- same methodology as the cyp3a4-inhibition-v1 panel."
+      },
+      "training": {
+        "chempropVersion": "2.3.1",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "ffnHiddenDim": 300,
+          "ffnNumLayers": 1,
+          "epochs": 50,
+          "batchSize": 256,
+          "dropout": 0.0,
+          "split": "SCAFFOLD_BALANCED",
+          "initLr": 0.0001,
+          "maxLr": 0.001,
+          "finalLr": 0.0001,
+          "warmupEpochs": 2
+        },
+        "dateTrained": "2026-08-18"
+      },
+      "notes": "One of six single-task CYP450 substrate/metabolism classifiers (CYP1A2/2C9/2C19/2D6/2E1/3A4), each isoform its own separate checkpoint rather than one multi-task model, matching this project's single-task-per-checkpoint JS inference engine (scripts/prepare_cyp_substrate_training_data.py, scripts/train_cyp_substrate_chemprop.sh). Trained on the Figshare \"Curated CYP450 Interaction Dataset\" (Xu et al. 2025, Scientific Data, CC BY 4.0) -- a multi-source compilation (DrugBank, CYP Knowledgebase, SuperCYP, plus three published QSAR literature sets) of labeled substrates/non-substrates, deduplicated and RDKit-canonicalized here, unsplit and left to chemprop's own SCAFFOLD_BALANCED split at train time (same convention as every other checkpoint in this registry) rather than trusting the source's own pre-baked train/test split. Deliberately a SEPARATE model from cypxx-inhibition-v1, not a second head on it -- substrate status (is this molecule metabolized by the isoform) and inhibition (does it block the isoform) are different biochemical properties, and a molecule can be either, neither, or both. Domain of validity is bounded by the source compilation's own chemical space (predominantly known/marketed drugs and compounds studied in the underlying literature QSAR sets, not a broad HTS screening library the way the inhibition panel's PubChem qHTS data is) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
       "tags": [
         "admet",
         "metabolism",
