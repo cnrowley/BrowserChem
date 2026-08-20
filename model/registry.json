@@ -50,31 +50,68 @@
       "description": "Predicts probability that a molecule is protein-reactive (a covalent modifier / electrophilic warhead), trained as a DMPNN scaffold-split classifier.",
       "files": {
         "manifest": "electrophile-reactivity/manifest.json",
-        "weights": "electrophile-reactivity/weights.bin"
+        "weights": "electrophile-reactivity/weights.bin",
+        "applicabilityDomain": "electrophile-reactivity/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 62678,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "Na",
+          "O",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          3
+        ],
+        "netMolecularCharges": [
+          -12,
+          -3,
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 0.4027,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/electrophile-reactivity/electrophile_reactivity.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-12, -3, -2, -1, 0, 1, 2] (net charge(s) -15 (1x), -6 (1x), -4 (4x), 3 (4x), 4 (1x), 5 (1x) occurred fewer than 5 times out of 62678 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
-        "name": null,
-        "citationKey": null,
-        "size": 62686,
-        "positiveCount": null,
-        "splitStrategy": "scaffold-balanced split (Chemprop SCAFFOLD_BALANCED), 80/10/10 train/val/test (50150/6268/6268)",
-        "sourceUrl": null
+        "name": "ProteinReactiveDB (larger positive set)",
+        "citationKey": "canogil2024proteinreactive",
+        "citationFull": "Cano Gil, V. H.; Rowley, C. N. Graph neural networks for identifying protein reactive electrophiles. Digital Discovery 2024, 3, 1776. https://doi.org/10.1039/D4DD00038B",
+        "size": 62678,
+        "positiveCount": 16946,
+        "splitStrategy": "scaffold-balanced split (Chemprop SCAFFOLD_BALANCED), 80/10/10 train/val/test (50144/6267/6267)",
+        "sourceUrl": "https://github.com/RowleyGroup/covalent-classifier"
       },
       "metrics": {
-        "validationSetSize": 6268,
-        "testSetSize": 6268,
+        "validationSetSize": 6267,
+        "testSetSize": 6267,
         "primary": {
-          "name": "Validation AUROC",
-          "value": 0.9964
+          "name": "Test AUROC",
+          "value": 0.9929
         },
         "all": {
-          "validationAUROC_bestCheckpoint": 0.9964,
-          "validationLoss_bestCheckpoint": 0.0586
+          "testAUROC": 0.9929,
+          "testAUPRC": 0.9888,
+          "testAccuracy": 0.9757,
+          "testF1": 0.9579,
+          "validationLoss_bestCheckpoint": 0.05
         },
-        "note": "These are VALIDATION metrics at the checkpoint epoch (24, matching the 'val_loss=0.06' in the original checkpoint filename) -- not held-out test-set metrics, since test_predictions.csv doesn't include ground-truth labels (only SMILES + predicted probability, so real test-set AUROC/precision/recall/F1 can't be computed from it)."
+        "note": "These are genuine HELD-OUT TEST SET metrics, captured directly from chemprop train's own internal logging at the best checkpoint (epoch 26, val_loss=0.05) -- test_predictions.csv itself only has SMILES + predicted probability (no ground-truth column), so these numbers come from the training run's own log, not a post-hoc recomputation."
       },
       "training": {
-        "chempropVersion": null,
+        "chempropVersion": "2.2.3",
         "hyperparameters": {
           "hiddenSize": 300,
           "depth": 3,
@@ -91,9 +128,9 @@
           "warmupEpochs": 2,
           "batchNorm": false
         },
-        "dateTrained": "2026-04-26 (inferred from checkpoint file timestamps, not explicitly recorded)"
+        "dateTrained": "2026-08-20"
       },
-      "notes": "Target column was named 'label' in the training CSV (generic, not auto-descriptive) -- the UI shows this model's own displayName instead of the raw property key for that reason. JS port cross-validated against all 6,268 real test-set predictions in test_predictions.csv (not just a hand-picked sanity set): 99.0% match the original PyTorch model to <1e-6, mean abs error 0.00056 across the full set. This surfaced and fixed two real, previously-undetected bugs -- (1) the app's molblock round-trip was dropping the V2000 'either' bond stereo flag on double bonds with genuinely unspecified E/Z geometry (affected push-pull alkene/cyanoacrylamide warheads specifically, this model's own target chemotype, causing near-total prediction inversions on ~3% of the test set before the fix); (2) neutral trivalent boron (boronic acids, boronate esters) was defaulting to sp3 instead of the correct sp2 (boron's empty p-orbital makes it sp2 regardless of conjugation, unlike carbon/nitrogen). Both are fixed in molfile.js and chemprop-features.js respectively and apply to every model using this pipeline, not just this one. ~0.3% of the test set (21/6268) still shows moderate residual error (mean 0.03-0.7), concentrated in explicit chiral centers, defined E/Z double bonds, and boronic acids -- within the documented known-approximation scope (see CHEMPROP_INTEGRATION.md), not yet root-caused further.",
+      "notes": "Target column was named 'label' in the training CSV (generic, not auto-descriptive) -- the UI shows this model's own displayName instead of the raw property key for that reason. Retrained 2026-08-20 on scripts/prepare_electrophile_reactivity_training_data.py's output (real, now-confirmed provenance -- see dataset block above; the prior checkpoint this replaces had null dataset.name/citationKey/sourceUrl, i.e. no recorded source at all) using the LARGER positive set from RowleyGroup/covalent-classifier (original CovInDB/DrugBank positives plus additional electrophiles from a 2026 Nature Cell Biology paper, per that repo's own data/SMILES_training/README), per user request. JS port spot-checked against 5 real test-set predictions spanning the probability range (near-0, near-1, and mid-range) after this retrain: max abs error 4.73e-7 -- not a full re-verification against all 6,267 test predictions the way the prior checkpoint was (99.0% match to <1e-6 across the full set), since only the weight VALUES changed, not the architecture. That prior full-test-set cross-validation pass is what originally surfaced and fixed two real bugs still in effect for this checkpoint too -- (1) the app's molblock round-trip was dropping the V2000 'either' bond stereo flag on double bonds with genuinely unspecified E/Z geometry (affected push-pull alkene/cyanoacrylamide warheads specifically, this model's own target chemotype); (2) neutral trivalent boron (boronic acids, boronate esters) was defaulting to sp3 instead of the correct sp2. Both are fixed in molfile.js and chemprop-features.js respectively and apply to every model using this pipeline, not just this one.",
       "tags": [
         "safety",
         "covalent",
@@ -244,7 +281,37 @@
       "description": "Predicts LogVP, the log10 of vapor pressure in mmHg (experimental values collected roughly across 15-30 degC, the source dataset's reporting convention, not a single fixed temperature).",
       "files": {
         "manifest": "vapor-pressure/manifest.json",
-        "weights": "vapor-pressure/weights.bin"
+        "weights": "vapor-pressure/weights.bin",
+        "applicabilityDomain": "vapor-pressure/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 2713,
+        "elements": [
+          "As",
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "Na",
+          "O",
+          "P",
+          "S",
+          "Se",
+          "Si"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.2422,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/vapor-pressure/vapor_pressure_combined.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) 2 (1x) occurred fewer than 5 times out of 2713 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "EPA/NICEATM OPERA vapor-pressure endpoint, via gkxiao/vapor-pressure's train/test CSVs",
@@ -670,7 +737,27 @@
       "description": "Predicts isotropic molecular polarizability (how much the electron cloud distorts in a uniform electric field), computed at the B3LYP/6-31G(2df,p) level of theory in the source dataset. Domain of validity is QM9's own coverage -- small organic molecules of C/H/O/N/F, at most 9 heavy atoms -- predictions on larger/other-element molecules are extrapolations outside the training distribution and should be treated with proportionally less confidence.",
       "files": {
         "manifest": "qm9-polarizability/alpha-manifest.json",
-        "weights": "qm9-polarizability/alpha.bin"
+        "weights": "qm9-polarizability/alpha.bin",
+        "applicabilityDomain": "qm9-polarizability/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 133885,
+        "elements": [
+          "C",
+          "F",
+          "N",
+          "O"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.0472,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/qm9/qm9_prepared.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "QM9 (Ramakrishnan et al. 2014, Scientific Data)",
@@ -725,7 +812,27 @@
       "description": "Predicts the HOMO-LUMO gap (energy difference between the highest occupied and lowest unoccupied molecular orbitals), computed at the B3LYP/6-31G(2df,p) level of theory in the source dataset. The app also shows the photon-energy-equivalent wavelength in nm alongside the eV value (E[eV] = 1239.84 / \u03bb[nm], a standard physical relation) -- this is the wavelength of a photon whose energy equals the gap, not a computed UV-Vis absorption maximum (real electronic transitions include excited-state relaxation/electron-correlation effects a simple frontier-orbital gap doesn't capture). Domain of validity is QM9's own coverage -- small organic molecules of C/H/O/N/F, at most 9 heavy atoms.",
       "files": {
         "manifest": "qm9-homo-lumo-gap/gap-manifest.json",
-        "weights": "qm9-homo-lumo-gap/gap.bin"
+        "weights": "qm9-homo-lumo-gap/gap.bin",
+        "applicabilityDomain": "qm9-homo-lumo-gap/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 133885,
+        "elements": [
+          "C",
+          "F",
+          "N",
+          "O"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.135,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/qm9/qm9_prepared.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "QM9 (Ramakrishnan et al. 2014, Scientific Data)",
@@ -841,7 +948,58 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 1A2, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP1A2 substrates include caffeine, theophylline, clozapine, tizanidine).",
       "files": {
         "manifest": "cyp-cyp1a2/cyp1a2-manifest.json",
-        "weights": "cyp-cyp1a2/cyp1a2.bin"
+        "weights": "cyp-cyp1a2/cyp1a2.bin",
+        "applicabilityDomain": "cyp-cyp1a2/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 12673,
+        "elements": [
+          "As",
+          "B",
+          "Br",
+          "C",
+          "Ca",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "Hg",
+          "I",
+          "K",
+          "Li",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pt",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2,
+          3
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 0.4026,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp/cyp_cyp1a2.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) -6 (2x), -4 (4x), -3 (1x), 3 (2x) occurred fewer than 5 times out of 12673 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP1A2 sub-readout",
@@ -906,7 +1064,58 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 2C9, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2C9 substrates include warfarin, phenytoin, most NSAIDs; a narrow-therapeutic-index isozyme where inhibition is a clinically significant concern).",
       "files": {
         "manifest": "cyp-cyp2c9/cyp2c9-manifest.json",
-        "weights": "cyp-cyp2c9/cyp2c9.bin"
+        "weights": "cyp-cyp2c9/cyp2c9.bin",
+        "applicabilityDomain": "cyp-cyp2c9/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 12170,
+        "elements": [
+          "As",
+          "B",
+          "Br",
+          "C",
+          "Ca",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "Hg",
+          "I",
+          "K",
+          "Li",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pt",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2,
+          3
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 0.3432,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp/cyp_cyp2c9.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) -6 (3x), -4 (4x), -3 (2x), 3 (3x) occurred fewer than 5 times out of 12170 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2C9 sub-readout",
@@ -971,7 +1180,59 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 2C19, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2C19 substrates include clopidogrel, omeprazole and other proton-pump inhibitors, several SSRIs; a well-known pharmacogenomically polymorphic isozyme).",
       "files": {
         "manifest": "cyp-cyp2c19/cyp2c19-manifest.json",
-        "weights": "cyp-cyp2c19/cyp2c19.bin"
+        "weights": "cyp-cyp2c19/cyp2c19.bin",
+        "applicabilityDomain": "cyp-cyp2c19/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 12739,
+        "elements": [
+          "As",
+          "B",
+          "Br",
+          "C",
+          "Ca",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "Hg",
+          "I",
+          "K",
+          "Li",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2,
+          3
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 0.3331,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp/cyp_cyp2c19.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) -6 (3x), -4 (2x), -3 (2x), 3 (2x) occurred fewer than 5 times out of 12739 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2C19 sub-readout",
@@ -1036,7 +1297,59 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 2D6, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2D6 substrates include codeine, tamoxifen, metoprolol, and many antidepressants/antipsychotics; the isozyme is highly pharmacogenomically polymorphic, with poor- and ultrarapid-metabolizer phenotypes common in the population).",
       "files": {
         "manifest": "cyp-cyp2d6/cyp2d6-manifest.json",
-        "weights": "cyp-cyp2d6/cyp2d6.bin"
+        "weights": "cyp-cyp2d6/cyp2d6.bin",
+        "applicabilityDomain": "cyp-cyp2d6/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 13200,
+        "elements": [
+          "As",
+          "B",
+          "Br",
+          "C",
+          "Ca",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "Hg",
+          "I",
+          "K",
+          "Li",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2,
+          3
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 0.3247,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp/cyp_cyp2d6.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) -6 (3x), -4 (4x), -3 (1x), 3 (3x) occurred fewer than 5 times out of 13200 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2D6 sub-readout",
@@ -1101,7 +1414,59 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 3A4, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP3A4 is the single most important human drug-metabolizing enzyme by volume, responsible for the majority of marketed small-molecule drugs' oxidative clearance, including many statins, calcium channel blockers, benzodiazepines, and macrolide antibiotics; the classic grapefruit-juice interaction is CYP3A4-mediated).",
       "files": {
         "manifest": "cyp-cyp3a4/cyp3a4-manifest.json",
-        "weights": "cyp-cyp3a4/cyp3a4.bin"
+        "weights": "cyp-cyp3a4/cyp3a4.bin",
+        "applicabilityDomain": "cyp-cyp3a4/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 12421,
+        "elements": [
+          "As",
+          "B",
+          "Br",
+          "C",
+          "Ca",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "Hg",
+          "I",
+          "K",
+          "Li",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2,
+          3
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 0.3651,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp/cyp_cyp3a4.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) -6 (3x), -4 (4x), -3 (2x), 3 (2x) occurred fewer than 5 times out of 12421 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP3A4 sub-readout",
@@ -1166,7 +1531,16 @@
       "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 1A2, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP1A2 substrates include caffeine, theophylline, clozapine, tizanidine).",
       "files": {
         "manifest": "cyp-substrate-1a2/cyp1a2-substrate-manifest.json",
-        "weights": "cyp-substrate-1a2/cyp1a2-substrate.bin"
+        "weights": "cyp-substrate-1a2/cyp1a2-substrate.bin",
+        "applicabilityDomain": "cyp-substrate-1a2/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 2280,
+        "elements": ["B", "Br", "C", "Cl", "F", "I", "N", "O", "P", "S"],
+        "formalCharges": [-1, 0, 1, 2],
+        "netMolecularCharges": [0, 1],
+        "embeddingDomainSelfDistanceP90": 0.565,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_1a2.csv), heavy-atom graph (no explicit H). A molecule containing any element/formal-charge combination outside this set, OR a net molecular charge outside {0, +1} (charges of -4/-1/+2 each occurred only 1-2 times out of 2280 -- treated as one-off outliers, not real training support, per --min-net-charge-count), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP1A2 substrate/non-substrate labels",
@@ -1231,7 +1605,36 @@
       "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2C9, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP2C9 substrates include warfarin, phenytoin, most NSAIDs; a narrow-therapeutic-index isozyme where reduced clearance is a clinically significant concern).",
       "files": {
         "manifest": "cyp-substrate-2c9/cyp2c9-substrate-manifest.json",
-        "weights": "cyp-substrate-2c9/cyp2c9-substrate.bin"
+        "weights": "cyp-substrate-2c9/cyp2c9-substrate.bin",
+        "applicabilityDomain": "cyp-substrate-2c9/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 2500,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S",
+          "Sn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2
+        ],
+        "netMolecularCharges": [
+          0,
+          1
+        ],
+        "embeddingDomainSelfDistanceP90": 0.5013,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_2c9.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1] (net charge(s) -4 (1x), -1 (2x), 2 (1x) occurred fewer than 5 times out of 2500 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2C9 substrate/non-substrate labels",
@@ -1296,7 +1699,36 @@
       "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2C19, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP2C19 substrates include clopidogrel, whose antiplatelet activity depends on CYP2C19-mediated bioactivation, omeprazole and other proton-pump inhibitors, and several SSRIs).",
       "files": {
         "manifest": "cyp-substrate-2c19/cyp2c19-substrate-manifest.json",
-        "weights": "cyp-substrate-2c19/cyp2c19-substrate.bin"
+        "weights": "cyp-substrate-2c19/cyp2c19-substrate.bin",
+        "applicabilityDomain": "cyp-substrate-2c19/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 2237,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S",
+          "Sn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2
+        ],
+        "netMolecularCharges": [
+          0,
+          1
+        ],
+        "embeddingDomainSelfDistanceP90": 0.7241,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_2c19.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1] (net charge(s) -4 (1x), -2 (1x), -1 (1x), 2 (1x) occurred fewer than 5 times out of 2237 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2C19 substrate/non-substrate labels",
@@ -1361,7 +1793,36 @@
       "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2D6, one of the five major drug-metabolizing CYP450 isozymes -- relevant to predicted metabolic clearance pathway and to victim-drug drug-drug-interaction risk (known CYP2D6 substrates include codeine, whose analgesic activity depends on CYP2D6-mediated bioactivation to morphine, tamoxifen, metoprolol, and many antidepressants/antipsychotics; a highly pharmacogenomically polymorphic isozyme).",
       "files": {
         "manifest": "cyp-substrate-2d6/cyp2d6-substrate-manifest.json",
-        "weights": "cyp-substrate-2d6/cyp2d6-substrate.bin"
+        "weights": "cyp-substrate-2d6/cyp2d6-substrate.bin",
+        "applicabilityDomain": "cyp-substrate-2d6/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 2543,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S",
+          "Si"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2
+        ],
+        "netMolecularCharges": [
+          0,
+          1
+        ],
+        "embeddingDomainSelfDistanceP90": 0.7045,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_2d6.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1] (net charge(s) -4 (1x), -2 (2x), -1 (2x), 2 (1x) occurred fewer than 5 times out of 2543 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2D6 substrate/non-substrate labels",
@@ -1426,7 +1887,35 @@
       "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 2E1, a CYP450 isozyme with a smaller but toxicologically important substrate scope -- notably ethanol and acetaminophen, whose CYP2E1-mediated oxidation to the reactive metabolite NAPQI underlies acetaminophen overdose hepatotoxicity; chlorzoxazone is the classic CYP2E1 clinical probe substrate.",
       "files": {
         "manifest": "cyp-substrate-2e1/cyp2e1-substrate-manifest.json",
-        "weights": "cyp-substrate-2e1/cyp2e1-substrate.bin"
+        "weights": "cyp-substrate-2e1/cyp2e1-substrate.bin",
+        "applicabilityDomain": "cyp-substrate-2e1/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 2175,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2
+        ],
+        "netMolecularCharges": [
+          0,
+          1
+        ],
+        "embeddingDomainSelfDistanceP90": 0.5226,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_2e1.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1] (net charge(s) -4 (1x), -1 (3x), 2 (1x) occurred fewer than 5 times out of 2175 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2E1 substrate/non-substrate labels",
@@ -1491,7 +1980,38 @@
       "description": "Predicts probability that a molecule is metabolized by (is a substrate of) cytochrome P450 3A4, the single most important human drug-metabolizing enzyme by volume -- responsible for the majority of marketed small-molecule drugs' oxidative clearance, including many statins, calcium channel blockers, benzodiazepines, and macrolide antibiotics; the classic grapefruit-juice interaction affects CYP3A4 substrates.",
       "files": {
         "manifest": "cyp-substrate-3a4/cyp3a4-substrate-manifest.json",
-        "weights": "cyp-substrate-3a4/cyp3a4-substrate.bin"
+        "weights": "cyp-substrate-3a4/cyp3a4-substrate.bin",
+        "applicabilityDomain": "cyp-substrate-3a4/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 2904,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S",
+          "Si",
+          "Sn"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2
+        ],
+        "netMolecularCharges": [
+          -1,
+          0,
+          1
+        ],
+        "embeddingDomainSelfDistanceP90": 0.5507,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_3a4.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-1, 0, 1] (net charge(s) -4 (1x), -2 (3x), 2 (1x) occurred fewer than 5 times out of 2904 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP3A4 substrate/non-substrate labels",
@@ -1556,7 +2076,66 @@
       "description": "Predicts probability that a molecule blocks the hERG (KCNH2) cardiac potassium channel -- the standard early-stage cardiotoxicity liability screen in drug discovery, since hERG block prolongs the cardiac QT interval and is a leading cause of small-molecule drug attrition/withdrawal (e.g. terfenadine, cisapride). A positive prediction flags a compound for closer scrutiny, not an automatic rejection -- many marketed drugs have measurable hERG activity at some concentration.",
       "files": {
         "manifest": "herg-inhibition/herg-manifest.json",
-        "weights": "herg-inhibition/herg.bin"
+        "weights": "herg-inhibition/herg.bin",
+        "applicabilityDomain": "herg-inhibition/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4120,
+        "elements": [
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Cl",
+          "Co",
+          "Cr",
+          "F",
+          "Fe",
+          "H",
+          "Hg",
+          "I",
+          "In",
+          "K",
+          "Li",
+          "Mg",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "Sr",
+          "Ti",
+          "V",
+          "Zn"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.4326,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/herg/herg.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -6 (1x), -2 (2x), -1 (3x), 1 (4x), 2 (1x) occurred fewer than 5 times out of 4120 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "PubChem BioAssay AID 588834 (NIH Chemical Genomics Center / NIEHS / NTP) -- qHTS assay for small-molecule inhibitors of the human hERG channel, confirmatory tier",
@@ -1621,7 +2200,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Hexane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-hexane/hexane-manifest.json",
-        "weights": "solv-hexane/hexane.bin"
+        "weights": "solv-hexane/hexane.bin",
+        "applicabilityDomain": "solv-hexane/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4054,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1761,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_hexane.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Hexane slice",
@@ -1687,7 +2292,35 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Heptane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-heptane/heptane-manifest.json",
-        "weights": "solv-heptane/heptane.bin"
+        "weights": "solv-heptane/heptane.bin",
+        "applicabilityDomain": "solv-heptane/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3286,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          3
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1479,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_heptane.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Heptane slice",
@@ -1753,7 +2386,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Cyclohexane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-cyclohexane/cyclohexane-manifest.json",
-        "weights": "solv-cyclohexane/cyclohexane.bin"
+        "weights": "solv-cyclohexane/cyclohexane.bin",
+        "applicabilityDomain": "solv-cyclohexane/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3478,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          3
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1943,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_cyclohexane.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Cyclohexane slice",
@@ -1819,7 +2479,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in 1,4-Dioxane -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-dioxane/dioxane-manifest.json",
-        "weights": "solv-dioxane/dioxane.bin"
+        "weights": "solv-dioxane/dioxane.bin",
+        "applicabilityDomain": "solv-dioxane/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3235,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.15,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_dioxane.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- 1,4-Dioxane slice",
@@ -1885,7 +2572,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Toluene -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-toluene/toluene-manifest.json",
-        "weights": "solv-toluene/toluene.bin"
+        "weights": "solv-toluene/toluene.bin",
+        "applicabilityDomain": "solv-toluene/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4062,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1982,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_toluene.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -1 (1x) occurred fewer than 5 times out of 4062 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Toluene slice",
@@ -1951,7 +2664,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Diethyl ether -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-diethyl-ether/diethyl-ether-manifest.json",
-        "weights": "solv-diethyl-ether/diethyl-ether.bin"
+        "weights": "solv-diethyl-ether/diethyl-ether.bin",
+        "applicabilityDomain": "solv-diethyl-ether/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3269,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          3
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1516,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_diethyl-ether.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Diethyl ether slice",
@@ -2017,7 +2757,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Chloroform -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-chloroform/chloroform-manifest.json",
-        "weights": "solv-chloroform/chloroform.bin"
+        "weights": "solv-chloroform/chloroform.bin",
+        "applicabilityDomain": "solv-chloroform/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4000,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1875,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_chloroform.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Chloroform slice",
@@ -2083,7 +2850,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Ethyl acetate -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-ethyl-acetate/ethyl-acetate-manifest.json",
-        "weights": "solv-ethyl-acetate/ethyl-acetate.bin"
+        "weights": "solv-ethyl-acetate/ethyl-acetate.bin",
+        "applicabilityDomain": "solv-ethyl-acetate/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3341,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1562,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_ethyl-acetate.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -1 (1x) occurred fewer than 5 times out of 3341 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Ethyl acetate slice",
@@ -2149,7 +2942,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Acetic acid -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-acetic-acid/acetic-acid-manifest.json",
-        "weights": "solv-acetic-acid/acetic-acid.bin"
+        "weights": "solv-acetic-acid/acetic-acid.bin",
+        "applicabilityDomain": "solv-acetic-acid/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4194,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1529,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_acetic-acid.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Acetic acid slice",
@@ -2215,7 +3035,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in THF -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-thf/thf-manifest.json",
-        "weights": "solv-thf/thf.bin"
+        "weights": "solv-thf/thf.bin",
+        "applicabilityDomain": "solv-thf/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3210,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          3
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1531,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_thf.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- THF slice",
@@ -2281,7 +3128,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in DCM -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-dcm/dcm-manifest.json",
-        "weights": "solv-dcm/dcm.bin"
+        "weights": "solv-dcm/dcm.bin",
+        "applicabilityDomain": "solv-dcm/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4023,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1844,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_dcm.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- DCM slice",
@@ -2347,7 +3221,16 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in 1-Octanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-1-octanol/1-octanol-manifest.json",
-        "weights": "solv-1-octanol/1-octanol.bin"
+        "weights": "solv-1-octanol/1-octanol.bin",
+        "applicabilityDomain": "solv-1-octanol/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4030,
+        "elements": ["B", "Br", "C", "Cl", "F", "H", "I", "N", "O", "P", "S"],
+        "formalCharges": [-1, 0, 1],
+        "netMolecularCharges": [0],
+        "embeddingDomainSelfDistanceP90": 0.144,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_1-octanol.csv). Per-atom formalCharges [-1, 0, 1] alone would have UNDER-blocked here: it says charge -1 was 'seen', which would have let a bare anion like acetate/deprotonated-aspirin through. netMolecularCharges is what actually catches it -- exactly one training molecule (of 4030) has nonzero net charge ([N-]=[NH+][O-], a 3-atom curiosity, net -1) and it's discarded as a one-off outlier (below --min-net-charge-count), leaving {0} as the only genuinely-supported net charge. This confirms this entry's own existing notes field by direct computation rather than manual inspection: the ~53 individually-charged atoms are all zwitterionic amino acids (paired + and - atoms, net-neutral molecule) -- there is no standalone anion or cation with real training support. A bare charged species (e.g. a deprotonated carboxylate) is therefore hard-blocked by the app now, rather than silently producing the physically-backwards prediction this entry's notes already document being found on aspirin's carboxylate (verified directly: this fix blocks CC(=O)[O-] which the naive per-atom-only check did NOT catch). The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- 1-Octanol slice",
@@ -2413,7 +3296,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Pyridine -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-pyridine/pyridine-manifest.json",
-        "weights": "solv-pyridine/pyridine.bin"
+        "weights": "solv-pyridine/pyridine.bin",
+        "applicabilityDomain": "solv-pyridine/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3283,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.2163,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_pyridine.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -1 (1x) occurred fewer than 5 times out of 3283 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Pyridine slice",
@@ -2479,7 +3389,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in 2-Propanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-2-propanol/2-propanol-manifest.json",
-        "weights": "solv-2-propanol/2-propanol.bin"
+        "weights": "solv-2-propanol/2-propanol.bin",
+        "applicabilityDomain": "solv-2-propanol/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3263,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1324,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_2-propanol.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -1 (1x) occurred fewer than 5 times out of 3263 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- 2-Propanol slice",
@@ -2545,7 +3481,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Acetone -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-acetone/acetone-manifest.json",
-        "weights": "solv-acetone/acetone.bin"
+        "weights": "solv-acetone/acetone.bin",
+        "applicabilityDomain": "solv-acetone/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3993,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1588,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_acetone.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Acetone slice",
@@ -2611,7 +3574,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Ethanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-ethanol/ethanol-manifest.json",
-        "weights": "solv-ethanol/ethanol.bin"
+        "weights": "solv-ethanol/ethanol.bin",
+        "applicabilityDomain": "solv-ethanol/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3989,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.148,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_ethanol.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Ethanol slice",
@@ -2677,7 +3666,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Methanol -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-methanol/methanol-manifest.json",
-        "weights": "solv-methanol/methanol.bin"
+        "weights": "solv-methanol/methanol.bin",
+        "applicabilityDomain": "solv-methanol/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4118,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1479,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_methanol.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Methanol slice",
@@ -2743,7 +3758,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in DMF -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-dmf/dmf-manifest.json",
-        "weights": "solv-dmf/dmf.bin"
+        "weights": "solv-dmf/dmf.bin",
+        "applicabilityDomain": "solv-dmf/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3371,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1664,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_dmf.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- DMF slice",
@@ -2809,7 +3850,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Acetonitrile -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-acetonitrile/acetonitrile-manifest.json",
-        "weights": "solv-acetonitrile/acetonitrile.bin"
+        "weights": "solv-acetonitrile/acetonitrile.bin",
+        "applicabilityDomain": "solv-acetonitrile/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 4067,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          3
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1728,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_acetonitrile.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -1 (1x) occurred fewer than 5 times out of 4067 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Acetonitrile slice",
@@ -2875,7 +3943,33 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in DMSO -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-dmso/dmso-manifest.json",
-        "weights": "solv-dmso/dmso.bin"
+        "weights": "solv-dmso/dmso.bin",
+        "applicabilityDomain": "solv-dmso/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3348,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1514,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_dmso.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -1 (1x) occurred fewer than 5 times out of 3348 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- DMSO slice",
@@ -2941,7 +4035,34 @@
       "description": "Predicts the COSMO-RS solvation free energy (\u0394Gsolv) of a solute dissolved in Water -- a FIXED-solvent model (solute SMILES in, \u0394Gsolv in this one solvent out), one of a 21-solvent panel (see model/registry.json's other solv-*-v1 entries) used together by the app's solvation table/transfer-matrix UI. More negative = more thermodynamically favorable solvation.",
       "files": {
         "manifest": "solv-water/water-manifest.json",
-        "weights": "solv-water/water.bin"
+        "weights": "solv-water/water.bin",
+        "applicabilityDomain": "solv-water/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3988,
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          3
+        ],
+        "netMolecularCharges": [
+          0
+        ],
+        "embeddingDomainSelfDistanceP90": 0.1528,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_water.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0] (net charge(s) -1 (1x) occurred fewer than 5 times out of 3988 -- treated as one-off outlier(s), not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
       "dataset": {
         "name": "CombiSolv-QM (Vermeire & Green 2021, Chem. Eng. J.) -- Water slice",

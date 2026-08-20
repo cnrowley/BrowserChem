@@ -684,17 +684,20 @@ CC.OpenFF = window.CC.OpenFF || {};
     let step = 0.02;
     let lastGradNorm = Infinity;
     let exitReason = 'iteration-limit';
+    let iterationsRun = 0;
 
     for (let iter = 0; iter < iterations; iter++) {
+      iterationsRun = iter + 1;
       if (deadline && performance.now() > deadline) { exitReason = 'deadline'; break; }
-      if (iter > 0 && iter % 15 === 0) {
-        await shared.yieldToUI();
-        if (onProgress) onProgress();
-      }
+      const shouldReport = iter > 0 && iter % 15 === 0;
+      if (shouldReport) await shared.yieldToUI();
 
       const grad = numericGradientSMIRNOFF(flat, atoms3d, ff, stage, shared, solvent);
       const gradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
       lastGradNorm = gradNorm;
+      // See embed3d.js's minimize() for why this is reported here (same
+      // throttle) instead of only ever once at the very end.
+      if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm });
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
       const trial = new Float64Array(flat.length);
@@ -720,7 +723,7 @@ CC.OpenFF = window.CC.OpenFF || {};
 
     return {
       positions: shared.unflatten(flat), energy: energy, flat: flat, gradNorm: lastGradNorm,
-      exitReason: exitReason,
+      exitReason: exitReason, iterationsRun: iterationsRun,
       settled: exitReason === 'gradient-converged' || exitReason === 'energy-plateau',
     };
   }
@@ -742,23 +745,33 @@ CC.OpenFF = window.CC.OpenFF || {};
     const shared = CC.Embed3DShared;
     const seedEnergy = computeEnergySMIRNOFF(atoms3d, atoms3d, ff, { torsion: true, nonbonded: 1 }, shared, solvent);
 
-    function report(label) { if (onProgress) onProgress(label); }
+    // See embed3d.js's minimizeStaged for what cumulativeIter is for.
+    let cumulativeIter = 0;
+    function report(label, info) {
+      if (!onProgress) return;
+      if (!info) { onProgress({ stage: label }); return; }
+      onProgress({ stage: label, iteration: cumulativeIter + info.iteration, gradNorm: info.gradNorm });
+    }
 
     report('bonds & angles');
-    let result = await minimizeSMIRNOFF(atoms3d, ff, stage1Iters, deadline, { torsion: false, nonbonded: 0 }, undefined, function () { report('bonds & angles'); });
+    let result = await minimizeSMIRNOFF(atoms3d, ff, stage1Iters, deadline, { torsion: false, nonbonded: 0 }, undefined, function (info) { report('bonds & angles', info); });
+    cumulativeIter += result.iterationsRun;
 
     report('torsions & impropers');
-    result = await minimizeSMIRNOFF(atoms3d, ff, stage2Iters, deadline, { torsion: true, nonbonded: 0 }, result.flat, function () { report('torsions & impropers'); });
+    result = await minimizeSMIRNOFF(atoms3d, ff, stage2Iters, deadline, { torsion: true, nonbonded: 0 }, result.flat, function (info) { report('torsions & impropers', info); });
+    cumulativeIter += result.iterationsRun;
 
     for (let r = 1; r <= rampSteps; r++) {
       if (deadline && performance.now() > deadline) break;
       report('vdW + electrostatics');
       const strength = r / rampSteps;
-      result = await minimizeSMIRNOFF(atoms3d, ff, rampItersEach, deadline, { torsion: true, nonbonded: strength }, result.flat, function () { report('vdW + electrostatics'); }, solvent);
+      result = await minimizeSMIRNOFF(atoms3d, ff, rampItersEach, deadline, { torsion: true, nonbonded: strength }, result.flat, function (info) { report('vdW + electrostatics', info); }, solvent);
+      cumulativeIter += result.iterationsRun;
     }
 
     report('final polish');
-    result = await minimizeSMIRNOFF(atoms3d, ff, remainingIters, deadline, { torsion: true, nonbonded: 1 }, result.flat, function () { report('final polish'); }, solvent);
+    result = await minimizeSMIRNOFF(atoms3d, ff, remainingIters, deadline, { torsion: true, nonbonded: 1 }, result.flat, function (info) { report('final polish', info); }, solvent);
+    cumulativeIter += result.iterationsRun;
 
     result.converged = result.settled;
 

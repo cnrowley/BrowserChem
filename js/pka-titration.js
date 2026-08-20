@@ -194,4 +194,33 @@ CC.PKATitration = window.CC.PKATitration || {};
     }
     return null;
   };
+
+  /**
+   * Population fraction of the single fully NEUTRAL (fully un-ionized)
+   * microstate at a given pH: every acid site protonated (HA, not A-)
+   * AND every base site deprotonated (B, not BH+) -- the one specific
+   * combination with net charge 0 that matches how a molecule is
+   * normally DRAWN (COOH not COO-, NH2 not NH3+), not just any
+   * charge-balanced zwitterion. Under the same independent-site
+   * Henderson-Hasselbalch model as computeCurve above, this is a single
+   * product term over sites (each site's own fracProtonated/
+   * 1-fracProtonated), so unlike computeCurve's full microstate
+   * breakdown it needs no 2^N enumeration and has no MAX_SITES_FOR_
+   * MICROSTATES cap -- cheap for any number of sites.
+   *
+   * Used by the LogD (pH 7) calculation in app.js: the standard
+   * Henderson-Hasselbalch logD correction (logD = logP + log10(fraction
+   * neutral)) is mathematically the same thing as converting a Gibbs
+   * free energy cost (deltaG = -RT*ln(fraction neutral), the energy
+   * "spent" forcing the molecule into its neutral form against its
+   * actual pH-7 equilibrium) into a log10 partition-coefficient shift.
+   */
+  CC.PKATitration.fractionNeutral = function (sites, pKaValues, pH) {
+    let frac = 1;
+    for (let i = 0; i < sites.length; i++) {
+      const fp = fracProtonated(pH, pKaValues[i]);
+      frac *= sites[i].cls === 'acid' ? fp : (1 - fp);
+    }
+    return frac;
+  };
 })();

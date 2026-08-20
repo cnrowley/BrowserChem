@@ -124,6 +124,8 @@
       </div>
       <p class="side-panel-note" id="measure-distance-status"></p>
       <p class="side-panel-note" id="viewer3d-note">Draw a structure, then click "Preview" for a quick look, or set up a conformer search below.</p>
+      <div class="convergence-chart-wrap" id="optimize-convergence-chart-container"></div>
+      <p class="side-panel-note" id="optimize-convergence-note"></p>
 
       <div class="properties-section-title">Conformer search</div>
       <div class="viewer3d-method-row">
@@ -318,6 +320,16 @@
       </div>
 
       <div class="properties-section">
+        <h3 class="properties-section-title">CYP &amp; hERG</h3>
+        <p class="side-panel-note">Cytochrome P450 inhibition/substrate liability and hERG channel inhibition &mdash; split out from the general predictions above since these are the specific properties a drug-discovery read usually wants grouped together. Populated by the same "Compute properties" run above; load the corresponding models under Medicinal chemistry if this stays empty.</p>
+        <table class="descriptor-table" id="gnn-cyp-herg-table" style="display:none;">
+          <thead><tr><th colspan="2" class="properties-section-title">CYP &amp; hERG</th></tr></thead>
+          <tbody id="gnn-cyp-herg-output"></tbody>
+        </table>
+        <p class="side-panel-note" id="gnn-cyp-herg-empty-note">No CYP/hERG predictions yet.</p>
+      </div>
+
+      <div class="properties-section">
         <h3 class="properties-section-title">Implicit solvation (GB/SA)</h3>
         <p class="side-panel-note">Generalized Born (HCT) electrostatics + a SASA-based nonpolar term. Needs MBIS partial charges (load &amp; run "MBIS partial charges" above) and an already-optimized 3D conformer (3D view tab). A real, from-scratch physics calculation, not a trained/fit model &mdash; see this section's info note for what's simplified.</p>
         <label class="heatmap-text-toggle" id="solvent-enable-label">
@@ -384,6 +396,14 @@
         <h3 class="properties-section-title">Titration curve</h3>
         <div id="titration-chart-container"></div>
         <p class="side-panel-note" id="titration-pi-note"></p>
+      </div>
+
+      <div class="properties-section" id="titration-logd-section" style="display:none;">
+        <h3 class="properties-section-title">LogD (pH 7)</h3>
+        <p class="side-panel-note">Standard Henderson&ndash;Hasselbalch correction to LogP: uses each detected site's own pKa (independent-site model, same as the curve above) to find the population fraction of the fully neutral (un-ionized) species at pH 7, converts that into the Gibbs free energy cost of forcing the molecule into that neutral state against its actual pH-7 equilibrium (&Delta;G = &minus;RT&middot;ln(fraction neutral)), then applies the equivalent LogP shift: logD = logP + log&#8321;&#8320;(fraction neutral) = logP &minus; &Delta;G / (RT&middot;ln 10). LogP is whichever's currently available for the drawn structure (a loaded LogP model, else RDKit's own Crippen LogP) &mdash; draw the neutral/un-ionized form for this to be meaningful, same assumption the LogP value itself already makes.</p>
+        <table class="descriptor-table" id="titration-logd-table">
+          <tbody id="titration-logd-output"></tbody>
+        </table>
       </div>
 
       <div class="properties-section" id="titration-microstates-section" style="display:none;">
@@ -453,6 +473,7 @@
 <script src="js/lib-loader.js"></script>
 <script src="js/model-config.js"></script>
 <script src="js/model-adapters.js"></script>
+<script src="js/applicability-domain.js"></script>
 <script src="js/molecule.js"></script>
 <script src="js/geometry.js"></script>
 <script src="js/history.js"></script>

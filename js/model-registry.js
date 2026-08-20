@@ -161,6 +161,13 @@ CC.GNN = window.CC.GNN || {};
           entriesById.set(valid.id, valid);
         }
       });
+      // Best-effort, non-blocking: fetch every entry's applicability-domain.json
+      // (if it has one) in the background so CC.AD.checkVocab/tierForEmbedding
+      // have real per-model data by the time a prediction runs. See
+      // applicability-domain.js's header -- a model with no such file just
+      // degrades to the existing global-vocabulary check, so this isn't on
+      // the critical path for anything.
+      if (window.CC.AD && CC.AD.prefetch) CC.AD.prefetch(entries, registryBaseUrl);
       return entries.slice();
     });
   };

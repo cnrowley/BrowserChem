@@ -143,6 +143,23 @@ body {
   flex: 1;
   display: grid;
   grid-template-columns: 76px 1fr 380px;
+  /* Without an explicit row track, the implicit "auto" row sizes to the
+     tallest column's CONTENT height (e.g. the properties side panel with
+     many result rows loaded), not to .app-body's own flex-resolved
+     height -- grid's default stretch only ever ADDS space, never shrinks
+     a track below its content's min-content size. That let every column
+     (tool rail / canvas / side panel) overflow 100+px past the status
+     bar, painting over/through it and making the whole document
+     scrollable, which is what made the status bar appear to jump around
+     on resize/scroll. `minmax(0, 1fr)` looks like the standard fix but
+     measured wrong here (verified in-browser): with .app-body ALSO being
+     a flex-grow:1/flex-basis:0% item of <body>, `1fr`'s free-space
+     distribution resolved against the row's own content size (~1210px)
+     instead of .app-body's real 964px box, reproducing the same
+     overflow. `100%` sidesteps that -- it resolves directly against
+     .app-body's already-definite height instead of running fr's
+     distribute-free-space algorithm at all, and measured correct. */
+  grid-template-rows: 100%;
   min-height: 0;
 }
 
@@ -154,6 +171,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  min-height: 0;
+  overflow-y: auto;
   padding: 12px 8px;
   gap: 4px;
 }
@@ -299,6 +318,7 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .canvas-toolbar {
@@ -1162,6 +1182,22 @@ div.properties-section-title {
   color: var(--accent);
 }
 
+/* Filter pass/fail (druglikeness rules, structural alerts): a PASS is
+   free/neutral -- no badge color, just plain text -- and only a real
+   violation gets the "fail" red treatment. Deliberately distinct from
+   is-positive/is-negative above, which color a model's positive/negative
+   PREDICTION (e.g. CYP inhibition), an unrelated polarity. */
+.classification-badge.is-pass {
+  background: transparent;
+  color: var(--text-dark-muted);
+  padding-left: 0;
+}
+
+.classification-badge.is-fail {
+  background: rgba(217, 105, 79, 0.18);
+  color: var(--danger);
+}
+
 .classification-score {
   color: var(--text-dark-muted);
   font-size: 12px;
@@ -1172,6 +1208,34 @@ div.properties-section-title {
   color: var(--text-dark-muted);
   font-size: 11px;
   font-weight: 500;
+}
+
+/* Applicability-domain confidence tier (see applicability-domain.js) --
+   same three-color convention as .validation-status-banner's status-ok/
+   status-warning/status-error, applied per prediction rather than per
+   structure. */
+.confidence-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: help;
+}
+.confidence-badge.confidence-in-domain {
+  background: rgba(79, 176, 165, 0.12);
+  color: var(--accent);
+}
+.confidence-badge.confidence-borderline {
+  background: rgba(201, 165, 61, 0.12);
+  color: #c9a53d;
+}
+.confidence-badge.confidence-out-of-domain {
+  background: rgba(217, 105, 79, 0.12);
+  color: var(--danger);
 }
 
 .property-info-btn {
@@ -1452,6 +1516,10 @@ div.properties-section-title {
   fill: var(--accent);
   stroke: #fff;
   stroke-width: 1;
+}
+
+.convergence-current-marker.is-not-converged {
+  fill: var(--danger);
 }
 
 /* ---------- Modal ---------- */

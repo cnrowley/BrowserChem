@@ -531,17 +531,27 @@ CC.Validate = window.CC.Validate || {};
   // Falling back to the 'chemprop' adapter's own validate for any
   // engine with no adapter registered preserves that same generic-
   // vocabulary-check-as-default behavior for a genuinely unknown engine.
-  function hardCompatibilityFor(engine, molecule) {
+  function hardCompatibilityFor(engine, molecule, modelId) {
     const adapter = CC.ModelAdapters.get(engine) || CC.ModelAdapters.get('chemprop');
-    if (adapter && adapter.validate) return adapter.validate(molecule);
-    return { compatible: true, issues: [] };
+    const engineResult = (adapter && adapter.validate) ? adapter.validate(molecule) : { compatible: true, issues: [] };
+    // Per-model (not just per-engine) training-vocabulary gate -- see
+    // applicability-domain.js's header. Stricter than (and independent
+    // of) the engine-wide check above: a molecule can be perfectly
+    // featurizable (pass the engine check) while still containing an
+    // element/charge this SPECIFIC checkpoint never saw in training.
+    // No-op (compatible:true) for any model without real applicability-
+    // domain data on file, so this never blocks anything not backed by
+    // an actual computed training-set vocabulary.
+    const adResult = (modelId && window.CC.AD && CC.AD.checkVocab) ? CC.AD.checkVocab(molecule, modelId) : { compatible: true, issues: [] };
+    if (engineResult.compatible && adResult.compatible) return { compatible: true, issues: [] };
+    return { compatible: false, issues: engineResult.issues.concat(adResult.issues) };
   }
 
-  function verdictFor(engine, molecule, structureReport) {
+  function verdictFor(engine, molecule, structureReport, modelId) {
     if (!structureReport.valid) {
       return { tier: 'blocked', reasons: ['structure failed RDKit sanitization (see Validation panel)'] };
     }
-    const hard = hardCompatibilityFor(engine, molecule);
+    const hard = hardCompatibilityFor(engine, molecule, modelId);
     if (!hard.compatible) {
       return { tier: 'blocked', reasons: hard.issues };
     }
@@ -571,7 +581,7 @@ CC.Validate = window.CC.Validate || {};
     if (window.CC.GNN && CC.GNN.getRegistryEntries) {
       CC.GNN.getRegistryEntries().forEach(function (entry) {
         const engine = engineOf(entry);
-        const v = verdictFor(engine, molecule, structureReport);
+        const v = verdictFor(engine, molecule, structureReport, entry.id);
         results.push({ id: entry.id, displayName: entry.displayName || entry.id, engine: engine, tier: v.tier, reasons: v.reasons });
       });
     }

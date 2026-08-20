@@ -184,6 +184,9 @@ CC.GNN = window.CC.GNN || {};
           if (cpResult.bondProperties && cpResult.bondProperties.length > 0) {
             merged.bondProperties = cpResult.bondProperties.map(function (p) { return Object.assign({}, p); });
           }
+          if (cpResult.warnings && cpResult.warnings.length > 0) {
+            merged.warnings = merged.warnings.concat(cpResult.warnings);
+          }
         } catch (err) {
           merged.warnings.push('Chemprop models: ' + err.message);
         }

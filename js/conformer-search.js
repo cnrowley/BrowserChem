@@ -123,7 +123,7 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
         const solvent = solventOpts && solventOpts.enabled && ctx.chargesResult && ctx.chargesResult.available
           ? { enabled: true, epsSolvent: solventOpts.epsSolvent, charges: ctx.chargesResult.charges }
           : null;
-        return CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent);
+        return CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent, ctx.topology);
       },
     },
 
@@ -167,7 +167,7 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
         const preRelaxDeadline = Math.min(deadline, performance.now() + Math.max(3000, (deadline - performance.now()) * 0.4));
         const relaxed = await CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, preRelaxIterations, preRelaxDeadline, function () {
           if (onProgress) onProgress('classical pre-relax');
-        });
+        }, undefined, ctx.topology);
 
         const aniIterations = Math.max(30, iterations - preRelaxIterations);
         const aniResult = await CC.ANI.optimizeGeometry(relaxed.atoms, relaxed.bonds, ctx.modelId, {
@@ -285,6 +285,25 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
     const maxSeeds = opts.maxSeeds || Math.max(4, Math.min(30, 4 + 4 * rotatableBonds.length));
     const seeds = buildSeedGeometries(molecule, aromaticSet, rotatableBonds, maxSeeds);
 
+    // angles/torsions/impropers/pairs (embed3d.js's classical force-field
+    // graph) are pure functions of the molecule's element list + bond
+    // graph + aromaticSet -- identical for every seed of the SAME
+    // molecule, since buildSeedGeometries only ever varies each seed's
+    // starting POSITIONS (rotatable-bond torsions), never its elements or
+    // bonds. Building this once here and reusing it across all
+    // seeds.length seeds (rather than from scratch inside
+    // optimizeGivenSeed on every single one) is the fix for a real,
+    // previously-measured perf issue: classical conformer search on a
+    // large flexible molecule was completing only ~5 of its intended 30
+    // seeds within the overall time budget, largely from paying this
+    // exact rebuild cost 30 times over. Used by 'classical' directly and
+    // by 'ani2x' for its own per-seed classical pre-relax step below --
+    // not by 'smirnoff', which types/energizes through a completely
+    // different SMARTS-based path (openff-forcefield.js).
+    if (opts.energyModel === 'classical' || opts.energyModel === 'ani2x') {
+      ctx.topology = CC.Embed3DShared.buildTopology(seeds[0].atoms3d, seeds[0].bonds3d, aromaticSet);
+    }
+
     const heavyAtomCount = molecule.atoms.size;
     const isAni = opts.energyModel === 'ani2x';
     const perSeedIterations = opts.iterationsPerSeed || (isAni ? 150 : 300);
@@ -300,7 +319,11 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
       const seedDeadline = Math.min(overallDeadline, performance.now() + perSeedBudgetMs);
       let result;
       try {
-        result = await modelAdapter.optimizeSeed(seed.atoms3d, seed.bonds3d, aromaticSet, ctx, perSeedIterations, seedDeadline, function (stage) {
+        result = await modelAdapter.optimizeSeed(seed.atoms3d, seed.bonds3d, aromaticSet, ctx, perSeedIterations, seedDeadline, function (info) {
+          // classical/smirnoff report {stage, iteration?, gradNorm?}
+          // (see embed3d.js's minimizeStaged); ani2x's own wrapper below
+          // still reports a bare stage string -- accept either.
+          const stage = typeof info === 'string' ? info : info.stage;
           if (opts.onProgress) opts.onProgress({ seed: i + 1, totalSeeds: seeds.length, stage: stage, phase: 'optimizing' });
         }, opts.solvent);
       } catch (err) {

@@ -235,12 +235,37 @@ CC.GNN = window.CC.GNN || {};
   }
 
   // Molecule-level: NormAggregation (sum of atom embeddings / aggNorm),
-  // then one FFN application on the pooled vector.
+  // then one FFN application on the pooled vector. Returns the pooled
+  // embedding alongside the value -- it's the same 300-dim vector
+  // CC.AD.tierForEmbedding compares against a model's training-set
+  // centroids (see applicability-domain.js), already computed for free
+  // here, not a second forward pass.
   function runOneMolecule(model, graph) {
     const out = runDMPNNFor(model, graph);
     const pooled = CC.GNN.poolSum(out.atomEmbeddings, model.dims.d_h)
       .map(function (x) { return x / model.dims.aggNorm; });
-    return applyHead(model, pooled);
+    return { value: applyHead(model, pooled), pooled: pooled };
+  }
+
+  // Per-model (not just per-engine) training-vocabulary gate -- see
+  // applicability-domain.js's header. Checked here, at actual prediction
+  // time, not just at auto-load time (app.js's autoLoadApplicableModels):
+  // a model loaded while a PREVIOUS, compatible molecule was on the
+  // canvas stays loaded, so the load-time gate alone can't stop it from
+  // silently running again on a newly-drawn, out-of-vocabulary molecule.
+  // Returns null if fine, or a reason string if this model should be
+  // skipped entirely for this molecule.
+  function blockedReason(model, molecule) {
+    if (!window.CC.AD || !CC.AD.checkVocab) return null;
+    const check = CC.AD.checkVocab(molecule, model.id);
+    if (check.compatible) return null;
+    return 'outside its training vocabulary (' + check.issues.join('; ') + ')';
+  }
+
+  function confidenceMeta(model, pooled) {
+    if (!window.CC.AD || !CC.AD.tierForEmbedding) return undefined;
+    const tier = CC.AD.tierForEmbedding(model.id, pooled);
+    return tier.tier === 'unknown' ? undefined : tier;
   }
 
   // Atom-level, "heavy" graph: no pooling at all -- the FFN runs once per
@@ -387,6 +412,8 @@ CC.GNN = window.CC.GNN || {};
   CC.GNN.predictChemprop = function (molecule, id) {
     const model = models.get(id);
     if (!model) throw new Error('No Chemprop model loaded under id "' + id + '"');
+    const blocked = blockedReason(model, molecule);
+    if (blocked) throw new Error('"' + id + '" refused to run: ' + blocked);
 
     const graphs = buildGraphsForMolecule(molecule);
 
@@ -424,8 +451,9 @@ CC.GNN = window.CC.GNN || {};
     const graph = graphs.forGraphType('heavy');
     const molecularProperties = {};
     const propertyMeta = {};
-    molecularProperties[model.task] = runOneMolecule(model, graph);
-    propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id };
+    const out = runOneMolecule(model, graph);
+    molecularProperties[model.task] = out.value;
+    propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled) };
     return { molecularProperties: molecularProperties, propertyMeta: propertyMeta, atomIds: graph.atomIds, backend: 'chemprop', modelId: id };
   };
 
@@ -469,11 +497,17 @@ CC.GNN = window.CC.GNN || {};
 
     const molecularProperties = {};
     const propertyMeta = {};
+    const warnings = [];
     let atomProperties = null; // built lazily -- most predictions won't have any atom-level (or bond-level) models loaded
     let bondProperties = null;
     let bondIds = [];
 
     models.forEach(function (model) {
+      const blocked = blockedReason(model, molecule);
+      if (blocked) {
+        warnings.push('"' + model.id + '" skipped: ' + blocked);
+        return;
+      }
       if (model.outputLevel === 'bond') {
         const result = runBondLevelModel(molecule, model, graphs);
         if (!bondProperties) bondProperties = result.bondValues.map(function () { return {}; });
@@ -491,8 +525,9 @@ CC.GNN = window.CC.GNN || {};
         });
       } else {
         const graph = graphs.forGraphType('heavy');
-        molecularProperties[model.task] = runOneMolecule(model, graph);
-        propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id };
+        const out = runOneMolecule(model, graph);
+        molecularProperties[model.task] = out.value;
+        propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled) };
       }
     });
 
@@ -504,6 +539,7 @@ CC.GNN = window.CC.GNN || {};
       bondProperties: bondProperties || [],
       bondIds: bondIds,
       backend: 'chemprop',
+      warnings: warnings,
     };
   };
 

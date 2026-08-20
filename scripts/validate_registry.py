@@ -112,6 +112,38 @@ def main():
         if weights_path and not weights_path.exists():
             errors.append(f"[{label}] weights file not found: {weights_path}")
 
+        # applicabilityDomain (see scripts/compute_applicability_domain.py):
+        # files.applicabilityDomain and the registry-level 'applicabilityDomain'
+        # summary block are meant to travel together -- one points the app at
+        # the sidecar file (embedding centroids etc.) it fetches at prediction
+        # time, the other is the hand-curated summary a human/Claude reads
+        # here. A model with only one of the two is a half-finished edit.
+        ad_rel = files.get("applicabilityDomain")
+        ad_summary = entry.get("applicabilityDomain")
+        if ad_rel and not ad_summary:
+            errors.append(f"[{label}] files.applicabilityDomain is set but there's no registry-level "
+                           f"'applicabilityDomain' summary block")
+        if ad_summary and not ad_rel:
+            errors.append(f"[{label}] has an 'applicabilityDomain' summary block but no "
+                           f"files.applicabilityDomain pointer to the sidecar file")
+        if ad_rel:
+            ad_path = base_dir / ad_rel
+            if not ad_path.exists():
+                errors.append(f"[{label}] applicabilityDomain file not found: {ad_path}")
+            else:
+                try:
+                    ad_data = json.loads(ad_path.read_text())
+                except json.JSONDecodeError:
+                    errors.append(f"[{label}] {ad_path} isn't valid JSON")
+                    ad_data = None
+                if ad_data is not None and ad_data.get("modelId") != entry_id:
+                    errors.append(f"[{label}] {ad_path} says modelId={ad_data.get('modelId')!r}, expected {entry_id!r}")
+        if ad_summary:
+            for field in ("elements", "formalCharges"):
+                val = ad_summary.get(field)
+                if not isinstance(val, list) or not val:
+                    errors.append(f"[{label}] applicabilityDomain.{field} must be a non-empty list, got {val!r}")
+
         if manifest_path and manifest_path.exists():
             try:
                 tech_manifest = json.loads(manifest_path.read_text())

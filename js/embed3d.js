@@ -647,8 +647,10 @@ window.CC = window.CC || {};
     // well-converged structure was ~0.03, nowhere near a naive 1e-3
     // "converged" cutoff) -- the exit reason is what's actually honest.
     let exitReason = 'iteration-limit';
+    let iterationsRun = 0;
 
     for (let iter = 0; iter < iterations; iter++) {
+      iterationsRun = iter + 1;
       if (deadline && performance.now() > deadline) { exitReason = 'deadline'; break; }
 
       // Yield every ~15 iterations so the browser can repaint (a progress
@@ -657,14 +659,17 @@ window.CC = window.CC || {};
       // long synchronous call with zero feedback, which was a real
       // regression once the force field got expensive enough to take
       // several seconds to tens of seconds on bigger molecules.
-      if (iter > 0 && iter % 15 === 0) {
-        await yieldToUI();
-        if (onProgress) onProgress();
-      }
+      const shouldReport = iter > 0 && iter % 15 === 0;
+      if (shouldReport) await yieldToUI();
 
       const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
       const gradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
       lastGradNorm = gradNorm;
+      // Reported alongside the yield (same throttle, ~every 15 iters) so
+      // a caller can plot a live gradient-norm-vs-iteration convergence
+      // chart (see convergence-chart.js) instead of only ever seeing the
+      // final number once the whole staged run is done.
+      if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm });
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
       const trial = new Float64Array(flat.length);
@@ -694,7 +699,7 @@ window.CC = window.CC || {};
 
     return {
       positions: unflatten(flat), energy: energy, flat: flat, gradNorm: lastGradNorm,
-      exitReason: exitReason,
+      exitReason: exitReason, iterationsRun: iterationsRun,
       settled: exitReason === 'gradient-converged' || exitReason === 'energy-plateau',
     };
   }
@@ -729,15 +734,28 @@ window.CC = window.CC || {};
     // returning something worse than it.
     const seedEnergy = computeEnergy(atoms3d, atoms3d, bonds3d, angles, torsions, impropers, pairs, { torsion: true, lj: 1 }, solvent);
 
-    function report(label) { if (onProgress) onProgress(label); }
+    // cumulativeIter turns each stage's own 0-based iteration count into
+    // one continuous x-axis across the whole staged run (stage 2's
+    // iteration 0 is really "iteration stage1Iters", etc.) -- so a caller
+    // plotting onProgress's {iteration, gradNorm} samples (e.g.
+    // CC.renderConvergenceChart) sees one connected trajectory instead of
+    // 4 separate ones each restarting at 0.
+    let cumulativeIter = 0;
+    function report(label, info) {
+      if (!onProgress) return;
+      if (!info) { onProgress({ stage: label }); return; }
+      onProgress({ stage: label, iteration: cumulativeIter + info.iteration, gradNorm: info.gradNorm });
+    }
 
     // Stage 1: bonds + angles only.
     report('bonds & angles');
-    let result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage1Iters, deadline, { torsion: false, lj: 0 }, undefined, function () { report('bonds & angles'); });
+    let result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage1Iters, deadline, { torsion: false, lj: 0 }, undefined, function (info) { report('bonds & angles', info); });
+    cumulativeIter += result.iterationsRun;
 
     // Stage 2: bring in torsions (bounded gradients, well-behaved).
     report('torsions & ring planarity');
-    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage2Iters, deadline, { torsion: true, lj: 0 }, result.flat, function () { report('torsions & ring planarity'); });
+    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage2Iters, deadline, { torsion: true, lj: 0 }, result.flat, function (info) { report('torsions & ring planarity', info); });
+    cumulativeIter += result.iterationsRun;
 
     // Stage 3: ramp LJ (and, if enabled, GB/SA solvation -- see
     // solvationEnergy) in gradually rather than switching either on at
@@ -746,12 +764,14 @@ window.CC = window.CC || {};
       if (deadline && performance.now() > deadline) break;
       report('steric relaxation');
       const ljStrength = r / rampSteps;
-      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function () { report('steric relaxation'); }, solvent);
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function (info) { report('steric relaxation', info); }, solvent);
+      cumulativeIter += result.iterationsRun;
     }
 
     // Stage 4: full-strength final polish with whatever time remains.
     report('final polish');
-    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function () { report('final polish'); }, solvent);
+    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function (info) { report('final polish', info); }, solvent);
+    cumulativeIter += result.iterationsRun;
 
     // Only the *final* stage's outcome speaks to real convergence --
     // earlier stages are expected to hand off to the next one, not fully
@@ -1021,6 +1041,27 @@ window.CC = window.CC || {};
    * iterations") -- real information, not just "here's a structure,
    * trust it."
    */
+  /**
+   * angles/torsions/impropers/pairs are pure functions of molecule
+   * TOPOLOGY (element list + bond graph + aromaticSet) -- NOT of the
+   * atoms' actual x/y/z positions (confirmed: hybridizationOf only reads
+   * .element and bond orders; buildNonBondedPairs only reads the
+   * bond/angle/torsion graph for its 1-2/1-3/1-4 exclusions, no distance
+   * cutoff). So for a conformer search running many seeds of the SAME
+   * molecule (same elements/bonds/aromaticSet, only starting positions
+   * differ), this is identical work redone from scratch every single
+   * seed. Factored out so js/conformer-search.js can build it ONCE per
+   * search and hand the same result to every seed via optimizeGivenSeed's
+   * optional topology param below.
+   */
+  function buildTopology(atoms3d, bonds3d, aromaticSet) {
+    const angles = buildAngles(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+    const torsions = buildTorsions(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+    const impropers = buildImproperTerms(atoms3d, bonds3d, atoms3d.length, aromaticSet);
+    const pairs = buildNonBondedPairs(bonds3d, angles, torsions, atoms3d.length);
+    return { angles: angles, torsions: torsions, impropers: impropers, pairs: pairs };
+  }
+
   // The single-seed body CC.optimize3D's attempt loop below runs once per
   // attempt -- factored out so js/conformer-search.js can run the exact
   // same, already-validated classical energy/minimization path against
@@ -1028,12 +1069,14 @@ window.CC = window.CC || {};
   // just the per-attempt randomization this file's own loop does)
   // without duplicating buildAngles/buildTorsions/buildImproperTerms/
   // buildNonBondedPairs/minimizeStaged wiring a second time.
-  async function optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent) {
-    const angles = buildAngles(atoms3d, bonds3d, atoms3d.length, aromaticSet);
-    const torsions = buildTorsions(atoms3d, bonds3d, atoms3d.length, aromaticSet);
-    const impropers = buildImproperTerms(atoms3d, bonds3d, atoms3d.length, aromaticSet);
-    const pairs = buildNonBondedPairs(bonds3d, angles, torsions, atoms3d.length);
-    const result = await minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, onProgress, solvent);
+  //
+  // topology (optional): a pre-built buildTopology() result -- when a
+  // caller running many seeds of the same molecule already has one
+  // (see js/conformer-search.js), passing it here skips rebuilding the
+  // identical angles/torsions/impropers/pairs graph for every seed.
+  async function optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent, topology) {
+    const topo = topology || buildTopology(atoms3d, bonds3d, aromaticSet);
+    const result = await minimizeStaged(atoms3d, bonds3d, topo.angles, topo.torsions, topo.impropers, topo.pairs, iterations, deadline, onProgress, solvent);
     return {
       energy: result.energy,
       converged: result.converged,
@@ -1128,6 +1171,7 @@ window.CC = window.CC || {};
     planeDeviation: planeDeviation,
     ljShape: ljShape,
     optimizeSeedClassical: optimizeGivenSeed,
+    buildTopology: buildTopology,
     sideAtoms: sideAtoms,
   };
 })();

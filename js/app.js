@@ -24,7 +24,6 @@
   let copySmilesBtn = null;
   let currentSmiles = '';
   let smilesExpanded = false;
-  const SMILES_TRUNCATE_AT = 40;
   let currentDescriptors = null;
   let currentValidityText = 'no structure yet';
   let validationTimer = null;
@@ -321,7 +320,12 @@
       labelCell.appendChild(infoBtn);
       const valueCell = document.createElement('td');
       const badge = document.createElement('span');
-      badge.className = 'classification-badge ' + (f.pass ? 'is-positive' : 'is-negative');
+      // NOT is-positive/is-negative (that pair means "predicted positive
+      // hit for a bad property, styled red" elsewhere in this file, e.g.
+      // CYP inhibition) -- here "positive" would be a filter PASS, the
+      // opposite polarity, so a distinct is-pass/is-fail pair: pass is
+      // free/neutral, only a violation gets the red "fail" styling.
+      badge.className = 'classification-badge ' + (f.pass ? 'is-pass' : 'is-fail');
       badge.textContent = f.pass ? 'Pass' : (f.violations + ' violation' + (f.violations === 1 ? '' : 's'));
       valueCell.appendChild(badge);
       if (f.referencePassRate !== null) {
@@ -373,12 +377,13 @@
     validityText.textContent = text;
   }
 
-  // Long canonical SMILES (a real problem for anything beyond a small
-  // molecule -- the 50-atom example that motivated this is ~140
-  // characters) otherwise dominate the side panel's width or wrap
-  // across many lines just sitting there unread. Collapsed to a short
-  // preview by default with a [show]/[hide] toggle; Copy always copies
-  // the FULL string regardless of which state is currently displayed.
+  // Canonical SMILES stays hidden behind a [show]/[hide] toggle until the
+  // user actually clicks it -- not just truncated when long (a long one,
+  // the original motivation here, would otherwise dominate the side
+  // panel's width or wrap across many lines just sitting there unread),
+  // but never printed at all by default even for a short one. Copy
+  // always copies the FULL string regardless of which state is
+  // currently displayed.
   function renderSmilesDisplay() {
     const full = currentSmiles || '';
     if (!full) {
@@ -386,15 +391,14 @@
       smilesToggleBtn.style.display = 'none';
       return;
     }
-    const needsTruncation = full.length > SMILES_TRUNCATE_AT;
-    if (needsTruncation && !smilesExpanded) {
-      smilesOutput.textContent = full.slice(0, SMILES_TRUNCATE_AT) + '\u2026';
-      smilesToggleBtn.textContent = '[show]';
-    } else {
+    if (smilesExpanded) {
       smilesOutput.textContent = full;
       smilesToggleBtn.textContent = '[hide]';
+    } else {
+      smilesOutput.textContent = '\u2022\u2022\u2022 hidden';
+      smilesToggleBtn.textContent = '[show]';
     }
-    smilesToggleBtn.style.display = needsTruncation ? '' : 'none';
+    smilesToggleBtn.style.display = '';
   }
 
   function setSmiles(smiles) {
@@ -885,6 +889,28 @@
       if (m.note) section('', textBlock(m.note));
     }
 
+    const ad = entry.applicabilityDomain;
+    if (ad) {
+      section('Applicability domain (from real training data)', defList([
+        ['Training set size', ad.trainingSetSize ? ad.trainingSetSize + ' molecules' : null],
+        ['Elements seen in training', (ad.elements || []).join(', ')],
+        ['Formal charges seen in training', (ad.formalCharges || []).slice().sort(function (a, b) { return a - b; }).join(', ')],
+      ]));
+      section('', textBlock(
+        'A molecule with an element or formal charge outside this list is refused (not run) rather than given an ' +
+        'unsupported guess. Predictions on molecules within this list still show an in-domain / borderline / ' +
+        'out-of-domain confidence badge based on how close the molecule is to the training data in the model’s ' +
+        'own learned representation -- a heuristic signal, not a calibrated error bound. ' + (ad.notes || '')
+      ));
+    } else {
+      section('', textBlock(
+        'No per-model applicability-domain data has been computed for this checkpoint yet -- only the ' +
+        'general Chemprop featurizer vocabulary is checked (see the Validation panel), not this specific ' +
+        'model’s real training-set coverage. Treat predictions on unusual elements/charges/structures with ' +
+        'more caution than the ones below that do have this data.'
+      ));
+    }
+
     section('Notes, known limitations & domain of application', textBlock(entry.notes));
 
     return box;
@@ -962,7 +988,51 @@
     const piNote = document.getElementById('titration-pi-note');
     const microstatesSection = document.getElementById('titration-microstates-section');
     const microstatesOutput = document.getElementById('titration-microstates-output');
+    const logdSection = document.getElementById('titration-logd-section');
+    const logdOutput = document.getElementById('titration-logd-output');
     const infoBtn = document.getElementById('titration-info-btn');
+
+    // Room-temperature (298.15 K) RT in kcal/mol (R = 1.987e-3 kcal/
+    // (mol*K)) -- the standard Henderson-Hasselbalch logD correction
+    // (logD = logP + log10(fraction neutral)) is mathematically the same
+    // thing as this deltaG/(RT*ln10) shift; kept as an explicit constant
+    // here so the deltaG number shown to the user is a real, dimensioned
+    // physical quantity, not just an opaque log10 factor.
+    const RT_KCAL_298K = 0.5924;
+
+    // Renders (or hides) the LogD (pH 7) section. sites/pKaValues: the
+    // SAME validated (site, predicted-pKa) pairs the titration curve
+    // above uses -- pass [], [] for a molecule with no detected
+    // ionizable sites at all, in which case fraction neutral is
+    // trivially 1 (empty product) and logD reduces to logP exactly, a
+    // useful confirming case to still show rather than hide.
+    function renderLogD(sites, pKaValues) {
+      const logPValue = lastMolecularProperties && typeof lastMolecularProperties.values.logP === 'number'
+        ? lastMolecularProperties.values.logP
+        : (currentDescriptors && typeof currentDescriptors.CrippenClogP === 'number' ? currentDescriptors.CrippenClogP : null);
+      if (logPValue === null) {
+        logdSection.style.display = 'none';
+        return;
+      }
+      const fracNeutral = CC.PKATitration.fractionNeutral(sites, pKaValues, 7.0);
+      const deltaG = -RT_KCAL_298K * Math.log(fracNeutral);
+      const logD = logPValue + Math.log10(fracNeutral);
+
+      logdOutput.innerHTML = '';
+      [
+        ['LogP (neutral form)' + (lastMolecularProperties && typeof lastMolecularProperties.values.logP === 'number' ? '' : ' [RDKit Crippen]'), logPValue.toFixed(2)],
+        ['Fraction neutral at pH 7', (fracNeutral * 100).toFixed(1) + '%'],
+        ['ΔG to neutral state (pH 7)', deltaG.toFixed(2) + ' kcal/mol'],
+        ['LogD (pH 7)', logD.toFixed(2)],
+      ].forEach(function (pair) {
+        const row = document.createElement('tr');
+        const labelCell = document.createElement('td'); labelCell.textContent = pair[0];
+        const valueCell = document.createElement('td'); valueCell.textContent = pair[1];
+        row.appendChild(labelCell); row.appendChild(valueCell);
+        logdOutput.appendChild(row);
+      });
+      logdSection.style.display = '';
+    }
     if (infoBtn) {
       infoBtn.addEventListener('click', function () {
         const entry = CC.GNN.getRegistryEntry('aqueous-pka');
@@ -975,10 +1045,12 @@
       sitesSection.style.display = 'none';
       curveSection.style.display = 'none';
       microstatesSection.style.display = 'none';
+      logdSection.style.display = 'none';
       sitesOutput.innerHTML = '';
       chartContainer.innerHTML = '';
       piNote.textContent = '';
       microstatesOutput.innerHTML = '';
+      logdOutput.innerHTML = '';
     }
     invalidateTitration = reset;
 
@@ -1013,6 +1085,7 @@
       if (sites.length === 0) {
         reset();
         status.textContent = 'No ionizable groups detected in this structure.';
+        renderLogD([], []); // no ionization -- fraction neutral is trivially 1, so logD reduces to logP exactly
         return;
       }
 
@@ -1102,9 +1175,11 @@
           });
           microstatesSection.style.display = regions.length > 0 ? '' : 'none';
           CC.Logger.success('Computed titration curve: ' + validSites.length + ' site(s), ' + regions.length + ' dominant microstate region(s)');
+          renderLogD(validSites, validPKa);
         } else {
           curveSection.style.display = 'none';
           microstatesSection.style.display = 'none';
+          logdSection.style.display = 'none';
         }
       } catch (err) {
         status.textContent = 'Failed: ' + err.message;
@@ -1481,6 +1556,8 @@
     const progressWrap = document.getElementById('viewer3d-progress');
     const progressFill = document.getElementById('viewer3d-progress-fill');
     const progressNote = document.getElementById('viewer3d-progress-note');
+    const convergenceChartContainer = document.getElementById('optimize-convergence-chart-container');
+    const convergenceNote = document.getElementById('optimize-convergence-note');
     const measureDistanceBtn = document.getElementById('measure-distance-btn');
     const clearMeasurementsBtn = document.getElementById('clear-measurements-btn');
     const measureDistanceStatus = document.getElementById('measure-distance-status');
@@ -1569,7 +1646,9 @@
         const tr = document.createElement('tr');
         const rankCell = document.createElement('td'); rankCell.textContent = c.rank;
         const energyCell = document.createElement('td'); energyCell.textContent = (c.relativeEnergyKcal >= 0 ? '+' : '') + c.relativeEnergyKcal.toFixed(2);
-        const convergedCell = document.createElement('td'); convergedCell.textContent = c.converged ? 'yes' : 'no';
+        const convergedCell = document.createElement('td');
+        convergedCell.textContent = c.converged ? 'yes' : 'no';
+        convergedCell.style.color = c.converged ? '' : 'var(--danger)';
         const viewCell = document.createElement('td');
         const viewBtn = document.createElement('button');
         viewBtn.className = 'btn btn-ghost btn-small';
@@ -1656,6 +1735,7 @@
     }
 
     optimizeOnlyBtn.addEventListener('click', async function () {
+      viewer3dNote.style.color = '';
       if (controller.molecule.isEmpty()) {
         viewer3dNote.textContent = 'Nothing to optimize yet — draw a structure first.';
         return;
@@ -1677,6 +1757,14 @@
       progressWrap.style.display = '';
       progressFill.style.width = '0%';
       progressNote.textContent = 'Preparing ' + modelLabel + '…';
+      // Fresh chart per click: each "Optimize" run stages the energy
+      // model differently from scratch (sterics off, then ramped back in
+      // -- see minimizeStaged), so its gradient-norm trajectory isn't
+      // meaningfully continuous with a PRIOR click's trajectory the way
+      // a resumed ANI-2x run's is.
+      const gradNormHistory = [];
+      convergenceChartContainer.innerHTML = '';
+      convergenceNote.textContent = '';
 
       try {
         // Aromaticity perception only depends on the molecule's own graph
@@ -1692,7 +1780,17 @@
         const heavyAtomCount = controller.molecule.atoms.size;
         const timeBudgetMs = Math.min(25000, Math.max(5000, heavyAtomCount * 900));
         const deadline = performance.now() + timeBudgetMs;
-        const onProgress = function (stage) { progressNote.textContent = 'Optimizing — ' + stage; };
+        // info is {stage, iteration?, gradNorm?} -- see embed3d.js's
+        // minimizeStaged/openff-forcefield.js's minimizeStagedSMIRNOFF.
+        // iteration/gradNorm are only present on the throttled
+        // per-iteration samples, not the bare stage-transition
+        // announcements, hence collecting into gradNormHistory here
+        // rather than trying to render the chart live on every call (it
+        // gets rendered once, after the whole optimize finishes, below).
+        const onProgress = function (info) {
+          progressNote.textContent = 'Optimizing — ' + info.stage;
+          if (typeof info.gradNorm === 'number') gradNormHistory.push({ iteration: info.iteration, gradNorm: info.gradNorm });
+        };
 
         let naglModelId;
         if (model === 'smirnoff' || solvent.enabled) naglModelId = await ensureNaglModelLoaded(progressNote);
@@ -1721,10 +1819,27 @@
         currentGeometryOptimized = true;
         currentGeometryConverged = result.converged;
         const solventNote = solvent.enabled ? (naglModelId ? ' (implicit solvent included)' : ' (no NAGL-MBIS charges loaded — solvation omitted)') : '';
+        viewer3dNote.style.color = result.converged ? '' : 'var(--danger)';
         viewer3dNote.textContent = modelLabel + ' optimization ' + (result.converged ? 'converged' : 'did not fully converge (ran out of time/iterations)') +
           solventNote + '. Energy ' + result.energy.toFixed(2) + '.';
         CC.Logger[result.converged ? 'success' : 'warning']('Optimize (' + modelLabel + '): ' + (result.converged ? 'converged' : 'did not converge') + ', energy ' + result.energy.toFixed(2));
+
+        if (gradNormHistory.length > 0) {
+          CC.renderConvergenceChart(convergenceChartContainer, gradNormHistory, { convergedThreshold: 1e-5, converged: result.converged });
+        }
+        // The 1e-5 figure here is the SAME gradient-norm cutoff the
+        // optimizer itself checks every iteration to decide it's done
+        // (see embed3d.js's minimize()) -- not a claim that this
+        // threshold means the structure is chemically "good" (a raw
+        // gradient norm doesn't generalize across molecule size/
+        // complexity -- see that file's own comment), just an honest
+        // report of how close THIS run got to ITS OWN stopping target.
+        convergenceNote.style.color = result.converged ? '' : 'var(--danger)';
+        convergenceNote.textContent = typeof result.gradNorm === 'number'
+          ? 'Final gradient norm: ' + result.gradNorm.toExponential(2) + ' (optimizer target: below 1e-5).'
+          : '';
       } catch (err) {
+        viewer3dNote.style.color = 'var(--danger)';
         viewer3dNote.textContent = 'Optimization failed: ' + err.message;
         console.error('[ChemCanvas] optimize-only failed', err);
         CC.Logger.error('Optimize failed: ' + err.message);
@@ -1739,6 +1854,9 @@
     });
 
     generate3dBtn.addEventListener('click', async function () {
+      viewer3dNote.style.color = '';
+      convergenceChartContainer.innerHTML = '';
+      convergenceNote.textContent = '';
       if (controller.molecule.isEmpty()) {
         viewer3dNote.textContent = 'Nothing to preview yet \u2014 draw a structure first.';
         return;
@@ -1999,8 +2117,8 @@
    * separate trip through the model list clicking "Load" on each one
    * first (the old flow), this loads every registry entry that's
    * actually worth running against the CURRENT molecule -- a real
-   * property model (engine 'chemprop'/'nagl'; the 'geomol'/'ani2x' 3D-
-   * structure-tool engines are a different feature, triggered from the
+   * property model (engine 'chemprop'/'nagl'/'pka'; the 'geomol'/'ani2x'
+   * 3D-structure-tool engines are a different feature, triggered from the
    * 3D panel, not swept in here), not already loaded, not structurally
    * BLOCKED (CC.Validate.checkModelCompatibility -- a 'warning'-tier
    * model still loads, same as picking it manually always did), and --
@@ -2009,6 +2127,15 @@
    * doesn't contain, so a fluorine-free molecule doesn't pay to fetch
    * and run a model that would only ever report on zero atoms.
    *
+   * 'pka' models (js/pka-model.js) only *load* their own tree checkpoint
+   * here -- they don't need their NAGL charge dependency loaded until
+   * predictMolecule() actually calls predict(), which happens after this
+   * whole batch (NAGL included) has settled, so load ordering within the
+   * batch doesn't matter. Omitting 'pka' from this filter previously made
+   * the C-H acidity model silently vanish from the table once the
+   * separate per-model Load button (which used to load it manually) was
+   * replaced by this auto-load path.
+   *
    * One bad/unreachable model shouldn't sink the others (Promise.
    * allSettled, not Promise.all) -- failures are returned, not thrown,
    * so the caller can still run prediction against whatever DID load.
@@ -2016,7 +2143,7 @@
   async function autoLoadApplicableModels(onProgress) {
     const molecule = controller.molecule;
     const entries = CC.GNN.getRegistryEntries().filter(function (entry) {
-      return entry.engine === 'chemprop' || entry.engine === 'nagl';
+      return entry.engine === 'chemprop' || entry.engine === 'nagl' || entry.engine === 'pka';
     });
 
     let compatByModelId = {};
@@ -2033,7 +2160,16 @@
     const toLoad = entries.filter(function (entry) {
       if (CC.GNN.isRegistryModelLoaded(entry.id)) return false;
       const compat = compatByModelId[entry.id];
-      if (compat && compat.tier === 'blocked') return false;
+      // 'pka' engine models' only compat gate is "needs its NAGL charge
+      // model loaded first" (pka-model.js's checkCompatibility) -- a
+      // false alarm here specifically, since compatByModelId was computed
+      // BEFORE this function has loaded anything, so a not-yet-loaded
+      // NAGL model always reads as "blocked" even though it's about to be
+      // loaded in THIS SAME batch a few lines below. predict() (called
+      // only once the whole batch has settled) still enforces the real
+      // per-checkpoint dependency with a clear error if it's genuinely
+      // still missing, so skipping the blocked-tier gate here is safe.
+      if (compat && compat.tier === 'blocked' && entry.engine !== 'pka') return false;
       if (entry.applicableElement && !moleculeHasElement(molecule, entry.applicableElement)) return false;
       return true;
     });
@@ -2065,6 +2201,9 @@
     const molOutput = document.getElementById('gnn-molecular-output'); // <tbody>
     const gnnTable = document.getElementById('gnn-molecular-output-table');
     const gnnEmptyNote = document.getElementById('gnn-empty-note');
+    const cypHergOutput = document.getElementById('gnn-cyp-herg-output'); // <tbody>
+    const cypHergTable = document.getElementById('gnn-cyp-herg-table');
+    const cypHergEmptyNote = document.getElementById('gnn-cyp-herg-empty-note');
     const heatmapRow = document.getElementById('gnn-atom-heatmap-row');
     const heatmapSelect = document.getElementById('heatmap-property-select');
     const clearHeatmapBtn = document.getElementById('clear-heatmap-btn');
@@ -2082,6 +2221,8 @@
       gnnTable.style.display = 'none';
       gnnEmptyNote.textContent = text;
       gnnEmptyNote.style.display = '';
+      cypHergTable.style.display = 'none';
+      cypHergEmptyNote.style.display = '';
     }
 
     async function runPrediction() {
@@ -2216,10 +2357,14 @@
       }
 
       const propertyMeta = result.propertyMeta || {};
-      Object.keys(result.molecularProperties || {}).forEach(function (name) {
+
+      // One row-builder shared by the general "Predictions" table and the
+      // CYP/hERG table below -- same cell structure (label + info popup +
+      // value/units/classification badge), just appended to a different
+      // <tbody> depending on which property this is.
+      function buildMolecularPropertyRow(name, meta) {
         const row = document.createElement('tr');
         const labelCell = document.createElement('td');
-        const meta = propertyMeta[name];
         // Chemprop's own task/target-column name (e.g. a generic "label"
         // if that's what the training CSV's column was literally called)
         // makes a poor row label -- prefer the registry's displayName
@@ -2289,16 +2434,72 @@
           valueCell.appendChild(nmSpan);
         }
 
+        appendConfidenceBadge(valueCell, meta);
+
         row.appendChild(labelCell);
         row.appendChild(valueCell);
-        molOutput.appendChild(row);
+        return { row: row, registryEntry: registryEntry };
+      }
+
+      // Embedding-domain confidence tier (see applicability-domain.js) --
+      // distance from this molecule's D-MPNN embedding to the model's own
+      // training-set distribution, computed for free during prediction.
+      // Only rendered when real data exists for this checkpoint (most of
+      // the registry doesn't have it yet -- an incrementally-rolled-out
+      // pipeline, see model/registry.json's per-model 'applicabilityDomain'
+      // notes); a model with no such data shows no badge at all rather
+      // than a fabricated "unknown" one for every single row.
+      const CONFIDENCE_TIER_LABEL = { 'in-domain': 'In-domain', 'borderline': 'Borderline', 'out-of-domain': 'Out-of-domain' };
+      function appendConfidenceBadge(valueCell, meta) {
+        const confidence = meta && meta.confidence;
+        if (!confidence || !CONFIDENCE_TIER_LABEL[confidence.tier]) return;
+        const badge = document.createElement('span');
+        badge.className = 'confidence-badge confidence-' + confidence.tier;
+        badge.textContent = CONFIDENCE_TIER_LABEL[confidence.tier];
+        badge.title = 'Applicability-domain confidence: this molecule’s distance from the model’s training-set ' +
+          'embedding distribution is ' + confidence.distance.toFixed(2) + ' (in-domain ≤ ' + confidence.thresholds.inDomain.toFixed(2) +
+          ', borderline ≤ ' + confidence.thresholds.borderline.toFixed(2) + '). A heuristic signal, not a calibrated error bound -- ' +
+          'see this property’s [?] info panel.';
+        valueCell.appendChild(badge);
+      }
+
+      // Solvation (21 COSMO-RS solvent models, propertyKey "solv...") and
+      // CYP/hERG (propertyKey "cyp..."/"herg") each already get -- or, for
+      // CYP/hERG, get right below -- their own dedicated section further
+      // down this panel. Listing them AGAIN here as generic flat rows
+      // would just show the exact same numbers twice; route them to
+      // their own tbody instead (matched by the registry's propertyKey
+      // where available, falling back to the raw result key for an
+      // ad-hoc "load from files" model with no registry entry at all).
+      cypHergOutput.innerHTML = '';
+      let anyCypHerg = false;
+      Object.keys(result.molecularProperties || {}).forEach(function (name) {
+        const meta = propertyMeta[name];
+        const registryEntry = meta && meta.modelId ? CC.GNN.getRegistryEntry(meta.modelId) : null;
+        const key = registryEntry ? registryEntry.propertyKey : name;
+        if (/^solv/.test(key)) return; // already shown in the Solvation free energy section
+        if (/^cyp/i.test(key) || key === 'herg') {
+          cypHergOutput.appendChild(buildMolecularPropertyRow(name, meta).row);
+          anyCypHerg = true;
+          return;
+        }
+        molOutput.appendChild(buildMolecularPropertyRow(name, meta).row);
       });
+      cypHergTable.style.display = anyCypHerg ? '' : 'none';
+      cypHergEmptyNote.style.display = anyCypHerg ? 'none' : '';
 
       const hasAtomProperties = result.atomProperties && result.atomProperties.length > 0;
-      if (molOutput.children.length === 0) {
+      const hasAnyMolecularProperties = Object.keys(result.molecularProperties || {}).length > 0;
+      if (molOutput.children.length === 0 && !hasAnyMolecularProperties) {
         showGnnMessage(hasAtomProperties
           ? 'No molecule-level predictions for this structure — see the atom heatmap below for per-atom results.'
           : 'No predictions returned for this structure.');
+      } else if (molOutput.children.length === 0) {
+        // Every molecular property that DID come back was routed to the
+        // solvation panel and/or the CYP & hERG section below instead --
+        // real results, just not any that belong in this generic table.
+        gnnEmptyNote.style.display = 'none';
+        gnnTable.style.display = 'none';
       } else {
         gnnEmptyNote.style.display = 'none';
         gnnTable.style.display = '';
@@ -2467,15 +2668,9 @@
           mergeAtomHeatmapProperties(result.atomIds, result.atomProperties);
         }
         sasaStatus.style.color = result.converged ? '' : 'var(--danger)';
-        const convergedNote = result.converged
-          ? 'converged'
-          : '⚠ that 3D structure did NOT fully converge — the resulting values may be unreliable, not ' +
-            'just imprecise (an unrelaxed structure has spurious close contacts between atoms that a real ' +
-            'conformer wouldn’t, which artificially lowers exposure everywhere); try "Optimize further…" ' +
-            'in the 3D tab first';
+        const convergedNote = result.converged ? '' : ' ⚠ not fully converged — try "Optimize further…" first';
         sasaStatus.textContent = 'Computed steric accessibility from the existing ' + result.numAtomsIncludingH +
-          '-atom (incl. implicit H) conformer — ' + convergedNote + '. See "steric_accessibility" ' +
-          '(0–1, fraction exposed) and "sasa" (Å²) in the atom heatmap above.';
+          '-atom conformer.' + convergedNote;
         CC.Logger[result.converged ? 'success' : 'warning']('Computed SASA (' + result.numAtomsIncludingH + ' atoms, ' + (result.converged ? 'converged' : 'did not converge') + ')');
       } catch (err) {
         sasaStatus.textContent = 'Steric accessibility computation failed: ' + err.message;

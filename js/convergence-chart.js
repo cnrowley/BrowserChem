@@ -32,15 +32,23 @@ window.CC = window.CC || {};
   /**
    * container: a plain DOM element (not the SVG itself).
    * history: [{iteration, gradNorm}, ...], ascending by iteration --
-   * CC.ANI.optimizeGeometry's onProgress payload accumulated by the
-   * caller across possibly several resumed ("optimize further") calls,
-   * which is why iteration numbers aren't assumed to start at 0.
-   * convergedThreshold (optional): the gradNorm value the optimizer
+   * an optimizer's own onProgress payload (CC.ANI.optimizeGeometry,
+   * embed3d.js's minimizeStaged, openff-forcefield.js's
+   * minimizeStagedSMIRNOFF) accumulated by the caller across possibly
+   * several resumed ("optimize further") calls, which is why iteration
+   * numbers aren't assumed to start at 0.
+   * opts.convergedThreshold (optional): the gradNorm value the optimizer
    * itself treats as converged (1e-5 today) -- drawn as a reference
    * line so it's visually obvious how much further there is to go.
+   * opts.converged (optional): colors the current-point marker to match
+   * whether the run actually settled (accent) or was cut off mid-flight
+   * (danger) -- same red/default convention the rest of the 3D panel's
+   * status text already uses.
    * Replaces any previously-rendered chart in `container`.
    */
-  CC.renderConvergenceChart = function (container, history, convergedThreshold) {
+  CC.renderConvergenceChart = function (container, history, opts) {
+    opts = opts || {};
+    const convergedThreshold = opts.convergedThreshold;
     container.innerHTML = '';
     if (!history || history.length === 0) return;
 
@@ -105,9 +113,11 @@ window.CC = window.CC || {};
     svg.appendChild(el('polyline', { points: points, class: 'convergence-curve-line' }));
 
     // Current (most recent) point, so it's obvious where the trajectory
-    // currently stands, not just its overall shape.
+    // currently stands, not just its overall shape. Color-coded by
+    // whether the run actually converged -- see opts.converged above.
     const last = history[history.length - 1];
-    svg.appendChild(el('circle', { cx: xOf(last.iteration), cy: yOf(last.gradNorm), r: 3, class: 'convergence-current-marker' }));
+    const markerClass = 'convergence-current-marker' + (opts.converged === false ? ' is-not-converged' : '');
+    svg.appendChild(el('circle', { cx: xOf(last.iteration), cy: yOf(last.gradNorm), r: 3, class: markerClass }));
 
     container.appendChild(svg);
   };

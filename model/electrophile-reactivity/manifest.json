@@ -1,6 +1,9 @@
 {
   "task": "label",
   "taskType": "classification",
+  "outputLevel": "molecule",
+  "graphType": "heavy",
+  "applicableElement": null,
   "architecture": "chemprop-dmpnn-v2",
   "dims": {
     "d_v": 72,
