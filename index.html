@@ -110,12 +110,12 @@
 
     <div class="side-panel-content" id="panel-view3d" role="tabpanel">
       <div class="viewer3d-method-row">
-        <label for="quick-preview-select">Quick preview</label>
+        <label for="quick-preview-select">Structure</label>
         <select id="quick-preview-select" title="A single, fast, unoptimized-or-lightly-optimized starting structure — for a quick look, not a real search. Classical: 2D-projected seed with implicit hydrogens, no force-field relaxation. GeoMol: a learned model that predicts a conformer directly from the 2D graph in one pass (loads a ~1MB model automatically on first use).">
           <option value="classical">Classical seed</option>
           <option value="geomol" selected>GeoMol (learned)</option>
         </select>
-        <button class="btn btn-ghost btn-small" id="quick-preview-btn">Preview</button>
+        <button class="btn btn-ghost btn-small" id="quick-preview-btn">Generate 3D</button>
       </div>
       <div class="viewer3d-container" id="viewer3d"></div>
       <div class="viewer3d-toolbar">
@@ -123,9 +123,25 @@
         <button class="btn btn-ghost btn-small" id="clear-measurements-btn" disabled title="Remove all drawn distance measurements">Clear measurements</button>
       </div>
       <p class="side-panel-note" id="measure-distance-status"></p>
-      <p class="side-panel-note" id="viewer3d-note">Draw a structure, then click "Preview" for a quick look, or set up a conformer search below.</p>
+      <p class="side-panel-note" id="viewer3d-note">Draw a structure, then click "Generate 3D" for a quick look, or set up a conformer search below.</p>
       <div class="convergence-chart-wrap" id="optimize-convergence-chart-container"></div>
       <p class="side-panel-note" id="optimize-convergence-note"></p>
+
+      <div class="properties-section-title">Implicit solvent</div>
+      <label class="heatmap-text-toggle" id="solvent-enable-label">
+        <input type="checkbox" id="solvent-enable-checkbox">
+        Include implicit solvent (GB/SA) in Optimize &amp; conformer search energy
+      </label>
+      <div id="solvent-controls" style="display:none;">
+        <div class="viewer3d-method-row">
+          <label for="solvent-select">Solvent</label>
+          <select id="solvent-select"></select>
+        </div>
+        <div class="viewer3d-method-row" id="solvent-custom-row" style="display:none;">
+          <label for="solvent-custom-eps">Dielectric constant (&epsilon;)</label>
+          <input type="number" id="solvent-custom-eps" min="1" step="0.1" value="78.5">
+        </div>
+      </div>
 
       <div class="properties-section-title">Conformer search</div>
       <div class="viewer3d-method-row">
@@ -136,8 +152,9 @@
         </select>
       </div>
       <div class="viewer3d-toolbar">
-        <button class="btn btn-ghost btn-small" id="optimize-only-btn" title="Locally optimize whatever single structure is currently shown above with the selected energy model — one structure in, one relaxed structure out. No multi-seed rotamer sampling or ensemble pruning (see &quot;Run conformer search…&quot; for that).">Optimize</button>
+        <button class="btn btn-ghost btn-small" id="optimize-only-btn" title="Locally optimize whatever single structure is currently shown above with the selected energy model — one structure in, one relaxed structure out. No multi-seed rotamer sampling or ensemble pruning (see &quot;Run conformer search…&quot; for that). Runs until it converges — click Stop to end it early and keep the best structure found so far.">Optimize</button>
         <button class="btn btn-accent btn-small" id="conformer-search-btn">Run conformer search&hellip;</button>
+        <button class="btn btn-ghost btn-small" id="stop-optimize-btn" style="display:none;" title="Stop the current optimization/search and keep whatever structure has been found so far">Stop</button>
       </div>
       <div class="viewer3d-progress" id="viewer3d-progress" style="display:none;">
         <div class="viewer3d-progress-bar"><div class="viewer3d-progress-fill" id="viewer3d-progress-fill"></div></div>
@@ -160,6 +177,64 @@
     </div>
 
     <div class="side-panel-content is-hidden" id="panel-properties" role="tabpanel">
+      <div class="properties-section">
+        <h3 class="properties-section-title">GNN prediction (D-MPNN)</h3>
+        <p class="side-panel-note">One click loads whatever's applicable to THIS molecule (skipping e.g. 19F NMR for a fluorine-free structure) and runs every model below together &mdash; no per-model "Load" step needed. Already-loaded models stay loaded for the rest of the session.</p>
+        <p class="side-panel-note compatibility-warning" id="compatibility-warning" style="display:none;"></p>
+        <p class="side-panel-note compatibility-warning" id="gnn-prediction-warnings" style="display:none;"></p>
+        <p class="side-panel-note" id="registry-status"></p>
+
+        <div class="gnn-controls">
+          <button class="btn btn-accent btn-small" id="run-demo-gnn-btn">Compute properties</button>
+          <button class="btn btn-ghost btn-small" id="load-chemprop-btn">Load model from files&hellip;</button>
+          <input type="file" id="chemprop-file-input" accept=".json,.bin" multiple hidden>
+          <button class="btn btn-ghost btn-small" id="load-onnx-btn">Load ONNX model&hellip;</button>
+          <input type="file" id="onnx-file-input" accept=".onnx" hidden>
+        </div>
+        <p class="side-panel-note" id="chemprop-model-status"></p>
+        <p class="side-panel-note" id="onnx-model-status"></p>
+
+        <table class="descriptor-table" id="gnn-molecular-output-table" style="display:none;">
+          <thead><tr><th colspan="2" class="properties-section-title">Predictions</th></tr></thead>
+          <tbody id="gnn-molecular-output"></tbody>
+        </table>
+        <p class="side-panel-note" id="gnn-empty-note">Draw a structure, then click "Compute properties" above.</p>
+
+        <div class="properties-row" id="sasa-controls-row">
+          <span class="properties-label">Steric accessibility</span>
+          <div class="heatmap-controls">
+            <button class="btn btn-ghost btn-small" id="compute-sasa-btn">Compute (SASA)</button>
+          </div>
+        </div>
+        <p class="side-panel-note" id="sasa-status"></p>
+
+        <div class="properties-row" id="gnn-atom-heatmap-row" style="display:none;">
+          <span class="properties-label">Atom heatmap</span>
+          <div class="heatmap-controls">
+            <select id="heatmap-property-select"></select>
+            <label class="heatmap-text-toggle">
+              <input type="checkbox" id="heatmap-show-text">
+              Show values
+            </label>
+            <button class="btn btn-ghost btn-small" id="clear-heatmap-btn">Clear</button>
+          </div>
+        </div>
+        <div id="heatmap-legend-container"></div>
+
+        <div class="properties-row" id="gnn-bond-heatmap-row" style="display:none;">
+          <span class="properties-label">Bond heatmap</span>
+          <div class="heatmap-controls">
+            <select id="bond-heatmap-property-select"></select>
+            <label class="heatmap-text-toggle">
+              <input type="checkbox" id="bond-heatmap-show-text">
+              Show values
+            </label>
+            <button class="btn btn-ghost btn-small" id="clear-bond-heatmap-btn">Clear</button>
+          </div>
+        </div>
+        <div id="bond-heatmap-legend-container"></div>
+      </div>
+
       <div class="properties-section">
         <div class="validation-status-banner status-idle" id="validation-status-banner">Draw a structure to check it.</div>
 
@@ -262,64 +337,6 @@
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">GNN prediction (D-MPNN)</h3>
-        <p class="side-panel-note">One click loads whatever's applicable to THIS molecule (skipping e.g. 19F NMR for a fluorine-free structure) and runs every model below together &mdash; no per-model "Load" step needed. Already-loaded models stay loaded for the rest of the session.</p>
-        <p class="side-panel-note compatibility-warning" id="compatibility-warning" style="display:none;"></p>
-        <p class="side-panel-note compatibility-warning" id="gnn-prediction-warnings" style="display:none;"></p>
-        <p class="side-panel-note" id="registry-status"></p>
-
-        <div class="gnn-controls">
-          <button class="btn btn-accent btn-small" id="run-demo-gnn-btn">Compute properties</button>
-          <button class="btn btn-ghost btn-small" id="load-chemprop-btn">Load model from files&hellip;</button>
-          <input type="file" id="chemprop-file-input" accept=".json,.bin" multiple hidden>
-          <button class="btn btn-ghost btn-small" id="load-onnx-btn">Load ONNX model&hellip;</button>
-          <input type="file" id="onnx-file-input" accept=".onnx" hidden>
-        </div>
-        <p class="side-panel-note" id="chemprop-model-status"></p>
-        <p class="side-panel-note" id="onnx-model-status"></p>
-
-        <table class="descriptor-table" id="gnn-molecular-output-table" style="display:none;">
-          <thead><tr><th colspan="2" class="properties-section-title">Predictions</th></tr></thead>
-          <tbody id="gnn-molecular-output"></tbody>
-        </table>
-        <p class="side-panel-note" id="gnn-empty-note">Draw a structure, then click "Run prediction".</p>
-
-        <div class="properties-row" id="sasa-controls-row">
-          <span class="properties-label">Steric accessibility</span>
-          <div class="heatmap-controls">
-            <button class="btn btn-ghost btn-small" id="compute-sasa-btn">Compute (SASA)</button>
-          </div>
-        </div>
-        <p class="side-panel-note" id="sasa-status"></p>
-
-        <div class="properties-row" id="gnn-atom-heatmap-row" style="display:none;">
-          <span class="properties-label">Atom heatmap</span>
-          <div class="heatmap-controls">
-            <select id="heatmap-property-select"></select>
-            <label class="heatmap-text-toggle">
-              <input type="checkbox" id="heatmap-show-text">
-              Show values
-            </label>
-            <button class="btn btn-ghost btn-small" id="clear-heatmap-btn">Clear</button>
-          </div>
-        </div>
-        <div id="heatmap-legend-container"></div>
-
-        <div class="properties-row" id="gnn-bond-heatmap-row" style="display:none;">
-          <span class="properties-label">Bond heatmap</span>
-          <div class="heatmap-controls">
-            <select id="bond-heatmap-property-select"></select>
-            <label class="heatmap-text-toggle">
-              <input type="checkbox" id="bond-heatmap-show-text">
-              Show values
-            </label>
-            <button class="btn btn-ghost btn-small" id="clear-bond-heatmap-btn">Clear</button>
-          </div>
-        </div>
-        <div id="bond-heatmap-legend-container"></div>
-      </div>
-
-      <div class="properties-section">
         <h3 class="properties-section-title">CYP &amp; hERG</h3>
         <p class="side-panel-note">Cytochrome P450 inhibition/substrate liability and hERG channel inhibition &mdash; split out from the general predictions above since these are the specific properties a drug-discovery read usually wants grouped together. Populated by the same "Compute properties" run above; load the corresponding models under Medicinal chemistry if this stays empty.</p>
         <table class="descriptor-table" id="gnn-cyp-herg-table" style="display:none;">
@@ -331,26 +348,12 @@
 
       <div class="properties-section">
         <h3 class="properties-section-title">Implicit solvation (GB/SA)</h3>
-        <p class="side-panel-note">Generalized Born (HCT) electrostatics + a SASA-based nonpolar term. Needs MBIS partial charges (load &amp; run "MBIS partial charges" above) and an already-optimized 3D conformer (3D view tab). A real, from-scratch physics calculation, not a trained/fit model &mdash; see this section's info note for what's simplified.</p>
-        <label class="heatmap-text-toggle" id="solvent-enable-label">
-          <input type="checkbox" id="solvent-enable-checkbox">
-          Enable implicit solvent
-        </label>
-        <div id="solvent-controls" style="display:none;">
-          <div class="viewer3d-method-row">
-            <label for="solvent-select">Solvent</label>
-            <select id="solvent-select"></select>
-          </div>
-          <div class="viewer3d-method-row" id="solvent-custom-row" style="display:none;">
-            <label for="solvent-custom-eps">Dielectric constant (&epsilon;)</label>
-            <input type="number" id="solvent-custom-eps" min="1" step="0.1" value="78.5">
-          </div>
-          <button class="btn btn-accent btn-small" id="compute-solvent-btn">Compute solvation energy</button>
-          <p class="side-panel-note" id="solvent-status"></p>
-          <table class="descriptor-table" id="solvent-output-table" style="display:none;">
-            <tbody id="solvent-output"></tbody>
-          </table>
-        </div>
+        <p class="side-panel-note">Generalized Born (HCT) electrostatics + a SASA-based nonpolar term. Needs MBIS partial charges (load &amp; run "MBIS partial charges" above) and an already-optimized 3D conformer. Enable/select the solvent on the 3D view tab &mdash; the same checkbox and pulldown there also feed implicit solvent into the Optimize/conformer-search energy, not just this one-off calculator. A real, from-scratch physics calculation, not a trained/fit model &mdash; see this section's info note for what's simplified.</p>
+        <button class="btn btn-accent btn-small" id="compute-solvent-btn">Compute solvation energy</button>
+        <p class="side-panel-note" id="solvent-status"></p>
+        <table class="descriptor-table" id="solvent-output-table" style="display:none;">
+          <tbody id="solvent-output"></tbody>
+        </table>
       </div>
 
       <div class="properties-section">

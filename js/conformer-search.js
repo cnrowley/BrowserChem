@@ -119,11 +119,11 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
         const chargesResult = CC.OpenFF.getChargesForAtoms3D(molecule, seed.atoms3d, seed.bonds3d, opts.naglModelId);
         return { chargesResult: chargesResult };
       },
-      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts) {
+      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts, stopToken) {
         const solvent = solventOpts && solventOpts.enabled && ctx.chargesResult && ctx.chargesResult.available
           ? { enabled: true, epsSolvent: solventOpts.epsSolvent, charges: ctx.chargesResult.charges }
           : null;
-        return CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent, ctx.topology);
+        return CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent, ctx.topology, stopToken);
       },
     },
 
@@ -142,8 +142,8 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
         const chargesResult = CC.OpenFF.getChargesForAtoms3D(molecule, seed.atoms3d, seed.bonds3d, opts.naglModelId);
         return { RDKit: RDKit, chargesResult: chargesResult };
       },
-      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts) {
-        return CC.OpenFF.optimizeSeed(ctx.RDKit, atoms3d, bonds3d, ctx.chargesResult, iterations, deadline, onProgress, solventOpts);
+      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts, stopToken) {
+        return CC.OpenFF.optimizeSeed(ctx.RDKit, atoms3d, bonds3d, ctx.chargesResult, iterations, deadline, onProgress, solventOpts, stopToken);
       },
     },
 
@@ -306,17 +306,29 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
 
     const heavyAtomCount = molecule.atoms.size;
     const isAni = opts.energyModel === 'ani2x';
-    const perSeedIterations = opts.iterationsPerSeed || (isAni ? 150 : 300);
+    // ANI-2x keeps its existing per-seed time budget -- it has its own
+    // deliberate, documented "designed to be called again" resumable
+    // architecture (see ani2x-model.js/app.js's "Optimize further" button)
+    // that a real per-seed convergence run would fight rather than
+    // complement, and it's already genuinely slow (3-5 iterations/sec).
+    // classical/smirnoff instead now run each seed to REAL convergence (no
+    // deadline, just a generous safety iteration ceiling) per the "keep
+    // optimizing until it converges or the user stops it" request -- the
+    // stopToken below (checked both between seeds here and inside every
+    // minimize() iteration) is what lets a search actually be cut short.
+    const perSeedIterations = opts.iterationsPerSeed || (isAni ? 150 : 5000);
     const totalBudgetMs = opts.timeBudgetMs ||
       Math.min(180000, Math.max(15000, seeds.length * heavyAtomCount * (isAni ? 700 : 250)));
     const perSeedBudgetMs = Math.max(2500, totalBudgetMs / seeds.length);
-    const overallDeadline = performance.now() + totalBudgetMs;
+    const overallDeadline = isAni ? performance.now() + totalBudgetMs : Infinity;
+    const stopToken = opts.stopToken;
 
     const optimized = [];
     for (let i = 0; i < seeds.length; i++) {
       if (performance.now() > overallDeadline) break;
+      if (stopToken && stopToken.stopped) break;
       const seed = seeds[i];
-      const seedDeadline = Math.min(overallDeadline, performance.now() + perSeedBudgetMs);
+      const seedDeadline = isAni ? Math.min(overallDeadline, performance.now() + perSeedBudgetMs) : null;
       let result;
       try {
         result = await modelAdapter.optimizeSeed(seed.atoms3d, seed.bonds3d, aromaticSet, ctx, perSeedIterations, seedDeadline, function (info) {
@@ -325,7 +337,7 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
           // still reports a bare stage string -- accept either.
           const stage = typeof info === 'string' ? info : info.stage;
           if (opts.onProgress) opts.onProgress({ seed: i + 1, totalSeeds: seeds.length, stage: stage, phase: 'optimizing' });
-        }, opts.solvent);
+        }, opts.solvent, stopToken);
       } catch (err) {
         // One bad seed (e.g. a pathological starting geometry the
         // optimizer can't recover from) shouldn't sink the whole search

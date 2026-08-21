@@ -1550,6 +1550,7 @@
     const conformerModelSelect = document.getElementById('conformer-model-select');
     const optimizeOnlyBtn = document.getElementById('optimize-only-btn');
     const conformerSearchBtn = document.getElementById('conformer-search-btn');
+    const stopOptimizeBtn = document.getElementById('stop-optimize-btn');
     const conformerSearchNote = document.getElementById('conformer-search-note');
     const conformerListTable = document.getElementById('conformer-list-table');
     const conformerListBody = document.getElementById('conformer-list-body');
@@ -1686,7 +1687,7 @@
     // so this actually turns measure mode off rather than just clearing
     // stale text. Explicitly tells viewer3d.js too (not just this
     // panel's own toggle boolean) so the two stay in sync -- otherwise a
-    // later "Preview" click would silently come back up with
+    // later "Generate 3D" click would silently come back up with
     // atoms still clickable even though this button shows "off".
     function resetMeasureUI() {
       measureModeOn = false;
@@ -1734,6 +1735,20 @@
       }
     }
 
+    // Both "Optimize" and "Run conformer search" now run until the
+    // optimizer itself decides it's converged (no fixed time/iteration
+    // budget cutting them off early) rather than a fixed budget cutting
+    // them off early -- the user asked for "continue optimizing until it
+    // converges or the user stops it." This shared token is how the Stop
+    // button reaches into whichever one is currently running; only one of
+    // the two runs at a time (both disable each other while active).
+    let activeStopToken = null;
+    stopOptimizeBtn.addEventListener('click', function () {
+      if (activeStopToken) activeStopToken.stopped = true;
+      stopOptimizeBtn.disabled = true;
+      progressNote.textContent = 'Stopping — keeping the best structure found so far…';
+    });
+
     optimizeOnlyBtn.addEventListener('click', async function () {
       viewer3dNote.style.color = '';
       if (controller.molecule.isEmpty()) {
@@ -1742,7 +1757,7 @@
       }
       const startGeometry = currentGeometry || lastInitial;
       if (!startGeometry || !startGeometry.atoms || startGeometry.atoms.length === 0) {
-        viewer3dNote.textContent = 'Nothing to optimize yet — click "Preview" first to generate a starting structure.';
+        viewer3dNote.textContent = 'Nothing to optimize yet — click "Generate 3D" first to generate a starting structure.';
         return;
       }
 
@@ -1754,6 +1769,10 @@
       optimizeOnlyBtn.disabled = true;
       conformerSearchBtn.disabled = true;
       conformerModelSelect.disabled = true;
+      stopOptimizeBtn.style.display = '';
+      stopOptimizeBtn.disabled = false;
+      const stopToken = { stopped: false };
+      activeStopToken = stopToken;
       progressWrap.style.display = '';
       progressFill.style.width = '0%';
       progressNote.textContent = 'Preparing ' + modelLabel + '…';
@@ -1777,9 +1796,16 @@
         const aromaticSet = CC.buildInitial3D(controller.molecule).aromaticSet || new Set();
         const atoms3d = startGeometry.atoms.map(function (a) { return { element: a.element, x: a.x, y: a.y, z: a.z }; });
         const bonds3d = startGeometry.bonds;
-        const heavyAtomCount = controller.molecule.atoms.size;
-        const timeBudgetMs = Math.min(25000, Math.max(5000, heavyAtomCount * 900));
-        const deadline = performance.now() + timeBudgetMs;
+        // No deadline and a generous iteration ceiling -- "Optimize" now
+        // runs until the optimizer itself reports a real convergence exit
+        // (gradient-converged / energy-plateau / step-too-small; see
+        // embed3d.js's minimize()) rather than being cut off by a fixed
+        // time budget partway through. The iteration cap below is just a
+        // safety ceiling against a pathological non-converging case, not
+        // an expected stopping point -- the Stop button (stopToken) is the
+        // real way the user ends a run early.
+        const deadline = null;
+        const iterations = 20000;
         // info is {stage, iteration?, gradNorm?} -- see embed3d.js's
         // minimizeStaged/openff-forcefield.js's minimizeStagedSMIRNOFF.
         // iteration/gradNorm are only present on the throttled
@@ -1805,12 +1831,12 @@
           if (!RDKit) throw new Error('RDKit not available yet');
           CC.OpenFF.compileAll(RDKit);
           const chargesResult = CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId);
-          result = await CC.OpenFF.optimizeSeed(RDKit, atoms3d, bonds3d, chargesResult, 400, deadline, onProgress, solvent);
+          result = await CC.OpenFF.optimizeSeed(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solvent, stopToken);
         } else {
           const naglSolvent = solvent.enabled && naglModelId
             ? Object.assign({}, solvent, { charges: CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId).charges })
             : null;
-          result = await CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, 400, deadline, onProgress, naglSolvent);
+          result = await CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, naglSolvent, undefined, stopToken);
         }
 
         progressFill.style.width = '100%';
@@ -1819,8 +1845,9 @@
         currentGeometryOptimized = true;
         currentGeometryConverged = result.converged;
         const solventNote = solvent.enabled ? (naglModelId ? ' (implicit solvent included)' : ' (no NAGL-MBIS charges loaded — solvation omitted)') : '';
+        const notConvergedReason = result.exitReason === 'user-stopped' ? 'stopped before fully converging' : 'did not fully converge (hit the safety iteration ceiling)';
         viewer3dNote.style.color = result.converged ? '' : 'var(--danger)';
-        viewer3dNote.textContent = modelLabel + ' optimization ' + (result.converged ? 'converged' : 'did not fully converge (ran out of time/iterations)') +
+        viewer3dNote.textContent = modelLabel + ' optimization ' + (result.converged ? 'converged' : notConvergedReason) +
           solventNote + '. Energy ' + result.energy.toFixed(2) + '.';
         CC.Logger[result.converged ? 'success' : 'warning']('Optimize (' + modelLabel + '): ' + (result.converged ? 'converged' : 'did not converge') + ', energy ' + result.energy.toFixed(2));
 
@@ -1848,6 +1875,8 @@
         optimizeOnlyBtn.disabled = false;
         conformerSearchBtn.disabled = false;
         conformerModelSelect.disabled = false;
+        stopOptimizeBtn.style.display = 'none';
+        activeStopToken = null;
         progressWrap.style.display = 'none';
         updateButtonState();
       }
@@ -1921,7 +1950,7 @@
           const modelId = CC.GeoMol.getLoadedModelIds()[0];
           const result = CC.GeoMol.generateConformer(controller.molecule, modelId);
           renderResult(result);
-          viewer3dNote.textContent = result.atoms.length + ' atoms (incl. implicit H), generated with GeoMol \u2014 a single learned prediction, not an energy-minimized structure. Run a conformer search below to relax/rank real conformers, or click "Preview" again for a different sampled conformer.';
+          viewer3dNote.textContent = result.atoms.length + ' atoms (incl. implicit H), generated with GeoMol \u2014 a single learned prediction, not an energy-minimized structure. Run a conformer search below to relax/rank real conformers, or click "Generate 3D" again for a different sampled conformer.';
           CC.Logger.success('Quick preview: generated 3D structure with GeoMol (' + result.atoms.length + ' atoms incl. implicit H)');
         } catch (err) {
           viewer3dNote.textContent = 'GeoMol prediction failed: ' + err.message + '. Showing the classical seed instead.';
@@ -1955,7 +1984,7 @@
       currentGeometryOptimized = false;
       currentGeometryConverged = false;
       if (viewer3d) CC.render3D(viewer3d, { atoms: [], bonds: [] });
-      viewer3dNote.textContent = 'Structure has changed \u2014 click "Preview" or run a conformer search to update.';
+      viewer3dNote.textContent = 'Structure has changed \u2014 click "Generate 3D" or run a conformer search to update.';
       conformerSearchNote.textContent = '';
       resetConformerList();
       resetMeasureUI();
@@ -1989,8 +2018,13 @@
       const shortEnergyUnit = model === 'classical' ? 'arb. units' : 'kcal/mol';
 
       generate3dBtn.disabled = true;
+      optimizeOnlyBtn.disabled = true;
       conformerSearchBtn.disabled = true;
       conformerModelSelect.disabled = true;
+      stopOptimizeBtn.style.display = '';
+      stopOptimizeBtn.disabled = false;
+      const stopToken = { stopped: false };
+      activeStopToken = stopToken;
       progressWrap.style.display = '';
       progressFill.style.width = '0%';
       progressNote.textContent = 'Preparing ' + modelLabelForLog + '\u2026';
@@ -2002,6 +2036,7 @@
         const opts = {
           energyModel: model,
           solvent: solvent,
+          stopToken: stopToken,
           onProgress: function (info) {
             const pct = Math.round(((info.seed - 1) / info.totalSeeds) * 100);
             progressFill.style.width = pct + '%';
@@ -2047,9 +2082,10 @@
               [model === 'smirnoff' ? 'electrostatics' : null, solvent.enabled ? 'solvation' : null].filter(Boolean).join(' & ') +
               ' omitted)'
             : (solvent.enabled ? ' (implicit solvent included)' : '');
+          const stoppedNote = stopToken.stopped ? ' (stopped early by user — fewer seeds than usual)' : '';
           conformerSearchNote.textContent = result.modelLabel + ': ' + result.seedsGenerated + ' seed(s) generated, ' +
             result.seedsOptimized + ' optimized, ' + result.conformersWithinWindow + ' within the 6-' + shortEnergyUnit + ' energy window, ' +
-            result.conformers.length + ' distinct conformer(s) kept' + chargeNote + '. Energies in ' + result.energyUnit + '.';
+            result.conformers.length + ' distinct conformer(s) kept' + chargeNote + stoppedNote + '. Energies in ' + result.energyUnit + '.';
           CC.Logger.success('Conformer search (' + result.modelLabel + '): ' + result.conformers.length +
             ' conformer(s), best ' + result.conformers[0].energy.toFixed(2) + ' ' + result.energyUnit);
         }
@@ -2059,8 +2095,11 @@
         CC.Logger.error('Conformer search failed: ' + err.message);
       } finally {
         generate3dBtn.disabled = false;
+        optimizeOnlyBtn.disabled = false;
         conformerSearchBtn.disabled = false;
         conformerModelSelect.disabled = false;
+        stopOptimizeBtn.style.display = 'none';
+        activeStopToken = null;
         progressWrap.style.display = 'none';
         updateButtonState();
       }

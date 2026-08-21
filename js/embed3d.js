@@ -502,6 +502,31 @@ window.CC = window.CC || {};
   // way to r=0 while still bounding the curvature the true r^-12 term would
   // otherwise have right at r=0 (which is what the floor was added to
   // avoid in the first place).
+  // The distance below which ljShape's softened quadratic takes over --
+  // exposed so a Coulomb term evaluated on the SAME pair (openff-
+  // forcefield.js's electrostatics) can share this exact floor rather
+  // than using its own independent, smaller distance floor. Load-bearing,
+  // not cosmetic: ljShape's softened repulsive FORCE (its derivative) is
+  // bounded as r->0 (dr = r-rFloor is itself bounded, since r can't go
+  // negative), while a bare Coulomb term's attractive force grows like
+  // 1/r^2, unbounded -- so for ANY finite vdW epsilon, sufficiently
+  // strong opposite-sign point charges will eventually out-pull the
+  // capped LJ repulsion at small enough r if Coulomb is allowed to keep
+  // shrinking r past where LJ already gave up resisting. Reproduced
+  // directly: an aspirin SMIRNOFF L-BFGS run collapsed a non-bonded
+  // O...H pair (bond-graph distance 5, genuinely unrelated atoms) to
+  // r=0.0009 Angstrom and an energy of -76000+ kcal/mol -- that pair's
+  // real Sage vdW epsilon for H-on-O is ~1.2e-5 kcal/mol (genuinely tiny,
+  // a real Sage 2.1.0 parameter, not a bug in the data), so its capped
+  // repulsive force saturates at a value Coulomb's unbounded 1/r^2 force
+  // can eventually beat. Tying Coulomb's own floor to this same rFloor
+  // keeps the two terms consistent -- electrostatics can never pull a
+  // pair closer than where sterics already started resisting as hard as
+  // it structurally can.
+  function ljFloorRadius(rm) {
+    return LJ_FLOOR_FRAC * rm;
+  }
+
   function ljShape(r, rm) {
     const rFloor = LJ_FLOOR_FRAC * rm;
     if (r >= rFloor) {
@@ -512,6 +537,23 @@ window.CC = window.CC || {};
     const slope = LJ_FLOOR_SLOPE_COEF / rFloor;
     const curv = LJ_FLOOR_CURV_COEF / (rFloor * rFloor);
     return LJ_FLOOR_F0 + slope * dr + 0.5 * curv * dr * dr;
+  }
+
+  // d(ljShape)/dr -- exposed via CC.Embed3DShared so openff-forcefield.js's
+  // analytical SMIRNOFF gradient can differentiate the EXACT same shape
+  // computeEnergySMIRNOFF's vdW term calls (shared.ljShape) rather than
+  // re-deriving/duplicating the floor constants (LJ_FLOOR_FRAC etc.) a
+  // second time, which is exactly how a subtle mismatch would sneak in.
+  function ljShapeDerivative(r, rm) {
+    const rFloor = LJ_FLOOR_FRAC * rm;
+    if (r >= rFloor) {
+      const sr6 = Math.pow(rm / r, 6);
+      return 12 * sr6 * (1 - sr6) / r;
+    }
+    const dr = r - rFloor;
+    const slope = LJ_FLOOR_SLOPE_COEF / rFloor;
+    const curv = LJ_FLOOR_CURV_COEF / (rFloor * rFloor);
+    return slope + curv * dr;
   }
 
   // GB/SA implicit solvation (see implicit-solvent.js) added on top of
@@ -615,6 +657,83 @@ window.CC = window.CC || {};
     return positions;
   }
 
+  function dot(a, b) {
+    let s = 0;
+    for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+    return s;
+  }
+
+  // Same default ASE's BFGS/LBFGS optimizers use for their `maxstep`
+  // parameter -- the largest distance any single atom is allowed to move
+  // in one accepted step, Angstroms. Confirmed load-bearing here, not
+  // copied defensively: without this cap, an L-BFGS step of length 1.0
+  // (the standard initial guess once curvature history exists) could
+  // shove two atoms into near-contact where the LJ 12-6 repulsion term's
+  // curvature is nearly singular, and the resulting huge/wrong-shaped
+  // gradient would corrupt the curvature history for every iteration
+  // after -- reproduced directly on aspirin/SMIRNOFF: gradient norm
+  // converging cleanly to ~0.03 for ~80 reported samples, then exploding
+  // to 63577 within 3 more once an ordinary-looking L-BFGS step crossed
+  // into that regime.
+  const MAX_STEP_ANGSTROM = 0.2;
+
+  // See its use at the bottom of minimize() -- gates whether an
+  // 'energy-plateau'/'step-too-small' exit counts as real convergence.
+  const SETTLED_RMS_GATE = 0.5;
+
+  function maxAtomDisplacement(direction) {
+    let maxSq = 0;
+    for (let i = 0; i < direction.length; i += 3) {
+      const dx = direction[i], dy = direction[i + 1], dz = direction[i + 2];
+      const sq = dx * dx + dy * dy + dz * dz;
+      if (sq > maxSq) maxSq = sq;
+    }
+    return Math.sqrt(maxSq);
+  }
+
+  // How many (s, y) curvature pairs the L-BFGS history keeps -- 10 is the
+  // standard default (scipy's L-BFGS-B, most textbook presentations); more
+  // pairs make the inverse-Hessian approximation better at the cost of
+  // O(m*n) work per direction, fewer make each step cheaper but closer to
+  // plain steepest descent.
+  const LBFGS_HISTORY = 10;
+
+  // Standard limited-memory BFGS two-loop recursion (Nocedal & Wright,
+  // "Numerical Optimization", Algorithm 7.4 -- also the shape ASE's own
+  // BFGS/LBFGS optimizers follow, modulo ASE's full dense-Hessian variant
+  // using an eigendecomposition instead: not used here since that's
+  // O(n^3) per step and this runs in plain JS with no linear-algebra
+  // library, whereas this two-loop recursion is O(m*n) and needs only
+  // dot products). Returns an approximation to H_k * grad (H_k = the
+  // limited-memory inverse-Hessian approximation) -- NOT yet negated into
+  // a descent direction; the caller does that. sHistory/yHistory/
+  // rhoHistory are parallel arrays, oldest-first, already capped to
+  // LBFGS_HISTORY pairs by the caller.
+  function lbfgsDirection(grad, sHistory, yHistory, rhoHistory) {
+    const m = sHistory.length;
+    const q = grad.slice();
+    const alpha = new Array(m);
+    for (let i = m - 1; i >= 0; i--) {
+      alpha[i] = rhoHistory[i] * dot(sHistory[i], q);
+      for (let j = 0; j < q.length; j++) q[j] -= alpha[i] * yHistory[i][j];
+    }
+    // Initial Hessian scaling (Nocedal & Wright eq. 7.20): scales the
+    // identity Hessian guess by the most recent curvature pair so the
+    // very first post-history step isn't wildly over/under-sized.
+    let gamma = 1;
+    if (m > 0) {
+      const yLast = yHistory[m - 1];
+      const yy = dot(yLast, yLast);
+      if (yy > 1e-12) gamma = dot(sHistory[m - 1], yLast) / yy;
+    }
+    for (let j = 0; j < q.length; j++) q[j] *= gamma;
+    for (let i = 0; i < m; i++) {
+      const beta = rhoHistory[i] * dot(yHistory[i], q);
+      for (let j = 0; j < q.length; j++) q[j] += (alpha[i] - beta) * sHistory[i][j];
+    }
+    return q;
+  }
+
   function numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent) {
     const grad = new Float64Array(flat.length);
     for (let i = 0; i < flat.length; i++) {
@@ -632,16 +751,37 @@ window.CC = window.CC || {};
     return grad;
   }
 
-  async function minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, stage, startFlat, onProgress, solvent) {
+  // L-BFGS with Armijo backtracking line search (replaces a previous
+  // plain-steepest-descent-with-step-halving scheme). The motivation:
+  // numericGradient's finite-difference gradient (2*3*numAtoms energy
+  // evaluations) is by far the most expensive thing this loop does per
+  // iteration, and steepest descent needs far more iterations -- hence
+  // far more gradient evaluations -- than a quasi-Newton method to reach
+  // the same convergence on a landscape this stiff/multi-scale (bond
+  // stretches, angle bends, torsions, and LJ all have very different
+  // curvature). L-BFGS (limited-memory, not ASE's dense-Hessian-plus-
+  // eigendecomposition BFGS -- there's no linear-algebra library here and
+  // an O(n^3) eigendecomposition every iteration would be worse than what
+  // it replaces) gets most of full BFGS's better-conditioned search
+  // directions from just a handful of retained (position-change,
+  // gradient-change) pairs and O(m*n) work per step.
+  async function minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, stage, startFlat, onProgress, solvent, stopToken) {
     let flat = startFlat || flatten(atoms3d);
     let energy = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
-    let step = 0.02;
-    let lastGradNorm = Infinity;
+    let grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
+    let gradNorm = Math.sqrt(dot(grad, grad));
+    let lastGradNorm = gradNorm;
     // What actually stopped the loop -- the honest signal for whether
     // this settled on its own or got cut off while still improving.
-    // 'gradient-converged' / 'energy-plateau' mean the optimizer decided
-    // it was done; 'iteration-limit' / 'deadline' / 'step-too-small'
-    // mean it was interrupted. A raw final gradient norm doesn't
+    // 'gradient-converged' / 'energy-plateau' / 'step-too-small' mean the
+    // optimizer actually reached a local minimum (step-too-small means
+    // backtracking couldn't find ANY improving step at any size it tried,
+    // which for this line-search is a real convergence signal, not just
+    // "gave up" -- it used to be lumped in with 'iteration-limit'/
+    // 'deadline' as "not settled," which was wrong and made ordinarily
+    // converged structures get reported as "did not fully converge").
+    // 'iteration-limit' / 'deadline' / 'user-stopped' mean it was cut off
+    // while still (possibly) improving. A raw final gradient norm doesn't
     // generalize well across molecules of different size/complexity
     // (measured directly: ethanol's gradient norm at a clearly
     // well-converged structure was ~0.03, nowhere near a naive 1e-3
@@ -649,9 +789,18 @@ window.CC = window.CC || {};
     let exitReason = 'iteration-limit';
     let iterationsRun = 0;
 
+    // (s, y, rho) curvature-pair history for the two-loop recursion above
+    // -- reset fresh on every call (each minimize() call is its own stage
+    // with its own energy function; carrying history across a stage
+    // boundary, where the energy landscape itself changes as torsion/LJ
+    // terms switch on, would feed the approximation stale/wrong
+    // curvature).
+    const sHistory = [], yHistory = [], rhoHistory = [];
+
     for (let iter = 0; iter < iterations; iter++) {
       iterationsRun = iter + 1;
       if (deadline && performance.now() > deadline) { exitReason = 'deadline'; break; }
+      if (stopToken && stopToken.stopped) { exitReason = 'user-stopped'; break; }
 
       // Yield every ~15 iterations so the browser can repaint (a progress
       // bar, a "still working" indicator) instead of freezing the tab for
@@ -661,10 +810,6 @@ window.CC = window.CC || {};
       // several seconds to tens of seconds on bigger molecules.
       const shouldReport = iter > 0 && iter % 15 === 0;
       if (shouldReport) await yieldToUI();
-
-      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
-      const gradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
-      lastGradNorm = gradNorm;
       // Reported alongside the yield (same throttle, ~every 15 iters) so
       // a caller can plot a live gradient-norm-vs-iteration convergence
       // chart (see convergence-chart.js) instead of only ever seeing the
@@ -672,35 +817,95 @@ window.CC = window.CC || {};
       if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm });
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
-      const trial = new Float64Array(flat.length);
-      for (let i = 0; i < flat.length; i++) trial[i] = flat[i] - step * grad[i];
-
-      const trialEnergy = computeEnergy(unflatten(trial), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
-
-      if (trialEnergy < energy) {
-        flat = trial;
-        const improvement = energy - trialEnergy;
-        energy = trialEnergy;
-        step *= 1.2;
-        if (improvement < 1e-7) { exitReason = 'energy-plateau'; break; }
-      } else {
-        step *= 0.5;
-        if (step < 1e-7) { exitReason = 'step-too-small'; break; }
+      const direction = lbfgsDirection(grad, sHistory, yHistory, rhoHistory);
+      for (let i = 0; i < direction.length; i++) direction[i] = -direction[i];
+      let dirDotGrad = dot(direction, grad);
+      if (!(dirDotGrad < 0)) {
+        // Not a descent direction -- can happen right after a curvature-
+        // condition-failed (skipped) history update, or from numerical
+        // noise in a very flat region. Fall back to plain steepest
+        // descent for this one step rather than risk climbing uphill.
+        for (let i = 0; i < direction.length; i++) direction[i] = -grad[i];
+        dirDotGrad = -gradNorm * gradNorm;
       }
+
+      // Backtracking line search satisfying the Armijo (sufficient-
+      // decrease) condition. Step 1.0 is the standard initial guess once
+      // real curvature history exists -- the two-loop recursion already
+      // scales the direction appropriately, unlike plain steepest
+      // descent's raw gradient direction, which is why THAT needed the
+      // old code's separate adaptive step variable at all. Before any
+      // history exists (iteration 0 of this call), fall back to a
+      // gradient-scaled step instead of trying step=1 on a raw -grad
+      // direction, which is not reliably well-scaled.
+      const c1 = 1e-4;
+      let stepLen = sHistory.length > 0 ? 1.0 : Math.min(1.0, 1.0 / (gradNorm || 1));
+      // Cap the STARTING step so no atom moves more than MAX_STEP_ANGSTROM
+      // before backtracking even begins -- see MAX_STEP_ANGSTROM's comment
+      // for why this is load-bearing, not defensive. Preserves the
+      // direction (scales the whole vector), matching ASE's own
+      // determine_step().
+      const dispAtUnitStep = maxAtomDisplacement(direction);
+      if (dispAtUnitStep * stepLen > MAX_STEP_ANGSTROM) stepLen = MAX_STEP_ANGSTROM / dispAtUnitStep;
+      let trial = null, trialEnergy = energy, accepted = false;
+      for (let ls = 0; ls < 30; ls++) {
+        trial = new Float64Array(flat.length);
+        for (let i = 0; i < flat.length; i++) trial[i] = flat[i] + stepLen * direction[i];
+        trialEnergy = computeEnergy(unflatten(trial), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
+        if (trialEnergy <= energy + c1 * stepLen * dirDotGrad) { accepted = true; break; }
+        stepLen *= 0.5;
+        if (stepLen < 1e-10) break;
+      }
+      if (!accepted) { exitReason = 'step-too-small'; break; }
+
+      const improvement = energy - trialEnergy;
+      const newGrad = numericGradient(trial, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
+
+      const s = new Float64Array(flat.length);
+      const y = new Float64Array(flat.length);
+      for (let i = 0; i < flat.length; i++) { s[i] = trial[i] - flat[i]; y[i] = newGrad[i] - grad[i]; }
+      const sy = dot(s, y);
+      // Curvature condition (s.y > 0) is what keeps the inverse-Hessian
+      // approximation positive definite -- plain Armijo backtracking
+      // (no Wolfe curvature check) can occasionally violate it, so just
+      // skip adding that pair rather than corrupt the history (a
+      // standard, safe fallback for exactly this situation).
+      if (sy > 1e-10) {
+        sHistory.push(s); yHistory.push(y); rhoHistory.push(1 / sy);
+        if (sHistory.length > LBFGS_HISTORY) { sHistory.shift(); yHistory.shift(); rhoHistory.shift(); }
+      }
+
+      flat = trial;
+      energy = trialEnergy;
+      grad = newGrad;
+      gradNorm = Math.sqrt(dot(grad, grad));
+      lastGradNorm = gradNorm;
+
+      if (improvement < 1e-7) { exitReason = 'energy-plateau'; break; }
     }
 
-    // If the loop above never actually ran (deadline already passed on
-    // entry, or iterations=0), report a real gradient norm rather than
-    // the Infinity placeholder -- one extra evaluation is cheap.
-    if (!isFinite(lastGradNorm)) {
-      const grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
-      lastGradNorm = Math.sqrt(grad.reduce(function (s, g) { return s + g * g; }, 0));
-    }
+    // 'energy-plateau'/'step-too-small' are only trustworthy as REAL
+    // convergence when the gradient backing them is also plausibly small
+    // -- otherwise they can be a symptom of a locally noisy/ill-behaved
+    // energy surface (a non-smooth term, or numerical-precision limits)
+    // rather than an actual local minimum, and reporting those as
+    // "converged" is actively misleading rather than just imprecise.
+    // RMS (per-DOF) rather than the raw L2 norm so this doesn't get
+    // stricter just because a molecule has more atoms -- reproduced
+    // directly: a genuinely well-converged classical structure has RMS
+    // gradient ~0.001-0.01, while a real observed bad case (GB/SA's
+    // known non-smooth HCT branches -- see implicit-solvent.js's header)
+    // still exited 'step-too-small' at RMS ~3-6, orders of magnitude
+    // higher. SETTLED_RMS_GATE leaves generous headroom above the good
+    // case while solidly excluding the bad one.
+    const rmsGradNorm = lastGradNorm / Math.sqrt(Math.max(flat.length, 1));
+    const settled = exitReason === 'gradient-converged' ||
+      ((exitReason === 'energy-plateau' || exitReason === 'step-too-small') && rmsGradNorm < SETTLED_RMS_GATE);
 
     return {
       positions: unflatten(flat), energy: energy, flat: flat, gradNorm: lastGradNorm,
       exitReason: exitReason, iterationsRun: iterationsRun,
-      settled: exitReason === 'gradient-converged' || exitReason === 'energy-plateau',
+      settled: settled,
     };
   }
 
@@ -713,7 +918,7 @@ window.CC = window.CC || {};
    * conditioned landscape; relaxing the cheap/well-behaved terms first
    * gives the expensive/stiff ones a much saner structure to start from.
    */
-  async function minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, totalIterations, deadline, onProgress, solvent) {
+  async function minimizeStaged(atoms3d, bonds3d, angles, torsions, impropers, pairs, totalIterations, deadline, onProgress, solvent, stopToken) {
     const stage1Iters = Math.round(totalIterations * 0.25);
     const stage2Iters = Math.round(totalIterations * 0.15);
     const rampSteps = 6;
@@ -749,29 +954,34 @@ window.CC = window.CC || {};
 
     // Stage 1: bonds + angles only.
     report('bonds & angles');
-    let result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage1Iters, deadline, { torsion: false, lj: 0 }, undefined, function (info) { report('bonds & angles', info); });
+    let result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage1Iters, deadline, { torsion: false, lj: 0 }, undefined, function (info) { report('bonds & angles', info); }, undefined, stopToken);
     cumulativeIter += result.iterationsRun;
 
     // Stage 2: bring in torsions (bounded gradients, well-behaved).
-    report('torsions & ring planarity');
-    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage2Iters, deadline, { torsion: true, lj: 0 }, result.flat, function (info) { report('torsions & ring planarity', info); });
-    cumulativeIter += result.iterationsRun;
+    if (!(stopToken && stopToken.stopped)) {
+      report('torsions & ring planarity');
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, stage2Iters, deadline, { torsion: true, lj: 0 }, result.flat, function (info) { report('torsions & ring planarity', info); }, undefined, stopToken);
+      cumulativeIter += result.iterationsRun;
+    }
 
     // Stage 3: ramp LJ (and, if enabled, GB/SA solvation -- see
     // solvationEnergy) in gradually rather than switching either on at
     // full strength in one step.
     for (let r = 1; r <= rampSteps; r++) {
       if (deadline && performance.now() > deadline) break;
+      if (stopToken && stopToken.stopped) break;
       report('steric relaxation');
       const ljStrength = r / rampSteps;
-      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function (info) { report('steric relaxation', info); }, solvent);
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function (info) { report('steric relaxation', info); }, solvent, stopToken);
       cumulativeIter += result.iterationsRun;
     }
 
     // Stage 4: full-strength final polish with whatever time remains.
-    report('final polish');
-    result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function (info) { report('final polish', info); }, solvent);
-    cumulativeIter += result.iterationsRun;
+    if (!(stopToken && stopToken.stopped)) {
+      report('final polish');
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function (info) { report('final polish', info); }, solvent, stopToken);
+      cumulativeIter += result.iterationsRun;
+    }
 
     // Only the *final* stage's outcome speaks to real convergence --
     // earlier stages are expected to hand off to the next one, not fully
@@ -1074,9 +1284,9 @@ window.CC = window.CC || {};
   // caller running many seeds of the same molecule already has one
   // (see js/conformer-search.js), passing it here skips rebuilding the
   // identical angles/torsions/impropers/pairs graph for every seed.
-  async function optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent, topology) {
+  async function optimizeGivenSeed(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, solvent, topology, stopToken) {
     const topo = topology || buildTopology(atoms3d, bonds3d, aromaticSet);
-    const result = await minimizeStaged(atoms3d, bonds3d, topo.angles, topo.torsions, topo.impropers, topo.pairs, iterations, deadline, onProgress, solvent);
+    const result = await minimizeStaged(atoms3d, bonds3d, topo.angles, topo.torsions, topo.impropers, topo.pairs, iterations, deadline, onProgress, solvent, stopToken);
     return {
       energy: result.energy,
       converged: result.converged,
@@ -1173,5 +1383,13 @@ window.CC = window.CC || {};
     optimizeSeedClassical: optimizeGivenSeed,
     buildTopology: buildTopology,
     sideAtoms: sideAtoms,
+    dot: dot,
+    lbfgsDirection: lbfgsDirection,
+    lbfgsHistorySize: LBFGS_HISTORY,
+    maxAtomDisplacement: maxAtomDisplacement,
+    lbfgsMaxStepAngstrom: MAX_STEP_ANGSTROM,
+    ljShapeDerivative: ljShapeDerivative,
+    ljFloorRadius: ljFloorRadius,
+    settledRmsGate: SETTLED_RMS_GATE,
   };
 })();
