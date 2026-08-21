@@ -27,11 +27,21 @@
  * or force-field method exists anywhere in its API, confirmed against
  * the actual @rdkit/rdkit package, not assumed).
  *
- * The whole thing uses numeric (finite-difference) gradients rather than
- * hand-derived analytic ones -- more compute per step, much easier to
- * keep correct across four different energy terms, and still fast enough
- * for editor-sized (including drug-sized) molecules given the time-budget
- * approach below.
+ * Bonds/angles/torsions/LJ use a hand-derived analytic gradient
+ * (analyticGradient below, mirroring openff-forcefield.js's own analytic
+ * SMIRNOFF gradient term-for-term); only the improper out-of-plane term
+ * and GB/SA implicit solvation still use small, targeted finite
+ * differences (numericResidualGradient), for the same reason
+ * openff-forcefield.js leaves solvation numerical there. This used to be
+ * finite differences for everything -- real, measured problem: on a
+ * larger flexible molecule (e.g. terfenadine, 76 atoms) the optimizer
+ * would report "did not converge" or take many seconds per iteration,
+ * root-caused to numericGradient's OLD unflatten(flat) call inside its
+ * own 6*numAtoms-evaluation perturbation loop -- reallocating a fresh
+ * array of numAtoms {x,y,z} objects to change ONE coordinate, i.e.
+ * O(numAtoms^2) allocations per single gradient evaluation, on top of
+ * numAtoms full from-scratch energy evaluations. The analytic gradient
+ * below is real O(numAtoms) work instead.
  */
 
 window.CC = window.CC || {};
@@ -734,20 +744,229 @@ window.CC = window.CC || {};
     return q;
   }
 
-  function numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent) {
-    const grad = new Float64Array(flat.length);
-    for (let i = 0; i < flat.length; i++) {
-      const original = flat[i];
+  // Same standard atan2-dihedral-angle derivative this project already
+  // validated once (see openff-forcefield.js's own dihedralGradient,
+  // which this is a verbatim copy of): differentiates dihedralAngle()
+  // above, which uses the identical atan2(y,x) formula (openff-
+  // forcefield.js's shared.dihedralAngle IS this file's dihedralAngle,
+  // via CC.Embed3DShared) -- so the same derivation applies unchanged.
+  // Copied rather than re-derived on purpose: an earlier version of this
+  // exact math (in openff-forcefield.js) had a real sign/combination bug
+  // that only surfaced when checked component-by-component against a
+  // finite-difference reference on a real molecule -- not something worth
+  // risking a second, independent derivation of.
+  function dihedralGradient(p1, p2, p3, p4) {
+    const b1x = p2.x - p1.x, b1y = p2.y - p1.y, b1z = p2.z - p1.z;
+    const b2x = p3.x - p2.x, b2y = p3.y - p2.y, b2z = p3.z - p2.z;
+    const b3x = p4.x - p3.x, b3y = p4.y - p3.y, b3z = p4.z - p3.z;
 
-      flat[i] = original + GRAD_H;
-      const ePlus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
+    const n1x = b1y * b2z - b1z * b2y, n1y = b1z * b2x - b1x * b2z, n1z = b1x * b2y - b1y * b2x;
+    const n2x = b2y * b3z - b2z * b3y, n2y = b2z * b3x - b2x * b3z, n2z = b2x * b3y - b2y * b3x;
 
-      flat[i] = original - GRAD_H;
-      const eMinus = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
+    const n1sq = Math.max(n1x * n1x + n1y * n1y + n1z * n1z, 1e-12);
+    const n2sq = Math.max(n2x * n2x + n2y * n2y + n2z * n2z, 1e-12);
+    const b2len = Math.sqrt(b2x * b2x + b2y * b2y + b2z * b2z) || 1e-9;
 
-      flat[i] = original;
-      grad[i] = (ePlus - eMinus) / (2 * GRAD_H);
+    const k1 = b2len / n1sq, k2 = -b2len / n2sq;
+    const dp1x = k1 * n1x, dp1y = k1 * n1y, dp1z = k1 * n1z;
+    const dp4x = k2 * n2x, dp4y = k2 * n2y, dp4z = k2 * n2z;
+
+    const b2sq = b2len * b2len;
+    const c1 = (b1x * b2x + b1y * b2y + b1z * b2z) / b2sq;
+    const c2 = (b3x * b2x + b3y * b2y + b3z * b2z) / b2sq;
+
+    const dp2x = -dp1x - c1 * dp1x + c2 * dp4x;
+    const dp2y = -dp1y - c1 * dp1y + c2 * dp4y;
+    const dp2z = -dp1z - c1 * dp1z + c2 * dp4z;
+    const dp3x = c1 * dp1x - c2 * dp4x - dp4x;
+    const dp3y = c1 * dp1y - c2 * dp4y - dp4y;
+    const dp3z = c1 * dp1z - c2 * dp4z - dp4z;
+
+    return [
+      { x: dp1x, y: dp1y, z: dp1z },
+      { x: dp2x, y: dp2y, z: dp2z },
+      { x: dp3x, y: dp3y, z: dp3z },
+      { x: dp4x, y: dp4y, z: dp4z },
+    ];
+  }
+
+  // Analytical gradient of the bond/angle/torsion/LJ terms -- everything
+  // computeEnergy computes EXCEPT the improper out-of-plane term and
+  // solvation (see numericResidualGradient below for those two). Mirrors
+  // openff-forcefield.js's analyticVacuumGradientSMIRNOFF term-for-term
+  // (same functional forms: harmonic bond/angle, periodic torsion, LJ via
+  // the same ljShape/ljShapeDerivative pair already shared for SMIRNOFF's
+  // own use) -- replaces numericGradient's full finite-difference sweep
+  // (6*numAtoms energy evaluations, each re-allocating and recomputing
+  // EVERY term from scratch) with real O(numAtoms) work, the actual fix
+  // for the "optimizer gets stuck / gives up" complaint: numericGradient's
+  // unflatten(flat) inside its own perturbation loop allocated a fresh
+  // array of numAtoms {x,y,z} objects on every one of those 6*numAtoms
+  // calls -- O(numAtoms^2) allocations per single gradient evaluation.
+  function analyticGradient(positions, atoms3d, bonds3d, angles, torsions, pairs, stage) {
+    const n = positions.length;
+    const grad = new Float64Array(n * 3);
+    function accum(idx, x, y, z) {
+      grad[3 * idx] += x; grad[3 * idx + 1] += y; grad[3 * idx + 2] += z;
     }
+    function accum4(indices, vecs, scale) {
+      for (let a = 0; a < 4; a++) accum(indices[a], scale * vecs[a].x, scale * vecs[a].y, scale * vecs[a].z);
+    }
+
+    for (let i = 0; i < bonds3d.length; i++) {
+      const b = bonds3d[i];
+      const pi = positions[b.a1], pj = positions[b.a2];
+      const dx = pj.x - pi.x, dy = pj.y - pi.y, dz = pj.z - pi.z;
+      const r = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+      const r0 = CC.idealBondLength(atoms3d[b.a1].element, atoms3d[b.a2].element, b.order);
+      const dEdr = K_BOND * (r - r0);
+      const ux = dx / r, uy = dy / r, uz = dz / r;
+      accum(b.a1, -dEdr * ux, -dEdr * uy, -dEdr * uz);
+      accum(b.a2, dEdr * ux, dEdr * uy, dEdr * uz);
+    }
+
+    // Same dtheta/dc derivation as openff-forcefield.js's angle loop.
+    const SIN_FLOOR = 1e-6;
+    for (let i = 0; i < angles.length; i++) {
+      const a = angles[i];
+      const pi = positions[a.i], pj = positions[a.j], pk = positions[a.k];
+      const rijx = pi.x - pj.x, rijy = pi.y - pj.y, rijz = pi.z - pj.z;
+      const rkjx = pk.x - pj.x, rkjy = pk.y - pj.y, rkjz = pk.z - pj.z;
+      const rijLen = Math.sqrt(rijx * rijx + rijy * rijy + rijz * rijz) || 1e-9;
+      const rkjLen = Math.sqrt(rkjx * rkjx + rkjy * rkjy + rkjz * rkjz) || 1e-9;
+      let c = (rijx * rkjx + rijy * rkjy + rijz * rkjz) / (rijLen * rkjLen);
+      c = Math.max(-1, Math.min(1, c));
+      const theta = Math.acos(c);
+      const sinT = Math.max(Math.sqrt(1 - c * c), SIN_FLOOR);
+      const dThetadC = -1 / sinT;
+
+      const invRS = 1 / (rijLen * rkjLen);
+      const dCdI_x = rkjx * invRS - c * rijx / (rijLen * rijLen);
+      const dCdI_y = rkjy * invRS - c * rijy / (rijLen * rijLen);
+      const dCdI_z = rkjz * invRS - c * rijz / (rijLen * rijLen);
+      const dCdK_x = rijx * invRS - c * rkjx / (rkjLen * rkjLen);
+      const dCdK_y = rijy * invRS - c * rkjy / (rkjLen * rkjLen);
+      const dCdK_z = rijz * invRS - c * rkjz / (rkjLen * rkjLen);
+
+      const dEdTheta = K_ANGLE * (theta - a.theta0) * dThetadC;
+      const dIx = dEdTheta * dCdI_x, dIy = dEdTheta * dCdI_y, dIz = dEdTheta * dCdI_z;
+      const dKx = dEdTheta * dCdK_x, dKy = dEdTheta * dCdK_y, dKz = dEdTheta * dCdK_z;
+      accum(a.i, dIx, dIy, dIz);
+      accum(a.k, dKx, dKy, dKz);
+      accum(a.j, -(dIx + dKx), -(dIy + dKy), -(dIz + dKz));
+    }
+
+    if (stage.torsion) {
+      for (let i = 0; i < torsions.length; i++) {
+        const t = torsions[i];
+        const vecs = dihedralGradient(positions[t.i], positions[t.j], positions[t.k], positions[t.l]);
+        const phi = dihedralAngle(positions[t.i], positions[t.j], positions[t.k], positions[t.l]);
+        const dEdPhi = -0.5 * t.V * t.n * Math.sin(t.n * phi - t.phi0);
+        accum4([t.i, t.j, t.k, t.l], vecs, dEdPhi);
+      }
+    }
+
+    if (stage.lj > 0) {
+      for (let i = 0; i < pairs.length; i++) {
+        const p = pairs[i];
+        const pa = positions[p.a], pb = positions[p.b];
+        const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z;
+        const r = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+        const rm = CC.VDW_RADIUS[atoms3d[p.a].element] + CC.VDW_RADIUS[atoms3d[p.b].element];
+        const ux = dx / r, uy = dy / r, uz = dz / r;
+        const dEdr = stage.lj * p.scale * LJ_EPSILON * ljShapeDerivative(r, rm);
+        accum(p.a, -dEdr * ux, -dEdr * uy, -dEdr * uz);
+        accum(p.b, dEdr * ux, dEdr * uy, dEdr * uz);
+      }
+    }
+
+    return grad;
+  }
+
+  function improperEnergyOnly(positions, impropers) {
+    let energy = 0;
+    for (let i = 0; i < impropers.length; i++) {
+      const imp = impropers[i];
+      const dev = planeDeviation(positions[imp.i], positions[imp.a], positions[imp.b], positions[imp.c]);
+      energy += 0.5 * K_OOP * dev * dev;
+    }
+    return energy;
+  }
+
+  // Finite-difference gradient of ONLY the two terms analyticGradient
+  // doesn't cover (improper out-of-plane + GB/SA solvation) -- neither
+  // has a hand-derived analytical form here (the improper term's plane-
+  // deviation formula and solvation's O(n^2) Born-radii sum with its
+  // piecewise engulfment branches are both real, separate derivations
+  // this pass didn't attempt, same reasoning openff-forcefield.js's own
+  // gradientSMIRNOFF already documents for leaving solvation numerical).
+  // Critically: builds `positions` ONCE (via unflatten) and mutates a
+  // single coordinate of it in place per perturbation, restoring it
+  // after, rather than calling unflatten(flat) fresh on every one of the
+  // (up to) 6*numAtoms perturbations the way the old numericGradient did
+  // -- that reallocation, not the finite-difference approach itself, was
+  // the real O(numAtoms^2)-allocation cost.
+  function numericResidualGradient(flat, atoms3d, impropers, pairs, stage, solvent) {
+    const grad = new Float64Array(flat.length);
+    const hasImpropers = stage.torsion && impropers.length > 0;
+    const hasSolvent = !!(solvent && solvent.enabled && solvent.charges && stage.lj > 0);
+    if (!hasImpropers && !hasSolvent) return grad;
+
+    const positions = unflatten(flat);
+
+    // Full-width perturbation is unavoidable once solvation is in play
+    // (GB/SA Born radii are all-pairs -- every atom's position affects
+    // every other atom's term). Without solvation, restrict perturbation
+    // to just the atoms that actually appear in some improper (typically
+    // a small sp2/aromatic subset, not every atom in the molecule).
+    let indices;
+    if (hasSolvent) {
+      indices = [];
+      for (let i = 0; i < positions.length; i++) indices.push(i);
+    } else {
+      const involved = new Set();
+      for (let i = 0; i < impropers.length; i++) {
+        const imp = impropers[i];
+        involved.add(imp.i); involved.add(imp.a); involved.add(imp.b); involved.add(imp.c);
+      }
+      indices = Array.from(involved);
+    }
+
+    function residualEnergy() {
+      let e = hasImpropers ? improperEnergyOnly(positions, impropers) : 0;
+      if (hasSolvent) e += solvationEnergy(positions, atoms3d, solvent, stage.lj);
+      return e;
+    }
+
+    for (let k = 0; k < indices.length; k++) {
+      const atomIdx = indices[k];
+      const p = positions[atomIdx];
+      const orig = { x: p.x, y: p.y, z: p.z };
+
+      p.x = orig.x + GRAD_H; const ePlusX = residualEnergy();
+      p.x = orig.x - GRAD_H; const eMinusX = residualEnergy();
+      p.x = orig.x;
+      grad[3 * atomIdx] += (ePlusX - eMinusX) / (2 * GRAD_H);
+
+      p.y = orig.y + GRAD_H; const ePlusY = residualEnergy();
+      p.y = orig.y - GRAD_H; const eMinusY = residualEnergy();
+      p.y = orig.y;
+      grad[3 * atomIdx + 1] += (ePlusY - eMinusY) / (2 * GRAD_H);
+
+      p.z = orig.z + GRAD_H; const ePlusZ = residualEnergy();
+      p.z = orig.z - GRAD_H; const eMinusZ = residualEnergy();
+      p.z = orig.z;
+      grad[3 * atomIdx + 2] += (ePlusZ - eMinusZ) / (2 * GRAD_H);
+    }
+
+    return grad;
+  }
+
+  function gradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent) {
+    const positions = unflatten(flat);
+    const grad = analyticGradient(positions, atoms3d, bonds3d, angles, torsions, pairs, stage);
+    const residual = numericResidualGradient(flat, atoms3d, impropers, pairs, stage, solvent);
+    for (let i = 0; i < grad.length; i++) grad[i] += residual[i];
     return grad;
   }
 
@@ -765,10 +984,10 @@ window.CC = window.CC || {};
   // it replaces) gets most of full BFGS's better-conditioned search
   // directions from just a handful of retained (position-change,
   // gradient-change) pairs and O(m*n) work per step.
-  async function minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, stage, startFlat, onProgress, solvent, stopToken) {
+  async function minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, iterations, deadline, stage, startFlat, onProgress, solvent, stopToken, historyState) {
     let flat = startFlat || flatten(atoms3d);
     let energy = computeEnergy(unflatten(flat), atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
-    let grad = numericGradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
+    let grad = gradient(flat, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
     let gradNorm = Math.sqrt(dot(grad, grad));
     let lastGradNorm = gradNorm;
     // What actually stopped the loop -- the honest signal for whether
@@ -794,8 +1013,20 @@ window.CC = window.CC || {};
     // with its own energy function; carrying history across a stage
     // boundary, where the energy landscape itself changes as torsion/LJ
     // terms switch on, would feed the approximation stale/wrong
-    // curvature).
-    const sHistory = [], yHistory = [], rhoHistory = [];
+    // curvature). EXCEPTION: a caller can pass historyState to carry (s,
+    // y, rho) across a run of calls that share the same qualitative
+    // landscape -- minimizeStaged's nonbonded ramp uses this, since each
+    // ramp sub-step only scales the same energy terms' PREFACTOR up a
+    // little, not a fundamentally different landscape the way switching
+    // stages entirely (adding torsions, e.g.) is. Reproduced directly why
+    // this matters: without it, each of the 6 ramp sub-steps restarted
+    // from bare steepest descent, and on a molecule with any tight-ish
+    // nonbonded contact the gradient norm oscillated/climbed across ramp
+    // sub-steps instead of settling (aspirin+solvent: ended near 30-40
+    // instead of the ~0.03-0.1 a fresh, unramped landscape reaches).
+    const sHistory = historyState ? historyState.sHistory : [];
+    const yHistory = historyState ? historyState.yHistory : [];
+    const rhoHistory = historyState ? historyState.rhoHistory : [];
 
     for (let iter = 0; iter < iterations; iter++) {
       iterationsRun = iter + 1;
@@ -814,7 +1045,7 @@ window.CC = window.CC || {};
       // a caller can plot a live gradient-norm-vs-iteration convergence
       // chart (see convergence-chart.js) instead of only ever seeing the
       // final number once the whole staged run is done.
-      if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm });
+      if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm, energy: energy });
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
       const direction = lbfgsDirection(grad, sHistory, yHistory, rhoHistory);
@@ -859,7 +1090,7 @@ window.CC = window.CC || {};
       if (!accepted) { exitReason = 'step-too-small'; break; }
 
       const improvement = energy - trialEnergy;
-      const newGrad = numericGradient(trial, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
+      const newGrad = gradient(trial, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent);
 
       const s = new Float64Array(flat.length);
       const y = new Float64Array(flat.length);
@@ -949,7 +1180,7 @@ window.CC = window.CC || {};
     function report(label, info) {
       if (!onProgress) return;
       if (!info) { onProgress({ stage: label }); return; }
-      onProgress({ stage: label, iteration: cumulativeIter + info.iteration, gradNorm: info.gradNorm });
+      onProgress({ stage: label, iteration: cumulativeIter + info.iteration, gradNorm: info.gradNorm, energy: info.energy });
     }
 
     // Stage 1: bonds + angles only.
@@ -966,20 +1197,30 @@ window.CC = window.CC || {};
 
     // Stage 3: ramp LJ (and, if enabled, GB/SA solvation -- see
     // solvationEnergy) in gradually rather than switching either on at
-    // full strength in one step.
+    // full strength in one step. A single shared L-BFGS history spans the
+    // whole ramp (see minimize()'s historyState param) -- each sub-step
+    // only scales the SAME terms' prefactor up a little, not a
+    // fundamentally different landscape the way switching stages entirely
+    // (e.g. turning torsions on) is, so restarting curvature history from
+    // scratch every sub-step was throwing away information the next
+    // sub-step could have used, and was the real cause of the gradient
+    // norm oscillating/climbing across the ramp instead of settling.
+    const rampHistory = { sHistory: [], yHistory: [], rhoHistory: [] };
     for (let r = 1; r <= rampSteps; r++) {
       if (deadline && performance.now() > deadline) break;
       if (stopToken && stopToken.stopped) break;
       report('steric relaxation');
       const ljStrength = r / rampSteps;
-      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function (info) { report('steric relaxation', info); }, solvent, stopToken);
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, rampItersEach, deadline, { torsion: true, lj: ljStrength }, result.flat, function (info) { report('steric relaxation', info); }, solvent, stopToken, rampHistory);
       cumulativeIter += result.iterationsRun;
     }
 
-    // Stage 4: full-strength final polish with whatever time remains.
+    // Stage 4: full-strength final polish with whatever time remains --
+    // the SAME energy function (lj: 1) as the ramp's last sub-step, so
+    // this continues that same shared history rather than starting over.
     if (!(stopToken && stopToken.stopped)) {
       report('final polish');
-      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function (info) { report('final polish', info); }, solvent, stopToken);
+      result = await minimize(atoms3d, bonds3d, angles, torsions, impropers, pairs, remainingIters, deadline, { torsion: true, lj: 1 }, result.flat, function (info) { report('final polish', info); }, solvent, stopToken, rampHistory);
       cumulativeIter += result.iterationsRun;
     }
 

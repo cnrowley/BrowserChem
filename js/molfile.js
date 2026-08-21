@@ -143,7 +143,18 @@ window.CC = window.CC || {};
    * bond list embed3D() built the whole 3D structure around -- so there's
    * no reason to throw it away and re-infer it.
    */
-  CC.atoms3DToMolblock = function (atoms, bonds, name) {
+  // charges (optional): {atomIndex: integerCharge}, 0-indexed, same
+  // indexing as `atoms`/`bonds`. Only used by js/xyz.js's geometry-based
+  // bond/charge inference (a resonance-structure O- on a carboxylate,
+  // etc.) -- every other existing caller (viewer3d.js, openff-forcefield.js)
+  // omits it and gets today's all-neutral behavior unchanged. Written as
+  // a standard "M  CHG" property line (confirmed live against the bundled
+  // RDKit.js build: a molblock with "M  CHG  1   3  -1" parses to the
+  // expected [O-] SMILES), not the V2000 atom-block charge-code column
+  // (RDKit writes/reads M CHG in preference to that column when both
+  // could apply, and M CHG supports the full integer range directly
+  // rather than the atom block's compressed 7-value charge code).
+  CC.atoms3DToMolblock = function (atoms, bonds, name, charges) {
     const lines = [];
     lines.push(name || '');
     lines.push('  ChemCanvas3D');
@@ -167,6 +178,18 @@ window.CC = window.CC || {};
       // embed3D()'s bond list is 0-indexed; molfile atom numbering is 1-indexed.
       lines.push(padLeft(b.a1 + 1, 3) + padLeft(b.a2 + 1, 3) + padLeft(b.order, 3) + '  0');
     });
+
+    if (charges) {
+      const entries = Object.keys(charges)
+        .map(function (k) { return { index: parseInt(k, 10), charge: charges[k] }; })
+        .filter(function (e) { return e.charge; });
+      for (let i = 0; i < entries.length; i += 8) {
+        const chunk = entries.slice(i, i + 8);
+        let line = 'M  CHG' + padLeft(chunk.length, 3);
+        chunk.forEach(function (e) { line += ' ' + padLeft(e.index + 1, 3) + ' ' + padLeft(e.charge, 3); });
+        lines.push(line);
+      }
+    }
 
     lines.push('M  END');
     return lines.join('\n') + '\n';

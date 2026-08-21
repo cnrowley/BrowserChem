@@ -885,14 +885,25 @@ CC.OpenFF = window.CC.OpenFF || {};
 
     // Solvation: small targeted finite difference of ONLY this term (see
     // this function's header comment for why it's not analytical yet).
+    // Mutates the SAME `positions` array (already built above) one
+    // coordinate at a time instead of calling shared.unflatten(flat)
+    // fresh on every one of the 2*3*numAtoms perturbations -- the same
+    // O(numAtoms)-vs-O(numAtoms^2)-allocation fix embed3d.js's own
+    // numericResidualGradient applies for its own remaining
+    // finite-difference terms.
     if (solvent && solvent.enabled && solvent.charges && stage.nonbonded > 0) {
       for (let i = 0; i < flat.length; i++) {
-        const original = flat[i];
-        flat[i] = original + GRAD_H;
-        const ePlus = solvationEnergySMIRNOFF(shared.unflatten(flat), atoms3d, solvent, stage.nonbonded);
-        flat[i] = original - GRAD_H;
-        const eMinus = solvationEnergySMIRNOFF(shared.unflatten(flat), atoms3d, solvent, stage.nonbonded);
-        flat[i] = original;
+        const atomIdx = (i / 3) | 0;
+        const coord = i % 3 === 0 ? 'x' : (i % 3 === 1 ? 'y' : 'z');
+        const p = positions[atomIdx];
+        const original = p[coord];
+
+        p[coord] = original + GRAD_H;
+        const ePlus = solvationEnergySMIRNOFF(positions, atoms3d, solvent, stage.nonbonded);
+        p[coord] = original - GRAD_H;
+        const eMinus = solvationEnergySMIRNOFF(positions, atoms3d, solvent, stage.nonbonded);
+        p[coord] = original;
+
         grad[i] += (ePlus - eMinus) / (2 * GRAD_H);
       }
     }
@@ -902,7 +913,7 @@ CC.OpenFF = window.CC.OpenFF || {};
   // Mirrors embed3d.js's minimize() -- see that file for why numeric
   // gradients + L-BFGS (two-loop recursion, via shared.lbfgsDirection) +
   // Armijo backtracking, not plain steepest descent.
-  async function minimizeSMIRNOFF(atoms3d, ff, iterations, deadline, stage, startFlat, onProgress, solvent, stopToken) {
+  async function minimizeSMIRNOFF(atoms3d, ff, iterations, deadline, stage, startFlat, onProgress, solvent, stopToken, historyState) {
     const shared = CC.Embed3DShared;
     let flat = startFlat || shared.flatten(atoms3d);
     let energy = computeEnergySMIRNOFF(shared.unflatten(flat), atoms3d, ff, stage, shared, solvent);
@@ -913,8 +924,13 @@ CC.OpenFF = window.CC.OpenFF || {};
     let iterationsRun = 0;
 
     // See embed3d.js's minimize() for why this history is reset fresh on
-    // every call rather than carried across stage boundaries.
-    const sHistory = [], yHistory = [], rhoHistory = [];
+    // every call rather than carried across stage boundaries, EXCEPT when
+    // a caller passes historyState to carry it across a run of calls that
+    // share the same qualitative landscape (minimizeStagedSMIRNOFF's
+    // nonbonded ramp).
+    const sHistory = historyState ? historyState.sHistory : [];
+    const yHistory = historyState ? historyState.yHistory : [];
+    const rhoHistory = historyState ? historyState.rhoHistory : [];
 
     for (let iter = 0; iter < iterations; iter++) {
       iterationsRun = iter + 1;
@@ -924,7 +940,7 @@ CC.OpenFF = window.CC.OpenFF || {};
       if (shouldReport) await shared.yieldToUI();
       // See embed3d.js's minimize() for why this is reported here (same
       // throttle) instead of only ever once at the very end.
-      if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm });
+      if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm, energy: energy });
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
       const direction = shared.lbfgsDirection(grad, sHistory, yHistory, rhoHistory);
@@ -1012,7 +1028,7 @@ CC.OpenFF = window.CC.OpenFF || {};
     function report(label, info) {
       if (!onProgress) return;
       if (!info) { onProgress({ stage: label }); return; }
-      onProgress({ stage: label, iteration: cumulativeIter + info.iteration, gradNorm: info.gradNorm });
+      onProgress({ stage: label, iteration: cumulativeIter + info.iteration, gradNorm: info.gradNorm, energy: info.energy });
     }
 
     report('bonds & angles');
@@ -1025,18 +1041,22 @@ CC.OpenFF = window.CC.OpenFF || {};
       cumulativeIter += result.iterationsRun;
     }
 
+    // Shared L-BFGS history across the whole ramp -- see embed3d.js's
+    // minimizeStaged for why (each sub-step only scales the same terms'
+    // prefactor up a little, not a fundamentally different landscape).
+    const rampHistory = { sHistory: [], yHistory: [], rhoHistory: [] };
     for (let r = 1; r <= rampSteps; r++) {
       if (deadline && performance.now() > deadline) break;
       if (stopToken && stopToken.stopped) break;
       report('vdW + electrostatics');
       const strength = r / rampSteps;
-      result = await minimizeSMIRNOFF(atoms3d, ff, rampItersEach, deadline, { torsion: true, nonbonded: strength }, result.flat, function (info) { report('vdW + electrostatics', info); }, solvent, stopToken);
+      result = await minimizeSMIRNOFF(atoms3d, ff, rampItersEach, deadline, { torsion: true, nonbonded: strength }, result.flat, function (info) { report('vdW + electrostatics', info); }, solvent, stopToken, rampHistory);
       cumulativeIter += result.iterationsRun;
     }
 
     if (!(stopToken && stopToken.stopped)) {
       report('final polish');
-      result = await minimizeSMIRNOFF(atoms3d, ff, remainingIters, deadline, { torsion: true, nonbonded: 1 }, result.flat, function (info) { report('final polish', info); }, solvent, stopToken);
+      result = await minimizeSMIRNOFF(atoms3d, ff, remainingIters, deadline, { torsion: true, nonbonded: 1 }, result.flat, function (info) { report('final polish', info); }, solvent, stopToken, rampHistory);
       cumulativeIter += result.iterationsRun;
     }
 

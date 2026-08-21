@@ -1547,6 +1547,7 @@
     generate3dBtn = document.getElementById('quick-preview-btn');
     viewer3dNote = document.getElementById('viewer3d-note');
     const quickPreviewSelect = document.getElementById('quick-preview-select');
+    const optimizeModelSelect = document.getElementById('optimize-model-select');
     const conformerModelSelect = document.getElementById('conformer-model-select');
     const optimizeOnlyBtn = document.getElementById('optimize-only-btn');
     const conformerSearchBtn = document.getElementById('conformer-search-btn');
@@ -1562,6 +1563,9 @@
     const measureDistanceBtn = document.getElementById('measure-distance-btn');
     const clearMeasurementsBtn = document.getElementById('clear-measurements-btn');
     const measureDistanceStatus = document.getElementById('measure-distance-status');
+    const importXyzBtn = document.getElementById('import-xyz-btn');
+    const xyzFileInput = document.getElementById('xyz-file-input');
+    const exportXyzBtn = document.getElementById('export-xyz-btn');
     const shape3dTable = document.getElementById('shape3d-table');
     const shape3dOutput = document.getElementById('shape3d-output');
     const shape3dNote = document.getElementById('shape3d-note');
@@ -1600,6 +1604,18 @@
     let currentGeometry = null; // {atoms, bonds} of whatever conformer is currently rendered/selected.
     let currentGeometryOptimized = false; // whether currentGeometry has been through a real energy-model optimization (vs. just a raw seed) -- SASA and similar panels check this via getCurrent3DGeometry.
     let currentGeometryConverged = false; // whether that optimization pass actually settled (vs. just hit its time/iteration budget).
+    // Set right before an XYZ import's loadNewMolecule() call: that call
+    // triggers scheduleValidation()'s DEBOUNCED (120ms) runValidation(),
+    // which calls invalidate3DView() -- the standard "2D structure
+    // changed, wipe the now-stale 3D view" reaction, correct for every
+    // OTHER loadNewMolecule caller (e.g. Open .mol, which never has a 3D
+    // view to preserve) but wrong here: XYZ import's 2D molecule is
+    // DERIVED FROM the exact 3D structure already rendered (RDKit's own
+    // canonical SMILES round-tripped from the geometry-inferred bonds),
+    // not a separate edit that made the 3D view stale. Checked (and
+    // cleared) once, inside invalidate3DView below, rather than trying to
+    // race the 120ms debounce with a second timer of its own.
+    let suppressNext3DInvalidate = false;
 
     function renderResult(result) {
       viewer3d = window.chemCanvasLibs && window.chemCanvasLibs.viewer3d;
@@ -1670,6 +1686,7 @@
       const hasGeometry = !!(currentGeometry && currentGeometry.atoms && currentGeometry.atoms.length > 0);
       measureDistanceBtn.disabled = !hasGeometry;
       clearMeasurementsBtn.disabled = !hasGeometry;
+      exportXyzBtn.disabled = !hasGeometry;
     }
     notifyAni2xModelsChanged = updateButtonState; // kept as the same hook name other code already calls after any model finishes loading elsewhere
 
@@ -1711,6 +1728,72 @@
       measureDistanceStatus.textContent = measureModeOn ? 'Click two atoms in the 3D view…' : '';
     });
 
+    importXyzBtn.addEventListener('click', function () { xyzFileInput.click(); });
+
+    // Same click-to-trigger + FileReader.readAsText + try/catch pattern
+    // setupFileIO's open-btn handler already uses for .mol files -- see
+    // js/xyz.js for the actual parsing/bond-inference/RDKit-validation
+    // work; this is just the file I/O and result wiring. Unlike a .mol
+    // Open (which only ever replaces the 2D molecule), an XYZ import ALSO
+    // has real 3D coordinates worth keeping even when the geometry-based
+    // bonding guess can't be fully valence-validated -- so the 3D viewer
+    // always gets the imported structure, and the 2D canvas/undo history
+    // only get touched (via the same loadNewMolecule this app's other
+    // "load a molecule from a file" paths already use) when RDKit could
+    // actually validate it.
+    xyzFileInput.addEventListener('change', function () {
+      const file = xyzFileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        viewer3dNote.style.color = '';
+        try {
+          const parsed = CC.XYZ.parse(String(reader.result));
+          const RDKit = window.chemCanvasLibs && window.chemCanvasLibs.RDKit;
+          const built = CC.XYZ.buildFromAtoms(RDKit, parsed.atoms);
+
+          resetConformerList();
+          convergenceChartContainer.innerHTML = '';
+          convergenceNote.textContent = '';
+          renderResult({ atoms: built.atoms3d, bonds: built.bonds3d });
+          currentGeometryOptimized = false;
+          currentGeometryConverged = false;
+          updateButtonState();
+
+          if (built.molecule) {
+            suppressNext3DInvalidate = true;
+            loadNewMolecule(built.molecule);
+          }
+
+          const summary = 'Imported ' + file.name + ' (' + parsed.atoms.length + ' atoms)' +
+            (built.molecule ? ' — bonding inferred and valence-validated.' : ' — 3D view only.');
+          viewer3dNote.style.color = built.molecule ? '' : 'var(--danger)';
+          viewer3dNote.textContent = built.warnings.length > 0 ? summary + ' ' + built.warnings.join(' ') : summary;
+          CC.Logger[built.molecule ? 'success' : 'warning']('Imported XYZ: ' + file.name + (built.warnings.length ? ' (' + built.warnings.length + ' warning(s))' : ''));
+        } catch (err) {
+          window.alert('Could not read that file as XYZ: ' + err.message);
+          CC.Logger.error('Failed to import XYZ "' + file.name + '": ' + err.message);
+        }
+        xyzFileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+
+    exportXyzBtn.addEventListener('click', function () {
+      if (!currentGeometry || !currentGeometry.atoms || currentGeometry.atoms.length === 0) return;
+      const xyzText = CC.XYZ.exportXYZ(currentGeometry.atoms, 'ChemCanvas export');
+      const blob = new Blob([xyzText], { type: 'chemical/x-xyz' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'structure.xyz';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      CC.Logger.info('Saved structure.xyz');
+    });
+
     // Shared by the conformer-search and optimize-only handlers below --
     // both need a loaded NAGL-MBIS model id whenever SMIRNOFF
     // electrostatics or implicit solvent are in play, loading it on
@@ -1733,6 +1816,27 @@
         console.error('[ChemCanvas] NAGL model load failed — continuing without electrostatics/solvent', err);
         return undefined;
       }
+    }
+
+    // Optimize-only's ANI-2x branch -- same load-on-click pattern as
+    // ensureNaglModelLoaded above / the GeoMol quick-preview path below
+    // (a model's weights only fetch the first time something actually
+    // needs them, not proactively). Unlike ensureNaglModelLoaded, a
+    // missing/failed load here IS fatal to the caller: there's no
+    // "just omit this term" fallback for an energy model the user
+    // explicitly picked, unlike NAGL charges being merely an optional
+    // enhancement to SMIRNOFF/solvation.
+    async function ensureAniModelLoaded(progressNoteEl) {
+      const alreadyLoaded = CC.ANI.getLoadedModelIds()[0];
+      if (alreadyLoaded) return alreadyLoaded;
+      const entry = CC.GNN.getRegistryEntries().find(function (e) { return (e.engine || 'chemprop') === 'ani2x'; });
+      if (!entry) throw new Error('No ANI-2x model entry found in the model registry.');
+      if (progressNoteEl) progressNoteEl.textContent = 'Loading ANI-2x model…';
+      await CC.GNN.loadRegistryModel(entry.id);
+      refreshRegistryList();
+      const loaded = CC.ANI.getLoadedModelIds()[0];
+      if (!loaded) throw new Error('ANI-2x model failed to load.');
+      return loaded;
     }
 
     // Both "Optimize" and "Run conformer search" now run until the
@@ -1761,13 +1865,19 @@
         return;
       }
 
-      const model = conformerModelSelect.value;
-      const modelLabel = conformerModelSelect.options[conformerModelSelect.selectedIndex].textContent;
+      const model = optimizeModelSelect.value;
+      const modelLabel = optimizeModelSelect.options[optimizeModelSelect.selectedIndex].textContent;
       const solvent = getSolventSettings();
+      // Same per-model unit convention conformer-search.js's MODELS
+      // table and the conformer-list ΔE header already use -- classical's
+      // own energy is arbitrary hand-tuned units (not real kcal/mol),
+      // SMIRNOFF's is real kcal/mol, ANI-2x's native energy is Hartree.
+      const energyUnit = model === 'classical' ? 'arb. units' : (model === 'ani2x' ? 'Hartree' : 'kcal/mol');
 
       generate3dBtn.disabled = true;
       optimizeOnlyBtn.disabled = true;
       conformerSearchBtn.disabled = true;
+      optimizeModelSelect.disabled = true;
       conformerModelSelect.disabled = true;
       stopOptimizeBtn.style.display = '';
       stopOptimizeBtn.disabled = false;
@@ -1806,37 +1916,86 @@
         // real way the user ends a run early.
         const deadline = null;
         const iterations = 20000;
-        // info is {stage, iteration?, gradNorm?} -- see embed3d.js's
-        // minimizeStaged/openff-forcefield.js's minimizeStagedSMIRNOFF.
-        // iteration/gradNorm are only present on the throttled
-        // per-iteration samples, not the bare stage-transition
-        // announcements, hence collecting into gradNormHistory here
-        // rather than trying to render the chart live on every call (it
-        // gets rendered once, after the whole optimize finishes, below).
+        // info is {stage, iteration?, gradNorm?, energy?} -- see
+        // embed3d.js's minimizeStaged/openff-forcefield.js's
+        // minimizeStagedSMIRNOFF. iteration/gradNorm/energy are only
+        // present on the throttled per-iteration samples, not the bare
+        // stage-transition announcements, hence collecting into
+        // gradNormHistory here rather than trying to render the chart
+        // live on every call (it gets rendered once, after the whole
+        // optimize finishes, below).
         const onProgress = function (info) {
-          progressNote.textContent = 'Optimizing — ' + info.stage;
-          if (typeof info.gradNorm === 'number') gradNormHistory.push({ iteration: info.iteration, gradNorm: info.gradNorm });
+          // ANI-2x's own progress payload (ani2x-model.js's
+          // optimizeGeometry) has no `stage` field at all -- classical/
+          // SMIRNOFF's staged minimizers do (bonds & angles / torsions /
+          // steric relaxation / final polish).
+          progressNote.textContent = info.stage ? 'Optimizing — ' + info.stage : 'Optimizing…';
+          if (typeof info.gradNorm === 'number') gradNormHistory.push({ iteration: info.iteration, gradNorm: info.gradNorm, energy: info.energy });
         };
 
-        let naglModelId;
-        if (model === 'smirnoff' || solvent.enabled) naglModelId = await ensureNaglModelLoaded(progressNote);
-
         let result;
-        if (model === 'smirnoff') {
-          if (!CC.OpenFF.isForceFieldLoaded()) {
-            progressNote.textContent = 'Loading OpenFF Sage force field…';
-            await CC.OpenFF.loadForceField();
+        let naglModelId;
+        if (model === 'ani2x') {
+          const compat = CC.ANI.checkCompatibility(controller.molecule);
+          if (!compat.compatible) throw new Error('Cannot use ANI-2x: ' + compat.issues.join('; '));
+          if (solvent.enabled) {
+            progressNote.textContent = 'ANI-2x has no implicit-solvent term — running in vacuum.';
           }
-          const RDKit = window.chemCanvasLibs && window.chemCanvasLibs.RDKit;
-          if (!RDKit) throw new Error('RDKit not available yet');
-          CC.OpenFF.compileAll(RDKit);
-          const chargesResult = CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId);
-          result = await CC.OpenFF.optimizeSeed(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solvent, stopToken);
+          const aniModelId = await ensureAniModelLoaded(progressNote);
+
+          // CC.ANI.optimizeGeometry is deliberately designed to be called
+          // again to keep going (see its own header comment) rather than
+          // handed one huge deadline -- each real ANI forward+backward
+          // pass is genuinely slow (documented ~3-5 iterations/second),
+          // so this loops in modest chunks, threading iterationOffset/
+          // initialStep through so both the reported iteration numbers
+          // and step-size tuning pick up where the previous chunk left
+          // off, checking the Stop button between chunks (optimizeGeometry
+          // itself has no mid-call stop hook).
+          const CHUNK_ITERATIONS = 60;
+          const CHUNK_BUDGET_MS = 5000;
+          const SAFETY_TOTAL_ITERATIONS = 3000;
+          let iterationOffset = 0;
+          let initialStep;
+          let aniResult;
+          do {
+            aniResult = await CC.ANI.optimizeGeometry(atoms3d, bonds3d, aniModelId, {
+              maxIterations: CHUNK_ITERATIONS,
+              timeBudgetMs: CHUNK_BUDGET_MS,
+              iterationOffset: iterationOffset,
+              initialStep: initialStep,
+              onProgress: onProgress,
+            });
+            iterationOffset += aniResult.iterationsRun;
+            initialStep = aniResult.finalStep;
+            atoms3d.length = 0;
+            Array.prototype.push.apply(atoms3d, aniResult.atoms);
+          } while (!aniResult.converged && !stopToken.stopped && iterationOffset < SAFETY_TOTAL_ITERATIONS);
+
+          result = {
+            atoms: aniResult.atoms, bonds: aniResult.bonds, energy: aniResult.energy,
+            gradNorm: aniResult.gradNorm, converged: aniResult.converged,
+            exitReason: stopToken.stopped ? 'user-stopped' : aniResult.exitReason,
+          };
         } else {
-          const naglSolvent = solvent.enabled && naglModelId
-            ? Object.assign({}, solvent, { charges: CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId).charges })
-            : null;
-          result = await CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, naglSolvent, undefined, stopToken);
+          if (model === 'smirnoff' || solvent.enabled) naglModelId = await ensureNaglModelLoaded(progressNote);
+
+          if (model === 'smirnoff') {
+            if (!CC.OpenFF.isForceFieldLoaded()) {
+              progressNote.textContent = 'Loading OpenFF Sage force field…';
+              await CC.OpenFF.loadForceField();
+            }
+            const RDKit = window.chemCanvasLibs && window.chemCanvasLibs.RDKit;
+            if (!RDKit) throw new Error('RDKit not available yet');
+            CC.OpenFF.compileAll(RDKit);
+            const chargesResult = CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId);
+            result = await CC.OpenFF.optimizeSeed(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solvent, stopToken);
+          } else {
+            const naglSolvent = solvent.enabled && naglModelId
+              ? Object.assign({}, solvent, { charges: CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId).charges })
+              : null;
+            result = await CC.Embed3DShared.optimizeSeedClassical(atoms3d, bonds3d, aromaticSet, iterations, deadline, onProgress, naglSolvent, undefined, stopToken);
+          }
         }
 
         progressFill.style.width = '100%';
@@ -1844,15 +2003,17 @@
         renderResult(result);
         currentGeometryOptimized = true;
         currentGeometryConverged = result.converged;
-        const solventNote = solvent.enabled ? (naglModelId ? ' (implicit solvent included)' : ' (no NAGL-MBIS charges loaded — solvation omitted)') : '';
+        const solventNote = model === 'ani2x'
+          ? (solvent.enabled ? ' (ANI-2x has no solvation term — solvation omitted)' : '')
+          : (solvent.enabled ? (naglModelId ? ' (implicit solvent included)' : ' (no NAGL-MBIS charges loaded — solvation omitted)') : '');
         const notConvergedReason = result.exitReason === 'user-stopped' ? 'stopped before fully converging' : 'did not fully converge (hit the safety iteration ceiling)';
         viewer3dNote.style.color = result.converged ? '' : 'var(--danger)';
         viewer3dNote.textContent = modelLabel + ' optimization ' + (result.converged ? 'converged' : notConvergedReason) +
-          solventNote + '. Energy ' + result.energy.toFixed(2) + '.';
+          solventNote + '. Energy ' + result.energy.toFixed(2) + ' ' + energyUnit + '.';
         CC.Logger[result.converged ? 'success' : 'warning']('Optimize (' + modelLabel + '): ' + (result.converged ? 'converged' : 'did not converge') + ', energy ' + result.energy.toFixed(2));
 
         if (gradNormHistory.length > 0) {
-          CC.renderConvergenceChart(convergenceChartContainer, gradNormHistory, { convergedThreshold: 1e-5, converged: result.converged });
+          CC.renderConvergenceChart(convergenceChartContainer, gradNormHistory, { convergedThreshold: 1e-5, converged: result.converged, energyUnit: energyUnit });
         }
         // The 1e-5 figure here is the SAME gradient-norm cutoff the
         // optimizer itself checks every iteration to decide it's done
@@ -1874,6 +2035,7 @@
         generate3dBtn.disabled = false;
         optimizeOnlyBtn.disabled = false;
         conformerSearchBtn.disabled = false;
+        optimizeModelSelect.disabled = false;
         conformerModelSelect.disabled = false;
         stopOptimizeBtn.style.display = 'none';
         activeStopToken = null;
@@ -1978,6 +2140,7 @@
     // than no 3D view at all, since nothing on screen would indicate it's
     // now out of sync with the 2D structure you're actually looking at.
     invalidate3DView = function () {
+      if (suppressNext3DInvalidate) { suppressNext3DInvalidate = false; return; }
       if (!lastInitial && !currentGeometry) return; // nothing generated yet -- nothing to invalidate
       lastInitial = null;
       currentGeometry = null;
@@ -2020,6 +2183,7 @@
       generate3dBtn.disabled = true;
       optimizeOnlyBtn.disabled = true;
       conformerSearchBtn.disabled = true;
+      optimizeModelSelect.disabled = true;
       conformerModelSelect.disabled = true;
       stopOptimizeBtn.style.display = '';
       stopOptimizeBtn.disabled = false;
@@ -2097,6 +2261,7 @@
         generate3dBtn.disabled = false;
         optimizeOnlyBtn.disabled = false;
         conformerSearchBtn.disabled = false;
+        optimizeModelSelect.disabled = false;
         conformerModelSelect.disabled = false;
         stopOptimizeBtn.style.display = 'none';
         activeStopToken = null;
@@ -2178,11 +2343,35 @@
    * One bad/unreachable model shouldn't sink the others (Promise.
    * allSettled, not Promise.all) -- failures are returned, not thrown,
    * so the caller can still run prediction against whatever DID load.
+   *
+   * categoryKeys (optional): restricts to registry entries tagged with
+   * one of these categories (registry.json's "categories" field, same
+   * fallback-to-'general' rule the Properties-tab catalog lists use --
+   * see REGISTRY_CATEGORIES/renderRegistryList below) -- how the
+   * per-category "activate" checkboxes in the Properties tab load only
+   * their own set instead of everything at once. Omitted entirely
+   * (undefined) means no category restriction, the original "load
+   * everything applicable" behavior the top "Compute properties" button
+   * still uses.
    */
-  async function autoLoadApplicableModels(onProgress) {
+  async function autoLoadApplicableModels(onProgress, categoryKeys) {
     const molecule = controller.molecule;
+    const categorySet = categoryKeys ? new Set(categoryKeys) : null;
     const entries = CC.GNN.getRegistryEntries().filter(function (entry) {
-      return entry.engine === 'chemprop' || entry.engine === 'nagl' || entry.engine === 'pka';
+      // "|| 'chemprop'" mirrors model-registry.js's own default for an
+      // omitted "engine" field (validateEntry/loadRegistryModel both
+      // apply it) -- entries here are read straight from
+      // getRegistryEntries() without that same defaulting, so a real
+      // entry with no explicit "engine" key (several do -- e.g. logp-v1,
+      // melting-point) used to compare undefined against the string
+      // literals below and silently never auto-load.
+      const engine = entry.engine || 'chemprop';
+      if (engine !== 'chemprop' && engine !== 'nagl' && engine !== 'pka') return false;
+      if (categorySet) {
+        const cats = (entry.categories && entry.categories.length) ? entry.categories : ['general'];
+        if (!cats.some(function (c) { return categorySet.has(c); })) return false;
+      }
+      return true;
     });
 
     let compatByModelId = {};
@@ -2849,6 +3038,51 @@
       renderRegistryList(CC.GNN.getRegistryEntries());
       refreshValidationPanel();
     };
+
+    // "Activate" a category checkbox: load whatever's applicable to the
+    // CURRENT molecule from just that category (autoLoadApplicableModels's
+    // categoryKeys filter), then re-run prediction so the newly-loaded
+    // models' results actually show up in the Predictions/CYP&hERG tables
+    // above -- checking a box is the trigger now, not a separate
+    // "Compute properties" click, per the category being "activated."
+    // A category whose entries are all non-property engines (structure-
+    // tools' ani2x/geomol) loads nothing here by design -- see
+    // autoLoadApplicableModels's own doc comment -- so this just reveals
+    // its (static) catalog rows with no compute step.
+    async function activateCategory(categoryKey) {
+      const statusEl = document.getElementById('registry-status');
+      if (controller.molecule.isEmpty()) return;
+      try {
+        const loadSummary = await autoLoadApplicableModels(function (note) {
+          if (statusEl) statusEl.textContent = note;
+        }, [categoryKey]);
+        if (loadSummary.loaded > 0) {
+          const result = await CC.GNN.predictMolecule(controller.molecule);
+          renderGNNOutput(result);
+          updateRunButtonLabel();
+        }
+        if (statusEl) {
+          statusEl.textContent = loadSummary.failed.length > 0
+            ? loadSummary.failed.length + ' model(s) failed to load: ' + loadSummary.failed.map(function (f) { return f.entry.displayName; }).join(', ')
+            : '';
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = 'Failed to activate category: ' + err.message;
+        console.error('[ChemCanvas] category activation failed', err);
+      }
+    }
+
+    REGISTRY_CATEGORIES.forEach(function (c) {
+      const checkbox = document.getElementById('category-toggle-' + c.key);
+      const container = document.getElementById(c.containerId);
+      if (!checkbox || !container) return;
+      checkbox.addEventListener('change', function () {
+        container.classList.toggle('is-hidden', !checkbox.checked);
+        if (!checkbox.checked) return;
+        checkbox.disabled = true;
+        activateCategory(c.key).finally(function () { checkbox.disabled = false; });
+      });
+    });
 
     // The registry (model/registry.json by default -- see model-config.js)
     // is fetched once at startup; individual models' weights are only

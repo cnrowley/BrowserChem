@@ -117,6 +117,11 @@
         </select>
         <button class="btn btn-ghost btn-small" id="quick-preview-btn">Generate 3D</button>
       </div>
+      <div class="viewer3d-toolbar">
+        <button class="btn btn-ghost btn-small" id="import-xyz-btn" title="Load atom coordinates from an .xyz file (standard 2-line header, or bare element/x/y/z lines with no header). Bonds and bond orders are inferred from the geometry (covalent-radius distances + valence balancing) — the result also becomes the drawn 2D structure.">Import XYZ&hellip;</button>
+        <input type="file" id="xyz-file-input" accept=".xyz,.txt" hidden>
+        <button class="btn btn-ghost btn-small" id="export-xyz-btn" disabled title="Save the structure currently shown above as a standard .xyz file (element + x/y/z per atom, in Angstrom).">Export XYZ</button>
+      </div>
       <div class="viewer3d-container" id="viewer3d"></div>
       <div class="viewer3d-toolbar">
         <button class="btn btn-ghost btn-small" id="measure-distance-btn" disabled title="Click two atoms in the 3D view to measure the distance between them; click again to measure another pair">Measure distance</button>
@@ -143,6 +148,19 @@
         </div>
       </div>
 
+      <div class="properties-section-title">Optimize</div>
+      <div class="viewer3d-method-row">
+        <label for="optimize-model-select">Energy model</label>
+        <select id="optimize-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model. ANI-2x: a trained neural-network potential (real quantitative energies in vacuum only, no implicit solvent) — only usable on neutral molecules built from H/C/N/O/F/S/Cl; loads automatically on first use.">
+          <option value="classical" selected>Classical force field (MMFF-style)</option>
+          <option value="smirnoff">OpenFF Sage (SMIRNOFF)</option>
+          <option value="ani2x">ANI-2x (neural network potential)</option>
+        </select>
+      </div>
+      <div class="viewer3d-toolbar">
+        <button class="btn btn-ghost btn-small" id="optimize-only-btn" title="Locally optimize whatever single structure is currently shown above with the selected energy model — one structure in, one relaxed structure out. No multi-seed rotamer sampling or ensemble pruning (see &quot;Run conformer search…&quot; below for that). Runs until it converges — click Stop to end it early and keep the best structure found so far.">Optimize</button>
+      </div>
+
       <div class="properties-section-title">Conformer search</div>
       <div class="viewer3d-method-row">
         <label for="conformer-model-select">Energy model</label>
@@ -152,7 +170,6 @@
         </select>
       </div>
       <div class="viewer3d-toolbar">
-        <button class="btn btn-ghost btn-small" id="optimize-only-btn" title="Locally optimize whatever single structure is currently shown above with the selected energy model — one structure in, one relaxed structure out. No multi-seed rotamer sampling or ensemble pruning (see &quot;Run conformer search…&quot; for that). Runs until it converges — click Stop to end it early and keep the best structure found so far.">Optimize</button>
         <button class="btn btn-accent btn-small" id="conformer-search-btn">Run conformer search&hellip;</button>
         <button class="btn btn-ghost btn-small" id="stop-optimize-btn" style="display:none;" title="Stop the current optimization/search and keep whatever structure has been found so far">Stop</button>
       </div>
@@ -307,33 +324,33 @@
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">General properties</h3>
-        <p class="side-panel-note">Broadly-applicable physicochemical and electronic properties.</p>
-        <div id="model-registry-list-general" class="model-registry-list"></div>
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-general" data-category="general">General properties</label></h3>
+        <p class="side-panel-note">Broadly-applicable physicochemical and electronic properties. Check a category's box (here and below) to load whatever's applicable to the current molecule and compute it &mdash; nothing in these catalog sections loads until you activate it.</p>
+        <div id="model-registry-list-general" class="model-registry-list is-hidden"></div>
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">Characterization</h3>
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-characterization" data-category="characterization">Characterization</label></h3>
         <p class="side-panel-note">The classic bench toolkit for identifying/confirming a compound: melting point, UV-Vis absorption (via HOMO-LUMO gap), and NMR. Also listed under their other sections below -- intentionally redundant, not a typo.</p>
-        <div id="model-registry-list-characterization" class="model-registry-list"></div>
+        <div id="model-registry-list-characterization" class="model-registry-list is-hidden"></div>
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">Environmental &amp; analytical</h3>
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-environmental-analytical" data-category="environmental-analytical">Environmental &amp; analytical</label></h3>
         <p class="side-panel-note">Physical characterization and spectroscopic/analytical identification.</p>
-        <div id="model-registry-list-environmental-analytical" class="model-registry-list"></div>
+        <div id="model-registry-list-environmental-analytical" class="model-registry-list is-hidden"></div>
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">Medicinal chemistry</h3>
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-medicinal" data-category="medicinal">Medicinal chemistry</label></h3>
         <p class="side-panel-note">Drug-discovery-relevant reactivity, ionization, and metabolic stability.</p>
-        <div id="model-registry-list-medicinal" class="model-registry-list"></div>
+        <div id="model-registry-list-medicinal" class="model-registry-list is-hidden"></div>
       </div>
 
       <div class="properties-section">
-        <h3 class="properties-section-title">3D structure tools</h3>
-        <p class="side-panel-note">Conformer generation/optimization -- also reachable from the 3D view tab.</p>
-        <div id="model-registry-list-structure-tools" class="model-registry-list"></div>
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-structure-tools" data-category="structure-tools">3D structure tools</label></h3>
+        <p class="side-panel-note">Conformer generation/optimization -- also reachable from the 3D view tab. Browsable only here (ANI-2x/GeoMol aren't triggered by "Compute properties" -- use the 3D view tab).</p>
+        <div id="model-registry-list-structure-tools" class="model-registry-list is-hidden"></div>
       </div>
 
       <div class="properties-section">
@@ -550,6 +567,7 @@
 <script src="js/smarts-filters.js"></script>
 <script src="js/vec3.js"></script>
 <script src="js/elements.js"></script>
+<script src="js/xyz.js"></script>
 <script src="js/embed3d.js"></script>
 <script src="js/steric-accessibility.js"></script>
 <script src="js/implicit-solvent.js"></script>

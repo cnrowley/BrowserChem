@@ -1313,6 +1313,21 @@ div.properties-section-title {
   margin: 8px 0;
 }
 
+.model-registry-list.is-hidden {
+  display: none;
+}
+
+.category-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.category-toggle input {
+  margin: 0;
+}
+
 .model-registry-row {
   display: flex;
   align-items: center;
@@ -1520,6 +1535,28 @@ div.properties-section-title {
 
 .convergence-current-marker.is-not-converged {
   fill: var(--danger);
+}
+
+.convergence-gradnorm-title {
+  fill: var(--accent);
+}
+
+.convergence-energy-line {
+  fill: none;
+  stroke: #5b8fd6;
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+
+.convergence-energy-marker {
+  fill: #5b8fd6;
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.convergence-energy-label,
+.convergence-energy-title {
+  fill: #5b8fd6;
 }
 
 /* ---------- Modal ---------- */
