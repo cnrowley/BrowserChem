@@ -1619,6 +1619,7 @@ window.CC = window.CC || {};
     yieldToUI: yieldToUI,
     angleBetween: angleBetween,
     dihedralAngle: dihedralAngle,
+    dihedralGradient: dihedralGradient,
     planeDeviation: planeDeviation,
     ljShape: ljShape,
     optimizeSeedClassical: optimizeGivenSeed,
