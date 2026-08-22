@@ -2636,6 +2636,24 @@
           valueCell.appendChild(scoreSpan);
         } else {
           valueCell.textContent = value.toFixed(2);
+          // Real per-prediction uncertainty (Chemprop MVE head -- see
+          // chemprop-model.js's applyHead()), not the applicability-domain
+          // tier below: this is the model's own predictive standard
+          // deviation for THIS molecule, distinct from (and a genuinely
+          // more informative complement to) the coarse in-domain/
+          // borderline/out-of-domain badge, which only says "have I seen
+          // anything like this" without a per-prediction magnitude.
+          if (meta && typeof meta.uncertainty === 'number') {
+            const uncSpan = document.createElement('span');
+            uncSpan.className = 'property-uncertainty';
+            uncSpan.textContent = ' ± ' + meta.uncertainty.toFixed(2);
+            uncSpan.title = 'Predictive uncertainty (Chemprop MVE head): this model’s own estimated ' +
+              'standard deviation for this specific prediction -- captures data/measurement noise ' +
+              '(aleatoric uncertainty) learned during training, not full model uncertainty an ensemble ' +
+              'would add. A larger value here means the model itself expects to be less accurate for ' +
+              'this molecule, independent of the applicability-domain badge.';
+            valueCell.appendChild(uncSpan);
+          }
         }
         if (registryEntry && registryEntry.units) {
           const unitSpan = document.createElement('span');

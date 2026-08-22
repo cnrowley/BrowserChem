@@ -14,9 +14,10 @@ Only supports the architecture this project's JS actually implements:
                       --bond-target-columns is set)
   - aggregation:      NormAggregation (sum / norm) for molecule-level
                       output; skipped entirely for atom-/bond-level output
-  - predictor:         single-task RegressionFFN or BinaryClassificationFFN,
-                        n_layers=1 (Linear -> ReLU -> Linear), with the
-                        regression head's UnscaleTransform or the
+  - predictor:         single-task RegressionFFN, BinaryClassificationFFN,
+                        or MveFFN (regression-mve, molecule-level only --
+                        see below), n_layers=1 (Linear -> ReLU -> Linear),
+                        with the regression head's UnscaleTransform or the
                         classification head's sigmoid applied in JS.
                         Molecule-level (predictor / mol_predictor),
                         atom-level (atom_predictor), or bond-level
@@ -28,6 +29,10 @@ Only supports the architecture this project's JS actually implements:
                         MolAtomBondMPNN always attaches a bond_predictor's
                         message-passing block with return_edge_embeddings
                         implied by that predictor's existence.
+  - MveFFN (Mean-Variance Estimation, `-t regression-mve -l mve` at train
+    time): a real per-prediction uncertainty head, molecule-level only --
+    see chemprop-model.js's applyHead() for how the browser reads back
+    the (mean, variance) pair this doubles the FFN's output width to.
 
 If your checkpoint uses a different message-passing scheme
 (AtomMessagePassing), a different aggregation (mean/sum/attentive), a
@@ -169,11 +174,28 @@ def main():
         task_type = "regression"
     elif pred_cls_name == "BinaryClassificationFFN":
         task_type = "classification"
+    elif pred_cls_name == "MveFFN":
+        # Mean-Variance Estimation: same RegressionFFN math plus a second
+        # output channel (raw variance, softplus'd) -- see MveFFN.forward()
+        # in chemprop's own nn/predictors.py. n_tasks stays 1 (still one
+        # property); only the FFN's actual last-layer output width doubles
+        # (n_tasks * n_targets, n_targets=2 for MVE), which the generic
+        # shape-driven tensor export below already handles unchanged.
+        # Scoped to molecule-level only -- chemprop-model.js's atom-/
+        # bond-level code paths (and the bond-level forward/backward
+        # averaging in particular) assume applyHead() returns a plain
+        # number, which no longer holds for an MVE head.
+        if output_level != "molecule":
+            sys.exit("MveFFN (regression-mve) is only supported for molecule-level checkpoints -- "
+                      "chemprop-model.js's atom-/bond-level code paths assume a plain-number output "
+                      "from applyHead(), which doesn't hold for an MVE head's (mean, variance) pair.")
+        task_type = "regression-mve"
     else:
         sys.exit(f"Unsupported predictor {pred_cls_name!r} -- only single-task RegressionFFN "
-                  "(regression) and BinaryClassificationFFN (binary classification) are "
-                  "implemented in chemprop-model.js. Multiclass, Dirichlet/evidential, and "
-                  "spectral heads would need a new forward-pass branch added there first.")
+                  "(regression), BinaryClassificationFFN (binary classification), and MveFFN "
+                  "(regression-mve, molecule-level only) are implemented in chemprop-model.js. "
+                  "Multiclass, Dirichlet/evidential, and spectral heads would need a new "
+                  "forward-pass branch added there first.")
     if pred_hp["n_layers"] != 1:
         sys.exit(f"Unsupported predictor n_layers={pred_hp['n_layers']} -- "
                   "only a single hidden layer (n_layers=1) is implemented.")
@@ -206,10 +228,14 @@ def main():
         "ffn1_weight": arr(f"{pred_prefix}.ffn.1.2.weight"),
         "ffn1_bias": arr(f"{pred_prefix}.ffn.1.2.bias"),
     }
-    if task_type == "regression":
+    if task_type in ("regression", "regression-mve"):
         # Classification's output_transform is Identity() (a plain sigmoid
         # is applied in the JS forward pass instead, see chemprop-model.js)
-        # -- there's nothing to export here in that case.
+        # -- there's nothing to export here in that case. MveFFN reuses
+        # this SAME output_transform for its mean channel, and its
+        # transform_variance() (var * scale**2, confirmed from chemprop's
+        # own UnscaleTransform source) needs only this same scale tensor
+        # too -- no separate variance-specific tensor to export.
         tensors["out_mean"] = arr(f"{pred_prefix}.output_transform.mean").reshape(-1)
         tensors["out_scale"] = arr(f"{pred_prefix}.output_transform.scale").reshape(-1)
 

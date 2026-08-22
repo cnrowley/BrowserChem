@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 REQUIRED_FIELDS = ["id", "displayName", "propertyKey", "files"]
-VALID_TASK_TYPES = {"regression", "classification"}
+VALID_TASK_TYPES = {"regression", "classification", "regression-mve"}
 VALID_ENGINES = {"chemprop", "nagl", "ani2x", "geomol", "pka"}
 VALID_CATEGORIES = {"general", "environmental-analytical", "medicinal", "structure-tools", "characterization"}
 

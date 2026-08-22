@@ -8,31 +8,45 @@
       ],
       "displayName": "logP (octanol-water partition coefficient)",
       "propertyKey": "logP",
-      "taskType": "regression",
+      "taskType": "regression-mve",
       "units": "log units",
-      "description": "Predicts logP, the log of the octanol-water partition coefficient -- a standard lipophilicity measure.",
+      "description": "Predicts logP, the log of the octanol-water partition coefficient -- a standard lipophilicity measure -- along with a real per-prediction uncertainty (Chemprop MVE head; see the [?] info panel).",
       "files": {
         "manifest": "logp/manifest.json",
-        "weights": "logp/weights.bin"
+        "weights": "logp/weights.bin",
+        "applicabilityDomain": "logp/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 3550,
+        "elements": ["B", "Br", "C", "Cl", "F", "I", "N", "O", "P", "S", "Si"],
+        "formalCharges": [-1, 0, 1],
+        "netMolecularCharges": [0, 1],
+        "embeddingDomainSelfDistanceP90": 0.2757,
+        "notes": "Computed by scripts/compute_applicability_domain.py from data/logp-opera/logp_opera.csv (the exact CSV chemprop train was pointed at). Net charge +2 occurred only 4/3550 times -- dropped as a one-off outlier, not real training support, same convention every other applicability-domain sidecar in this registry uses."
       },
       "dataset": {
-        "name": null,
-        "citationKey": null,
-        "size": null,
-        "splitStrategy": null,
-        "sourceUrl": null
+        "name": "OPERA LogP training set, v2.9",
+        "citationKey": "Mansouri2018OPERA",
+        "size": 3550,
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10",
+        "sourceUrl": "https://github.com/kmansouri/OPERA (OPERA_Data.zip -> LogP_2.9_update.csv)"
       },
-      "metrics": null,
+      "metrics": {
+        "testSetSize": 355,
+        "primary": { "name": "Test R²", "value": 0.6912 },
+        "all": { "testR2": 0.6912, "testMAE": 1.0842, "testRMSE": 1.5807 },
+        "note": "Real held-out test-set metrics (SCAFFOLD_BALANCED split, so a genuinely harder generalization test than a random split -- not cherry-picked for a flattering number). chemprop train's own logged test/mse (2.499) matches this RMSE² exactly; R²/MAE computed independently here (scripts/train_logp_chemprop.sh's test_predictions.csv merged back against the source data) since chemprop's own MVE test logging only reports MSE. Replaces the previous logp-v1 checkpoint, which this registry candidly documented as \"provided pre-trained without accompanying dataset/metrics documentation\" -- this one has a real, citable source and real metrics instead."
+      },
       "training": {
-        "chempropVersion": "2.3.0",
+        "chempropVersion": "2.2.3",
         "hyperparameters": {
           "hiddenSize": 300,
           "depth": 3,
           "aggNorm": 100
         },
-        "dateTrained": null
+        "dateTrained": "2026-08-22"
       },
-      "notes": "First model wired through this pipeline (see CHEMPROP_INTEGRATION.md) -- this checkpoint was provided pre-trained without accompanying dataset/metrics documentation, so those fields are left null rather than guessed. Architecture and weight-loading were validated against a from-scratch PyTorch/Chemprop reconstruction of this exact checkpoint on 24 diverse test molecules (exact match). Fill in the dataset/metrics fields (or ask Claude to, given the training run details) once you have them -- see validate_registry.py.",
+      "notes": "Retrained 2026-08-22 with a Chemprop MVE (Mean-Variance Estimation, -t regression-mve -l mve) head instead of plain regression -- outputs a real per-prediction uncertainty (aleatoric only, not full ensemble/epistemic uncertainty) alongside the value, surfaced in the UI as '± X.XX' next to the applicability-domain confidence badge. Replaces the prior logp-v1 checkpoint, which this registry candidly documented as having no recorded dataset/training provenance at all -- see scripts/prepare_logp_training_data.py for the real, citable source (EPA/NIEHS OPERA's own curated LogP training set) and its documented curation choices (QC_LEVEL filtering, duplicate-SMILES averaging). Architecture (hiddenSize=300, depth=3, aggNorm=100) unchanged from the prior checkpoint. Not yet independently JS-vs-Python cross-validated on real held-out predictions the way electrophile-reactivity-v1/vapor-pressure-v1 were -- do that before relying on exact numeric agreement, only the test-set aggregate metrics above are confirmed so far.",
       "tags": [
         "physicochemical",
         "lipophilicity"
@@ -145,32 +159,46 @@
       ],
       "displayName": "Aqueous solubility (logS)",
       "propertyKey": "Solubility",
-      "taskType": "regression",
+      "taskType": "regression-mve",
       "units": "log10(mol/L)",
-      "description": "Predicts logS, the log10 of aqueous solubility in mol/L -- a standard solubility measure complementary to logP.",
+      "description": "Predicts logS, the log10 of aqueous solubility in mol/L -- a standard solubility measure complementary to logP -- along with a real per-prediction uncertainty (Chemprop MVE head; see the [?] info panel).",
       "files": {
         "manifest": "logs-aqsoldb/manifest.json",
-        "weights": "logs-aqsoldb/weights.bin"
+        "weights": "logs-aqsoldb/weights.bin",
+        "applicabilityDomain": "logs-aqsoldb/applicability-domain.json"
+      },
+      "applicabilityDomain": {
+        "trainingSetSize": 9980,
+        "elements": ["Ag", "Al", "As", "Au", "B", "Ba", "Be", "Bi", "Br", "C", "Ca", "Cd", "Ce", "Cl", "Co", "Cr", "Cs", "Cu", "Dy", "F", "Fe", "Gd", "Ge", "H", "Hf", "Hg", "I", "In", "Ir", "K", "La", "Li", "Lu", "Mg", "Mn", "Mo", "N", "Na", "Nb", "Nd", "Ni", "O", "P", "Pb", "Pd", "Pr", "Pt", "Re", "Rh", "Ru", "S", "Sb", "Se", "Si", "Sm", "Sn", "Sr", "Ta", "Te", "Ti", "V", "W", "Y", "Zn", "Zr"],
+        "formalCharges": [-2, -1, 0, 1, 2, 3, 4, 5],
+        "netMolecularCharges": [-2, -1, 0, 1, 2],
+        "embeddingDomainSelfDistanceP90": 0.3026,
+        "notes": "Computed by scripts/compute_applicability_domain.py from data/logs-aqsoldb/aqsoldb.csv (the exact CSV chemprop train was pointed at). AqSolDB includes many inorganic/organometallic entries (metal salts, coordination compounds) alongside ordinary organic molecules, hence the unusually broad element list for a solubility model -- a real property of this dataset, not a curation artifact. Net charges -12, -30, -22, -5, -4, 3, 4 each occurred under 5/9980 times -- dropped as one-off outliers."
       },
       "dataset": {
-        "name": "AqSolDB (likely -- not yet confirmed; see notes)",
-        "citationKey": null,
-        "size": null,
+        "name": "AqSolDB (Sorkun, Khetan & Cepeda, Sci Data 2019)",
+        "citationKey": "Sorkun2019AqSolDB",
+        "size": 9980,
         "positiveCount": null,
-        "splitStrategy": null,
-        "sourceUrl": null
+        "splitStrategy": "SCAFFOLD_BALANCED 80/10/10",
+        "sourceUrl": "https://github.com/mcsorkun/AqSolDB (results/data_curated.csv)"
       },
-      "metrics": null,
+      "metrics": {
+        "testSetSize": 998,
+        "primary": { "name": "Test R²", "value": 0.8309 },
+        "all": { "testR2": 0.8309, "testMAE": 0.8185, "testRMSE": 1.1085 },
+        "note": "Real held-out test-set metrics (SCAFFOLD_BALANCED split). chemprop train's own logged test/mse (1.229) matches this RMSE² exactly; R²/MAE computed independently here (scripts/train_aqsoldb_chemprop.sh's test_predictions.csv merged back against the source data) since chemprop's own MVE test logging only reports MSE."
+      },
       "training": {
-        "chempropVersion": null,
+        "chempropVersion": "2.2.3",
         "hyperparameters": {
           "hiddenSize": 300,
           "depth": 3,
           "aggNorm": 100
         },
-        "dateTrained": null
+        "dateTrained": "2026-08-22"
       },
-      "notes": "Directory name (AqSolDB) and file layout strongly suggest this is trained on Sorkun et al.'s AqSolDB (Sci Data, 2019), but this hasn't been explicitly confirmed yet, and the dataset went through a custom curation pipeline (data-curation.py, preprocess.py, merge.py) before training, so treat the citation as provisional until confirmed and the merge/curation logic is understood -- don't cite as plain AqSolDB without checking what the curation changed. Sanity-checked (not yet validated against ground truth or a real PyTorch reconstruction) on 10 molecules with well-known qualitative solubility: correct ordering throughout (small polar molecules, water, insoluble aromatics, insoluble long-chain alkane), and magnitudes broadly track literature values (benzene -1.50 vs lit. ~-1.64; naphthalene -3.20 vs lit. ~-3.6; hexadecane -7.40 vs lit. ~-8; anthracene -5.28 vs lit. ~-6.9 -- same ballpark and correct ordering, largest single gap of the set). Not yet cross-validated against real test-set predictions the way logP and electrophile-reactivity were -- send config.toml/hparams.yaml/splits.json/test_predictions.csv for that and for real dataset/metrics fields once available.",
+      "notes": "Retrained 2026-08-22 directly via scripts/prepare_aqsoldb_training_data.py -> scripts/train_aqsoldb_chemprop.sh, resolving this entry's prior 'likely but not confirmed' AqSolDB provenance hedge -- this checkpoint's source is now the exact, reproducible pipeline named in dataset.sourceUrl, not an inference from directory naming. Also switched to a Chemprop MVE (Mean-Variance Estimation, -t regression-mve -l mve) head instead of plain regression -- outputs a real per-prediction uncertainty (aleatoric only) alongside the value, surfaced in the UI as '± X.XX' next to the applicability-domain confidence badge. Sanity-checked on the same 10 molecules with well-known qualitative solubility the prior checkpoint was: correct relative ordering preserved throughout. Not yet independently JS-vs-Python cross-validated on real held-out predictions the way electrophile-reactivity-v1/vapor-pressure-v1 were -- do that before relying on exact numeric agreement, only the test-set aggregate metrics above are confirmed so far.",
       "tags": [
         "physicochemical",
         "solubility",

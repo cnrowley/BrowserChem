@@ -17,12 +17,18 @@
  * properties loaded simultaneously without them competing for a single
  * "the loaded model" slot the way earlier versions of this file worked.
  *
- * Supports both output heads Chemprop's RegressionFFN/BinaryClassificationFFN
- * produce (manifest.taskType tells this file which): regression applies
- * the checkpoint's UnscaleTransform (raw * scale + mean); classification
- * applies a plain sigmoid, matching BinaryClassificationFFN.forward()'s
- * `Y.sigmoid()` exactly (see chemprop's nn/predictors.py) — the
- * probability of the positive class, not a raw logit.
+ * Supports the output heads Chemprop's RegressionFFN/BinaryClassificationFFN/
+ * MveFFN produce (manifest.taskType tells this file which): regression
+ * applies the checkpoint's UnscaleTransform (raw * scale + mean);
+ * classification applies a plain sigmoid, matching
+ * BinaryClassificationFFN.forward()'s `Y.sigmoid()` exactly (see chemprop's
+ * nn/predictors.py) — the probability of the positive class, not a raw
+ * logit; "regression-mve" (Mean-Variance Estimation, molecule-level only —
+ * see convert_chemprop_checkpoint.py) applies the same UnscaleTransform to
+ * a mean channel plus a softplus'd, scale^2-scaled variance channel
+ * (MveFFN.forward()'s exact math), returning real per-prediction
+ * (aleatoric) uncertainty alongside the value rather than a bare number —
+ * see applyHead() and runOneMolecule().
  *
  * Also supports atom-level models (manifest.outputLevel === "atom", e.g.
  * per-atom partial charges) alongside the usual molecule-level ones
@@ -55,7 +61,8 @@
  * strategy dmpnn.js's "demo" backend already uses, just with real weights.
  *
  * Expected checkpoint shape (what the conversion script must produce):
- *   manifest.taskType = "regression" | "classification"
+ *   manifest.taskType = "regression" | "classification" | "regression-mve"
+ *                    ("regression-mve" is molecule-level only)
  *   manifest.outputLevel = "molecule" | "atom" | "bond" (default "molecule")
  *   manifest.graphType = "heavy" | "explicit-h" (default "heavy",
  *                    atom-level only) — "explicit-h" means the checkpoint
@@ -86,9 +93,12 @@
  *                        embedding with its reverse edge's), vs d_h for
  *                        atom/molecule.
  *   manifest.tensors.{out_mean, out_scale} = { shape, offset, length }
- *                      — regression only; absent for classification,
- *                        since BinaryClassificationFFN's output_transform
- *                        is Identity() (nothing to unscale).
+ *                      — regression and regression-mve only; absent for
+ *                        classification, since BinaryClassificationFFN's
+ *                        output_transform is Identity() (nothing to
+ *                        unscale). regression-mve's variance channel
+ *                        reuses this same out_scale (squared, no mean
+ *                        shift) rather than needing its own tensor.
  *   weights.bin = all of those tensors concatenated as float32, in that
  *                 same order, row-major (matches nn.Linear.weight layout).
  */
@@ -169,7 +179,7 @@ CC.GNN = window.CC.GNN || {};
       ffn1: toRows(tensor('ffn1_weight'), tensorShape('ffn1_weight')),
       ffn1Bias: Array.from(tensor('ffn1_bias')),
     };
-    if (model.taskType === 'regression') {
+    if (model.taskType === 'regression' || model.taskType === 'regression-mve') {
       model.outMean = tensor('out_mean')[0];
       model.outScale = tensor('out_scale')[0];
     }
@@ -212,15 +222,43 @@ CC.GNN = window.CC.GNN || {};
     return y;
   }
 
+  // Numerically-stable softplus: log(1+exp(x)), but computed as
+  // x + log1p(exp(-x)) for large x to avoid overflowing exp(x) — standard
+  // trick, same one PyTorch's own F.softplus uses internally.
+  function softplus(x) {
+    return x > 20 ? x : Math.log1p(Math.exp(x));
+  }
+
   // Applies ffn0 -> ReLU -> ffn1 -> task-appropriate output head to a
   // single embedding vector (either the pooled molecule vector, or one
   // atom's own embedding — this part of the math doesn't care which).
+  // Returns a plain number for 'classification'/'regression', or
+  // { value, uncertainty } for 'regression-mve' — callers that can
+  // receive an MVE model (currently only runOneMolecule) must check
+  // model.taskType before unwrapping; the atom-/bond-level call sites
+  // never see 'regression-mve' (convert_chemprop_checkpoint.py scopes
+  // MveFFN export to molecule-level checkpoints only).
   function applyHead(model, embedding) {
     const hidden = relu(matVecBias(model.ffn0, model.ffn0Bias, embedding));
-    const raw = matVecBias(model.ffn1, model.ffn1Bias, hidden)[0];
-    return model.taskType === 'classification'
-      ? sigmoid(raw) // BinaryClassificationFFN.forward(): Y.sigmoid() -- a probability, not a logit
-      : raw * model.outScale + model.outMean;
+    const raw = matVecBias(model.ffn1, model.ffn1Bias, hidden);
+    if (model.taskType === 'classification') {
+      return sigmoid(raw[0]); // BinaryClassificationFFN.forward(): Y.sigmoid() -- a probability, not a logit
+    }
+    if (model.taskType === 'regression-mve') {
+      // MveFFN.forward() (chemprop's nn/predictors.py): Y = ffn(Z), split
+      // into (mean, var); var = softplus(var); mean = output_transform
+      // (mean); var = output_transform.transform_variance(var), which for
+      // the linear UnscaleTransform this project uses is var * scale^2
+      // (confirmed from chemprop's own UnscaleTransform.transform_variance
+      // source — a pure squared-scale, no mean shift, since variance has
+      // no additive offset). Returns a standard-deviation-style number
+      // (sqrt of the unscaled variance) rather than raw variance — more
+      // directly interpretable next to the predicted value in the UI.
+      const mean = raw[0] * model.outScale + model.outMean;
+      const variance = softplus(raw[1]) * model.outScale * model.outScale;
+      return { value: mean, uncertainty: Math.sqrt(variance) };
+    }
+    return raw[0] * model.outScale + model.outMean;
   }
 
   function runDMPNNFor(model, graph) {
@@ -244,7 +282,16 @@ CC.GNN = window.CC.GNN || {};
     const out = runDMPNNFor(model, graph);
     const pooled = CC.GNN.poolSum(out.atomEmbeddings, model.dims.d_h)
       .map(function (x) { return x / model.dims.aggNorm; });
-    return { value: applyHead(model, pooled), pooled: pooled };
+    const head = applyHead(model, pooled);
+    // regression-mve's applyHead returns { value, uncertainty }; every
+    // other taskType returns a plain number -- unwrap here so `value`
+    // stays a plain number everywhere else, and `uncertainty` (undefined
+    // for non-MVE models) rides alongside it for the caller to fold into
+    // propertyMeta next to the existing applicability-domain confidence.
+    if (model.taskType === 'regression-mve') {
+      return { value: head.value, uncertainty: head.uncertainty, pooled: pooled };
+    }
+    return { value: head, pooled: pooled };
   }
 
   // Per-model (not just per-engine) training-vocabulary gate -- see
@@ -453,7 +500,7 @@ CC.GNN = window.CC.GNN || {};
     const propertyMeta = {};
     const out = runOneMolecule(model, graph);
     molecularProperties[model.task] = out.value;
-    propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled) };
+    propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled), uncertainty: out.uncertainty };
     return { molecularProperties: molecularProperties, propertyMeta: propertyMeta, atomIds: graph.atomIds, backend: 'chemprop', modelId: id };
   };
 
@@ -527,7 +574,7 @@ CC.GNN = window.CC.GNN || {};
         const graph = graphs.forGraphType('heavy');
         const out = runOneMolecule(model, graph);
         molecularProperties[model.task] = out.value;
-        propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled) };
+        propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled), uncertainty: out.uncertainty };
       }
     });
 

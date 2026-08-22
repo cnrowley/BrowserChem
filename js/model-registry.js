@@ -62,9 +62,11 @@
  *                                   (baked into their own manifest.json,
  *                                   not this registry entry) to already
  *                                   be loaded before predicting.
- *         "taskType": "regression" | "classification",  required for
- *                      "chemprop" entries; ignored for "nagl" (NAGL-MBIS
- *                      is always atom-level regression by construction)
+ *         "taskType": "regression" | "classification" | "regression-mve",
+ *                      required for "chemprop" entries ("regression-mve"
+ *                      is molecule-level only -- see chemprop-model.js);
+ *                      ignored for "nagl" (NAGL-MBIS is always atom-level
+ *                      regression by construction)
  *         "files": { "manifest": "...", "weights": "..." },  required,
  *                   paths resolved relative to registry.json's own URL
  *         "units": "...",           optional
@@ -126,8 +128,8 @@ CC.GNN = window.CC.GNN || {};
       if (engine !== 'chemprop' && engine !== 'nagl' && engine !== 'ani2x' && engine !== 'geomol' && engine !== 'pka') {
         problems.push('"engine" must be "chemprop", "nagl", "ani2x", "geomol", or "pka", got ' + JSON.stringify(raw.engine));
       }
-      if (engine === 'chemprop' && raw.taskType !== 'regression' && raw.taskType !== 'classification') {
-        problems.push('"taskType" must be "regression" or "classification", got ' + JSON.stringify(raw.taskType));
+      if (engine === 'chemprop' && raw.taskType !== 'regression' && raw.taskType !== 'classification' && raw.taskType !== 'regression-mve') {
+        problems.push('"taskType" must be "regression", "classification", or "regression-mve", got ' + JSON.stringify(raw.taskType));
       }
       if (!raw.files || !raw.files.manifest || !raw.files.weights) {
         problems.push('missing "files.manifest" / "files.weights"');

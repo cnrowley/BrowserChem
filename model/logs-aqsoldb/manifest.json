@@ -1,6 +1,9 @@
 {
   "task": "Solubility",
-  "taskType": "regression",
+  "taskType": "regression-mve",
+  "outputLevel": "molecule",
+  "graphType": "heavy",
+  "applicableElement": null,
   "architecture": "chemprop-dmpnn-v2",
   "dims": {
     "d_v": 72,
@@ -60,34 +63,34 @@
     },
     "ffn1_weight": {
       "shape": [
-        1,
+        2,
         300
       ],
       "offset": 318000,
-      "length": 300
+      "length": 600
     },
     "ffn1_bias": {
       "shape": [
-        1
+        2
       ],
-      "offset": 318300,
-      "length": 1
+      "offset": 318600,
+      "length": 2
     },
     "out_mean": {
       "shape": [
         1
       ],
-      "offset": 318301,
+      "offset": 318602,
       "length": 1
     },
     "out_scale": {
       "shape": [
         1
       ],
-      "offset": 318302,
+      "offset": 318603,
       "length": 1
     }
   },
-  "byteLength": 1273212,
+  "byteLength": 1274416,
   "dtype": "float32"
 }

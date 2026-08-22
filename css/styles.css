@@ -1210,6 +1210,13 @@ div.properties-section-title {
   font-weight: 500;
 }
 
+.property-uncertainty {
+  color: var(--text-dark-muted);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
 /* Applicability-domain confidence tier (see applicability-domain.js) --
    same three-color convention as .validation-status-banner's status-ok/
    status-warning/status-error, applied per prediction rather than per
