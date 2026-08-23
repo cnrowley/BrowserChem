@@ -5,10 +5,13 @@
  * calculation: Generalized Born (GB) electrostatics via the
  * Hawkins-Cramer-Truhlar (HCT) pairwise descreening approximation --
  * AMBER's "igb=1", the original/simplest real GB variant -- plus a
- * SASA-based nonpolar (cavity/dispersion) term. Needs an already-built 3D
- * conformer (see embed3d.js/geomol-model.js) and per-atom partial charges
- * (this project's NAGL-MBIS model, see nagl-model.js) as inputs; computes
- * nothing about geometry or charges itself.
+ * SASA-based nonpolar (cavity/dispersion) term (see
+ * nonpolarSolvationEnergy below: CC.DSASA.compute() when available, an
+ * exact-analytical SASA construction with a real gradient, dsasa.js).
+ * Needs an already-built 3D conformer (see embed3d.js/geomol-model.js)
+ * and per-atom partial charges (this project's NAGL-MBIS model, see
+ * nagl-model.js) as inputs; computes nothing about geometry or charges
+ * itself.
  *
  * Deliberately NOT the later OBC refinement (AMBER igb=2/5, GB-Neck,
  * GB-Neck2) -- those add a fitted tanh(alpha*sum - beta*sum^2 +
@@ -160,14 +163,37 @@ CC.Solvent = window.CC.Solvent || {};
   };
 
   /**
-   * SASA-based nonpolar (cavity + dispersion) term -- reuses
-   * CC.SASA.compute() (steric-accessibility.js) rather than a second SASA
-   * implementation.
+   * SASA-based nonpolar (cavity + dispersion) term. Uses CC.DSASA.compute()
+   * (dsasa.js) -- an exact-analytical-SASA construction (weighted-Delaunay
+   * alpha complex + inclusion-exclusion, Cao/Hummel/Wang/Simmerling/
+   * Coutsias JCTC 2024 / Hummel PhD thesis) validated within a fraction of
+   * a percent to ~3.5% of Shrake-Rupley on real molecules, WITH a real,
+   * gradient-consistent derivative (0.00% error against independent
+   * numerical differentiation of dsasa.js's own energy value -- see that
+   * file's header for the full validation) -- unlike CC.SASA.compute()
+   * (steric-accessibility.js's Shrake-Rupley), which has no meaningful
+   * gradient at all (a step function of atom position: points on a
+   * sampled sphere flip discretely between buried/exposed). Falls back to
+   * CC.SASA.compute() (value only, gradient null) if CC.DSASA isn't
+   * loaded for some reason -- shouldn't happen in the shipped app (see
+   * index.html's script order) but keeps this file from hard-crashing if
+   * it does.
+   *
+   * Returns { energy, totalSasa, gradient }. `gradient` is a
+   * Float64Array(3*atoms.length) of d(energy)/dposition (already scaled
+   * by SURFACE_TENSION, matching `energy`'s own units) when CC.DSASA
+   * computed it, or null when the Shrake-Rupley fallback was used.
    */
   CC.Solvent.nonpolarSolvationEnergy = function (atoms) {
+    if (window.CC && CC.DSASA && CC.DSASA.compute) {
+      const res = CC.DSASA.compute(atoms);
+      const gradient = new Float64Array(res.gradient.length);
+      for (let i = 0; i < gradient.length; i++) gradient[i] = SURFACE_TENSION * res.gradient[i];
+      return { energy: SURFACE_TENSION * res.totalSASA, totalSasa: res.totalSASA, gradient: gradient };
+    }
     const perAtom = CC.SASA.compute(atoms, {});
     const totalSasa = perAtom.reduce(function (s, a) { return s + a.sasa; }, 0);
-    return { energy: SURFACE_TENSION * totalSasa, totalSasa: totalSasa };
+    return { energy: SURFACE_TENSION * totalSasa, totalSasa: totalSasa, gradient: null };
   };
 
   // Dielectric constants: standard literature values at/near room

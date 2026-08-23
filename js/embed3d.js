@@ -595,6 +595,41 @@ window.CC = window.CC || {};
     return strength * CC.Solvent.predict(atoms, solvent.charges, solvent.epsSolvent).total;
   }
 
+  // Polar (GB) term ONLY -- used by numericResidualGradient's finite
+  // difference. The nonpolar (SASA) term is deliberately EXCLUDED here:
+  // it now has its own analytical gradient (nonpolarSolvationGradient,
+  // below, backed by CC.DSASA.compute()) added directly in gradient()
+  // instead, so finite-differencing it here too would double-count it.
+  // Polar GB (Born radii, an all-pairs sum with no hand-derived gradient
+  // in this project) stays on finite difference, same as before.
+  function polarSolvationEnergyOnly(positions, atoms3d, solvent, strength) {
+    if (!solvent || !solvent.enabled || !solvent.charges || strength <= 0) return 0;
+    const atoms = atoms3d.map(function (a, i) {
+      return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z };
+    });
+    return strength * CC.Solvent.polarSolvationEnergy(atoms, solvent.charges, solvent.epsSolvent);
+  }
+
+  // Analytical gradient of the nonpolar (SASA) solvation term, via
+  // dsasa.js -- see that file's header for validation (energy within a
+  // fraction of a percent to ~3.5% of Shrake-Rupley on real molecules;
+  // gradient exactly consistent with that energy, 0.00% error against
+  // independent numerical differentiation). Falls back to an all-zero
+  // gradient if CC.DSASA didn't load (implicit-solvent.js's own
+  // CC.SASA.compute() fallback has no gradient to contribute either) --
+  // degrades gracefully rather than crashing the optimizer.
+  function nonpolarSolvationGradient(positions, atoms3d, solvent, strength) {
+    const grad = new Float64Array(3 * atoms3d.length);
+    if (!solvent || !solvent.enabled || !solvent.charges || strength <= 0) return grad;
+    const atoms = atoms3d.map(function (a, i) {
+      return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z };
+    });
+    const nonpolar = CC.Solvent.nonpolarSolvationEnergy(atoms);
+    if (!nonpolar.gradient) return grad;
+    for (let i = 0; i < grad.length; i++) grad[i] = strength * nonpolar.gradient[i];
+    return grad;
+  }
+
   function computeEnergy(positions, atoms3d, bonds3d, angles, torsions, impropers, pairs, stage, solvent) {
     let energy = 0;
 
@@ -893,19 +928,21 @@ window.CC = window.CC || {};
     return energy;
   }
 
-  // Finite-difference gradient of ONLY the two terms analyticGradient
-  // doesn't cover (improper out-of-plane + GB/SA solvation) -- neither
-  // has a hand-derived analytical form here (the improper term's plane-
-  // deviation formula and solvation's O(n^2) Born-radii sum with its
-  // piecewise engulfment branches are both real, separate derivations
-  // this pass didn't attempt, same reasoning openff-forcefield.js's own
-  // gradientSMIRNOFF already documents for leaving solvation numerical).
-  // Critically: builds `positions` ONCE (via unflatten) and mutates a
-  // single coordinate of it in place per perturbation, restoring it
-  // after, rather than calling unflatten(flat) fresh on every one of the
-  // (up to) 6*numAtoms perturbations the way the old numericGradient did
-  // -- that reallocation, not the finite-difference approach itself, was
-  // the real O(numAtoms^2)-allocation cost.
+  // Finite-difference gradient of the terms analyticGradient doesn't
+  // cover: improper out-of-plane, and the POLAR-GB half of solvation
+  // (the O(n^2) Born-radii sum with its piecewise engulfment branches --
+  // a real, separate derivation this project didn't attempt, same
+  // reasoning openff-forcefield.js's own gradientSMIRNOFF already
+  // documents for leaving it numerical). The nonpolar-SASA half of
+  // solvation is NOT included here -- it has its own analytical gradient
+  // (nonpolarSolvationGradient, above, backed by CC.DSASA.compute()),
+  // added directly in gradient() below instead. Critically: builds
+  // `positions` ONCE (via unflatten) and mutates a single coordinate of
+  // it in place per perturbation, restoring it after, rather than
+  // calling unflatten(flat) fresh on every one of the (up to)
+  // 6*numAtoms perturbations the way the old numericGradient did -- that
+  // reallocation, not the finite-difference approach itself, was the
+  // real O(numAtoms^2)-allocation cost.
   function numericResidualGradient(flat, atoms3d, impropers, pairs, stage, solvent) {
     const grad = new Float64Array(flat.length);
     const hasImpropers = stage.torsion && impropers.length > 0;
@@ -934,7 +971,7 @@ window.CC = window.CC || {};
 
     function residualEnergy() {
       let e = hasImpropers ? improperEnergyOnly(positions, impropers) : 0;
-      if (hasSolvent) e += solvationEnergy(positions, atoms3d, solvent, stage.lj);
+      if (hasSolvent) e += polarSolvationEnergyOnly(positions, atoms3d, solvent, stage.lj);
       return e;
     }
 
@@ -967,6 +1004,8 @@ window.CC = window.CC || {};
     const grad = analyticGradient(positions, atoms3d, bonds3d, angles, torsions, pairs, stage);
     const residual = numericResidualGradient(flat, atoms3d, impropers, pairs, stage, solvent);
     for (let i = 0; i < grad.length; i++) grad[i] += residual[i];
+    const nonpolarGrad = nonpolarSolvationGradient(positions, atoms3d, solvent, stage.lj);
+    for (let i = 0; i < grad.length; i++) grad[i] += nonpolarGrad[i];
     return grad;
   }
 
