@@ -1,0 +1,20 @@
+{
+  "modelId": "ocsrglyph",
+  "source": "EdisonScientific/OCSRGlyph",
+  "sourceUrl": "https://huggingface.co/EdisonScientific/OCSRGlyph",
+  "codeUrl": "https://github.com/EdisonScientific/glyph",
+  "license": "Apache-2.0",
+  "inputSize": 384,
+  "embedDim": 256,
+  "vocabSize": 101,
+  "padId": 0,
+  "sosId": 1,
+  "eosId": 2,
+  "maxLen": 256,
+  "precision": "fp16",
+  "validated": {
+    "testImage": "examples/imatinib.png (upstream github.com/EdisonScientific/glyph repo)",
+    "expectedSmiles": "Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1",
+    "note": "fp32 PyTorch, fp32 ONNX, and fp16 ONNX all produced this exact SMILES string (byte-for-byte, not just canonically equivalent) on this test image -- see scripts/convert_ocsrglyph_checkpoint.py's own validation pass."
+  }
+}

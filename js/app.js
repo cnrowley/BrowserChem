@@ -1191,6 +1191,124 @@
     });
   }
 
+  /**
+   * "Image → Structure" tab: upload/paste an image of a drawn molecule,
+   * recognize it with OCSRGlyph (js/ocsrglyph-model.js, running entirely
+   * client-side via ONNX Runtime), and load the result as the current
+   * structure. Parsing the recognized SMILES reuses the exact same
+   * RDKit get_mol -> get_molblock -> molblockToMolecule -> loadNewMolecule
+   * path setupSmilesInput's "Load from SMILES" already uses (see above)
+   * -- ocsrglyph-model.js deliberately stops at a plain SMILES string and
+   * has no RDKit dependency of its own.
+   */
+  function setupOCSRPanel() {
+    const dropzone = document.getElementById('ocsr-dropzone');
+    const dropzoneLabel = document.getElementById('ocsr-dropzone-label');
+    const preview = document.getElementById('ocsr-preview');
+    const fileInput = document.getElementById('ocsr-file-input');
+    const recognizeBtn = document.getElementById('ocsr-recognize-btn');
+    const status = document.getElementById('ocsr-status');
+    if (!dropzone || !fileInput || !recognizeBtn) return;
+
+    function showImage(dataUrl) {
+      preview.src = dataUrl;
+      preview.style.display = '';
+      dropzoneLabel.style.display = 'none';
+      recognizeBtn.disabled = false;
+      status.textContent = '';
+    }
+
+    function loadImageFile(file) {
+      if (!file || file.type.indexOf('image/') !== 0) {
+        status.textContent = 'That file is not an image.';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function () { showImage(String(reader.result)); };
+      reader.onerror = function () { status.textContent = 'Could not read that image file.'; };
+      reader.readAsDataURL(file);
+    }
+
+    dropzone.addEventListener('click', function () { fileInput.click(); });
+    dropzone.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+    });
+    dropzone.addEventListener('dragover', function (e) { e.preventDefault(); dropzone.classList.add('is-dragover'); });
+    dropzone.addEventListener('dragleave', function () { dropzone.classList.remove('is-dragover'); });
+    dropzone.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dropzone.classList.remove('is-dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) loadImageFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', function () {
+      if (fileInput.files[0]) loadImageFile(fileInput.files[0]);
+      fileInput.value = '';
+    });
+
+    // Clipboard paste, scoped to only act while this tab is actually
+    // visible (a bare `document`-level paste listener would otherwise
+    // fire no matter which side-panel tab -- or none -- is showing).
+    document.addEventListener('paste', function (e) {
+      const panel = document.getElementById('panel-ocsr');
+      if (!panel || panel.classList.contains('is-hidden')) return;
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image/') === 0) {
+          e.preventDefault();
+          loadImageFile(items[i].getAsFile());
+          return;
+        }
+      }
+    });
+
+    recognizeBtn.addEventListener('click', function () {
+      recognizeBtn.disabled = true;
+      const loadNeeded = !CC.OCSRGlyph.isLoaded();
+      status.textContent = loadNeeded
+        ? 'Loading OCSRGlyph model (≈209MB, first use only)…'
+        : 'Recognizing structure…';
+
+      CC.OCSRGlyph.loadModel()
+        .then(function () {
+          status.textContent = 'Recognizing structure…';
+          return CC.OCSRGlyph.recognize(preview);
+        })
+        .then(function (result) {
+          const RDKit = window.chemCanvasLibs && window.chemCanvasLibs.RDKit;
+          if (!RDKit) {
+            status.textContent = 'RDKit.js is still loading — try again in a moment.';
+            return;
+          }
+          let mol = null;
+          try {
+            mol = RDKit.get_mol(result.smiles);
+            if (!mol || !mol.is_valid()) {
+              status.textContent = 'Recognized text was not a valid structure: ' + result.smiles;
+              CC.Logger.warning('OCSR recognition produced an unparseable SMILES: ' + result.smiles);
+              return;
+            }
+            const molblock = mol.get_molblock();
+            const loaded = CC.molblockToMolecule(molblock);
+            loadNewMolecule(loaded);
+            status.textContent = 'Recognized: ' + result.smiles;
+            CC.Logger.success('Loaded structure from image via OCSRGlyph: ' + result.smiles);
+          } finally {
+            if (mol) mol.delete();
+          }
+        })
+        .catch(function (err) {
+          status.textContent = 'Recognition failed: ' + err.message;
+          console.error('[ChemCanvas] OCSR recognition failed', err);
+          CC.Logger.error('OCSR recognition failed: ' + err.message);
+        })
+        .finally(function () {
+          recognizeBtn.disabled = false;
+        });
+    });
+  }
+
   function setupPropertiesNav() {
     const btn = document.getElementById('show-properties-btn');
     btn.addEventListener('click', function () {
@@ -3611,6 +3729,7 @@
     setupPropertyInfoModal();
     setupTransferMatrixModal();
     setupTitrationPanel();
+    setupOCSRPanel();
 
     // Loaded once at startup, same as the model registry -- data-only
     // (no weights to fetch on demand), so there's no reason to defer it.

@@ -106,6 +106,7 @@
       <button class="side-tab is-active" role="tab" aria-selected="true" data-panel="view3d">3D view</button>
       <button class="side-tab" role="tab" aria-selected="false" data-panel="properties">Properties</button>
       <button class="side-tab" role="tab" aria-selected="false" data-panel="titration">Titration</button>
+      <button class="side-tab" role="tab" aria-selected="false" data-panel="ocsr">Image &rarr; Structure</button>
     </div>
 
     <div class="side-panel-content" id="panel-view3d" role="tabpanel">
@@ -435,6 +436,20 @@
         </table>
       </div>
     </div>
+
+    <div class="side-panel-content is-hidden" id="panel-ocsr" role="tabpanel">
+      <div class="properties-section">
+        <h3 class="properties-section-title">Optical chemical structure recognition</h3>
+        <p class="side-panel-note">Upload an image of a hand- or software-drawn molecule (or paste one from the clipboard) and recognize it as a structure using <a href="https://github.com/EdisonScientific/glyph" target="_blank" rel="noopener">OCSRGlyph</a>, a real published model (Swin-B image encoder + transformer SMILES decoder), running entirely client-side via ONNX Runtime. First use downloads the model weights (&asymp;209MB, fp16) &mdash; nothing is fetched until you use this tab.</p>
+        <div class="ocsr-dropzone" id="ocsr-dropzone" tabindex="0">
+          <p id="ocsr-dropzone-label">Click to upload an image, or paste one (Ctrl/Cmd+V) while this tab is focused</p>
+          <img id="ocsr-preview" style="display:none;" alt="Uploaded structure image preview">
+        </div>
+        <input type="file" id="ocsr-file-input" accept="image/*" hidden>
+        <button class="btn btn-accent btn-small" id="ocsr-recognize-btn" disabled>Recognize structure</button>
+        <p class="side-panel-note" id="ocsr-status"></p>
+      </div>
+    </div>
   </aside>
 
 </main>
@@ -570,6 +585,7 @@
 <script src="js/xyz.js"></script>
 <script src="js/embed3d.js"></script>
 <script src="js/steric-accessibility.js"></script>
+<script src="js/dsasa.js"></script>
 <script src="js/implicit-solvent.js"></script>
 <script src="js/molecular-shape.js"></script>
 <script src="js/viewer3d.js"></script>
@@ -599,6 +615,7 @@
 <script src="js/geomol-model.js"></script>
 <script src="js/geomol-assembly.js"></script>
 <script src="js/gnn-inference.js"></script>
+<script src="js/ocsrglyph-model.js"></script>
 <script src="js/conformer-search.js"></script>
 <script src="js/structure-validation.js"></script>
 <script src="js/atom-heatmap.js"></script>
