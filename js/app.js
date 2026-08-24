@@ -812,12 +812,17 @@
   }
 
   // Builds the content shown behind every predictive model's "[?]" popup
-  // (see setupPropertyInfoModal): what it predicts, its training dataset,
-  // reported metrics/expected accuracy, and any documented domain-of-
-  // applicability caveats -- all sourced directly from registry.json,
-  // which is the same data validate_registry.py checks and the model
-  // list's one-line summary is drawn from, just shown in full here. Top-
-  // level (not nested in setupPropertiesPanel) so both the Properties
+  // (see setupPropertyInfoModal), sourced directly from registry.json (the
+  // same data validate_registry.py checks). Deliberately leads with exactly
+  // four things, one short statement each -- property, dataset, domain of
+  // applicability, in-domain uncertainty -- rather than dumping every
+  // registry field at equal weight: earlier versions of this box buried
+  // those four under paragraphs of engineering-log narration (training
+  // dates, script names, retraining history). That detail isn't wrong and
+  // this project's own honesty norm (CHEMPROP_INTEGRATION.md) means it
+  // shouldn't be deleted, so it's preserved verbatim in a collapsed
+  // "Technical details" <details> at the end instead of the primary view.
+  // Top-level (not nested in setupPropertiesPanel) so both the Properties
   // panel's model list/results table AND the Titration tab's own "[?]"
   // can build the same content for the same registry entry.
   function buildPropertyInfoBox(entry) {
@@ -862,8 +867,10 @@
       return dl;
     }
 
+    // 1. Property
     section('What this predicts', textBlock(entry.description));
 
+    // 2. Dataset
     const ds = entry.dataset || {};
     section('Dataset', defList([
       ['Name', ds.name],
@@ -872,46 +879,95 @@
       ['Source', ds.sourceUrl, 'link'],
     ]));
 
-    const training = entry.training || {};
-    const hp = training.hyperparameters;
-    section('Model', defList([
-      ['Architecture', entry.engine === 'nagl' ? 'GraphSAGE + electronegativity equalization' : 'Chemprop D-MPNN'],
-      ['Hyperparameters', hp ? (typeof hp === 'string' ? hp : JSON.stringify(hp)) : null],
-      ['Date trained', training.dateTrained],
-    ]));
-
-    if (entry.metrics) {
-      const m = entry.metrics;
-      const rows = [];
-      if (m.primary) rows.push([m.primary.name, m.primary.value + (m.primary.units ? ' ' + m.primary.units : '')]);
-      if (m.testSetSize) rows.push(['Test set size', m.testSetSize]);
-      section('Reported metrics (expected accuracy)', defList(rows));
-      if (m.note) section('', textBlock(m.note));
-    }
-
+    // 3. Domain of applicability
     const ad = entry.applicabilityDomain;
     if (ad) {
-      section('Applicability domain (from real training data)', defList([
+      section('Domain of applicability', defList([
         ['Training set size', ad.trainingSetSize ? ad.trainingSetSize + ' molecules' : null],
         ['Elements seen in training', (ad.elements || []).join(', ')],
         ['Formal charges seen in training', (ad.formalCharges || []).slice().sort(function (a, b) { return a - b; }).join(', ')],
       ]));
       section('', textBlock(
         'A molecule with an element or formal charge outside this list is refused (not run) rather than given an ' +
-        'unsupported guess. Predictions on molecules within this list still show an in-domain / borderline / ' +
-        'out-of-domain confidence badge based on how close the molecule is to the training data in the model’s ' +
-        'own learned representation -- a heuristic signal, not a calibrated error bound. ' + (ad.notes || '')
+        'unsupported guess. Within this list, each prediction shows an in-domain / borderline / out-of-domain badge ' +
+        'based on how close the molecule is to the training data in the model’s own learned representation -- a ' +
+        'heuristic signal, not a calibrated error bound.'
       ));
     } else {
-      section('', textBlock(
-        'No per-model applicability-domain data has been computed for this checkpoint yet -- only the ' +
-        'general Chemprop featurizer vocabulary is checked (see the Validation panel), not this specific ' +
-        'model’s real training-set coverage. Treat predictions on unusual elements/charges/structures with ' +
-        'more caution than the ones below that do have this data.'
+      section('Domain of applicability', textBlock(
+        'No applicability-domain data has been computed for this checkpoint -- only general chemistry validity is ' +
+        'checked (see the Validation panel), not this specific model’s real training-set coverage. Treat ' +
+        'predictions on unusual elements, charges, or structures with extra caution.'
       ));
     }
 
-    section('Notes, known limitations & domain of application', textBlock(entry.notes));
+    // 4. Uncertainty, in-domain
+    const m = entry.metrics;
+    const primary = m && m.primary;
+    const isMve = entry.taskType === 'regression-mve';
+    let uncertaintyText;
+    if (primary) {
+      const valueStr = primary.value + (primary.units ? ' ' + primary.units : '');
+      const sampleStr = m.testSetSize ? ' (n=' + m.testSetSize + ' held-out molecules)' : '';
+      const isR2 = /R.?2|R\^2|R²/i.test(primary.name);
+      if (entry.taskType === 'classification') {
+        uncertaintyText = 'On held-out in-domain test data' + sampleStr + ', ' + primary.name + ' = ' + valueStr +
+          ' (0.5 = random guessing, 1.0 = perfect separation) -- not a per-prediction confidence, just the ' +
+          'model’s overall discrimination on molecules like its training set.';
+      } else if (isR2) {
+        uncertaintyText = 'On held-out in-domain test data' + sampleStr + ', the model explains ' +
+          Math.round(primary.value * 100) + '% of the variance (' + primary.name + ' = ' + primary.value + ', ' +
+          '1.0 = perfect fit) -- a fit-quality summary, not a per-prediction error in the property’s own units.';
+        if (isMve) {
+          uncertaintyText += ' This checkpoint also reports a real per-molecule uncertainty with every prediction ' +
+            '(the "± value" shown next to the number above) -- aleatoric only, not a full ensemble/epistemic estimate.';
+        }
+      } else {
+        uncertaintyText = 'On held-out in-domain test data' + sampleStr + ', typical error is about ' + valueStr +
+          ' (' + primary.name + ').';
+        if (isMve) {
+          uncertaintyText += ' This checkpoint also reports a real per-molecule uncertainty with every prediction ' +
+            '(the "± value" shown next to the number above) -- aleatoric only, not a full ensemble/epistemic estimate.';
+        }
+      }
+    } else {
+      uncertaintyText = 'No reported accuracy metric is available for this checkpoint to estimate in-domain uncertainty from.';
+    }
+    section('Uncertainty (in-domain)', textBlock(uncertaintyText));
+
+    // Everything else -- architecture/hyperparameters/training date, the
+    // raw metrics/AD/notes free text -- verbatim, just de-emphasized.
+    const details = document.createElement('details');
+    details.className = 'property-info-details';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Technical details & provenance';
+    details.appendChild(summary);
+
+    const training = entry.training || {};
+    const hp = training.hyperparameters;
+    const detailsBody = document.createElement('div');
+    detailsBody.className = 'property-info-details-body';
+    [
+      ['Model', defList([
+        ['Architecture', entry.engine === 'nagl' ? 'GraphSAGE + electronegativity equalization' : 'Chemprop D-MPNN'],
+        ['Hyperparameters', hp ? (typeof hp === 'string' ? hp : JSON.stringify(hp)) : null],
+        ['Date trained', training.dateTrained],
+      ])],
+      ['', m && textBlock(m.note)],
+      ['', ad && textBlock(ad.notes)],
+      ['Notes, known limitations & training history', textBlock(entry.notes)],
+    ].forEach(function (pair) {
+      if (!pair[1]) return;
+      if (pair[0]) {
+        const h = document.createElement('div');
+        h.className = 'property-info-heading';
+        h.textContent = pair[0];
+        detailsBody.appendChild(h);
+      }
+      detailsBody.appendChild(pair[1]);
+    });
+    details.appendChild(detailsBody);
+    box.appendChild(details);
 
     return box;
   }

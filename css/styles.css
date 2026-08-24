@@ -1352,6 +1352,29 @@ div.properties-section-title {
   color: var(--accent);
 }
 
+.property-info-details {
+  margin-top: 10px;
+  border-top: 1px solid var(--border-light);
+  padding-top: 6px;
+}
+
+.property-info-details summary {
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dark-muted);
+}
+
+.property-info-details summary:hover {
+  color: var(--accent);
+}
+
+.property-info-details-body {
+  margin-top: 4px;
+}
+
 .model-registry-list {
   display: flex;
   flex-direction: column;
