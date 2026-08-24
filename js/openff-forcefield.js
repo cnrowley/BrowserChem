@@ -582,7 +582,7 @@ CC.OpenFF = window.CC.OpenFF || {};
     const atoms = atoms3d.map(function (a, i) {
       return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z };
     });
-    return strength * CC.Solvent.predict(atoms, solvent.charges, solvent.epsSolvent).total;
+    return strength * CC.Solvent.predict(atoms, solvent.charges, solvent.epsSolvent, solvent.sasaModel).total;
   }
 
   // stage: { torsion: bool, nonbonded: 0..1 } -- see minimizeStagedSMIRNOFF.

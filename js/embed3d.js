@@ -592,7 +592,7 @@ window.CC = window.CC || {};
     const atoms = atoms3d.map(function (a, i) {
       return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z };
     });
-    return strength * CC.Solvent.predict(atoms, solvent.charges, solvent.epsSolvent).total;
+    return strength * CC.Solvent.predict(atoms, solvent.charges, solvent.epsSolvent, solvent.sasaModel).total;
   }
 
   // Polar (GB) term ONLY -- used by numericResidualGradient's finite
@@ -615,12 +615,16 @@ window.CC = window.CC || {};
   // fraction of a percent to ~3.5% of Shrake-Rupley on real molecules;
   // gradient exactly consistent with that energy, 0.00% error against
   // independent numerical differentiation). Falls back to an all-zero
-  // gradient if CC.DSASA didn't load (implicit-solvent.js's own
-  // CC.SASA.compute() fallback has no gradient to contribute either) --
-  // degrades gracefully rather than crashing the optimizer.
+  // gradient if CC.DSASA didn't load, OR if the user explicitly picked
+  // 'shrake-rupley' from the SASA-model dropdown (app.js's
+  // setupSolventPanel) -- that model has no analytical gradient of its
+  // own; numericResidualGradient below finite-differences it instead in
+  // that case, so returning zero here (rather than skipping the call
+  // entirely) is what avoids double-counting it.
   function nonpolarSolvationGradient(positions, atoms3d, solvent, strength) {
     const grad = new Float64Array(3 * atoms3d.length);
     if (!solvent || !solvent.enabled || !solvent.charges || strength <= 0) return grad;
+    if (solvent.sasaModel === 'shrake-rupley') return grad;
     const atoms = atoms3d.map(function (a, i) {
       return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z };
     });
@@ -947,6 +951,13 @@ window.CC = window.CC || {};
     const grad = new Float64Array(flat.length);
     const hasImpropers = stage.torsion && impropers.length > 0;
     const hasSolvent = !!(solvent && solvent.enabled && solvent.charges && stage.lj > 0);
+    // 'shrake-rupley' has no analytical gradient (see
+    // nonpolarSolvationGradient above, which returns all-zero for this
+    // model) -- finite-difference the WHOLE solvation term (polar+
+    // nonpolar together, via solvationEnergy) here instead of just the
+    // polar half, restoring this app's original pre-dSASA numerical
+    // behavior for anyone who picks the legacy model.
+    const usingLegacySASA = hasSolvent && solvent.sasaModel === 'shrake-rupley';
     if (!hasImpropers && !hasSolvent) return grad;
 
     const positions = unflatten(flat);
@@ -971,7 +982,11 @@ window.CC = window.CC || {};
 
     function residualEnergy() {
       let e = hasImpropers ? improperEnergyOnly(positions, impropers) : 0;
-      if (hasSolvent) e += polarSolvationEnergyOnly(positions, atoms3d, solvent, stage.lj);
+      if (hasSolvent) {
+        e += usingLegacySASA
+          ? solvationEnergy(positions, atoms3d, solvent, stage.lj)
+          : polarSolvationEnergyOnly(positions, atoms3d, solvent, stage.lj);
+      }
       return e;
     }
 
@@ -1593,7 +1608,17 @@ window.CC = window.CC || {};
     const totalBudgetMs = opts.timeBudgetMs || Math.min(25000, Math.max(5000, heavyAtomCount * 900));
     const attempts = opts.attempts || Math.max(3, Math.min(8, 3 + rotatableBonds.length));
     const perAttemptBudgetMs = Math.max(3500, totalBudgetMs / attempts);
-    const iterations = opts.iterations || 400;
+    // 400 was reliably too low: reproduced directly on a 31-heavy-atom,
+    // 7-rotatable-bond molecule (fused bicyclic amine + flexible chain) --
+    // it exited 'iteration-limit' at 400 (gradNorm ~0.5-0.8, nowhere near
+    // settled) while using barely 130ms of its ~3.5s per-attempt deadline.
+    // 800 was already enough for that case to reach a real
+    // 'energy-plateau'/'gradient-converged' exit with gradNorm ~0.01; 2000
+    // gives headroom beyond that and only costs time on molecules that
+    // actually need it, since minimize() still exits the instant it
+    // settles (well before this cap) and `deadline` remains the real
+    // backstop against runaway cost either way.
+    const iterations = opts.iterations || 2000;
 
     let best = null;
     const overallDeadline = performance.now() + totalBudgetMs;

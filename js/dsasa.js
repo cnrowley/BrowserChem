@@ -731,7 +731,21 @@ CC.DSASA = window.CC.DSASA || {};
    * convention CC.SASA.compute already uses).
    * Returns { totalSASA, perAtomSASA: [numAtoms], gradient: Float64Array(3*n) }.
    */
-  CC.DSASA.compute = function (atoms) {
+  // wantGradient (default true): the |T|=1/|T|=2 analytical-gradient
+  // loops and especially the |T|=3 finite-difference gradient block (18
+  // extra tripleSumAt evaluations per boundary triangle -- see that
+  // block's own comment) are the dominant per-call cost on a molecule
+  // with more than a handful of atoms. A caller that only needs the
+  // energy value -- e.g. embed3d.js's line-search backtracking, which
+  // tries up to 30 trial steps per iteration and discards every one that
+  // fails the Armijo test -- gets no benefit from that work at all.
+  // Reproduced directly: a 61-atom (incl. implicit H) drug-like molecule
+  // with implicit solvent enabled took ~78s to optimize (vs ~1s without
+  // solvent) because every one of those line-search energy-only trials
+  // was paying the full gradient cost too; skipping it here is what
+  // fixes that, with zero change to the returned energy value itself.
+  CC.DSASA.compute = function (atoms, wantGradient) {
+    if (wantGradient === undefined) wantGradient = true;
     const n = atoms.length;
     const perAtomSASA = new Array(n).fill(0);
     const gradient = new Float64Array(3 * n);
@@ -776,22 +790,24 @@ CC.DSASA = window.CC.DSASA || {};
     }
     // Gradient of the |T|=1 term: d(Omega_i * Si)/dp = -Si/(4pi) * d(sumOmega)/dp,
     // summed over each incident tetrahedron's own solid-angle gradient.
-    for (let i = 0; i < n; i++) {
-      if (omega[i] <= 0) continue;
-      const Si = 4 * Math.PI * d[i];
-      tetsByVertex[i].forEach(function (entry) {
-        const tet = entry.tet;
-        const others = tet.v.filter(function (v) { return v !== i; });
-        const a = sub(atoms[others[0]], atoms[i]);
-        const b = sub(atoms[others[1]], atoms[i]);
-        const c = sub(atoms[others[2]], atoms[i]);
-        const grads = solidAngleGradient(a, b, c); // [d/dp0(=i), d/dp1(=others[0]), d/dp2(=others[1]), d/dp3(=others[2])]
-        const scaleFactor = -Si / (4 * Math.PI);
-        accumGrad(i, scale(grads[0], scaleFactor));
-        accumGrad(others[0], scale(grads[1], scaleFactor));
-        accumGrad(others[1], scale(grads[2], scaleFactor));
-        accumGrad(others[2], scale(grads[3], scaleFactor));
-      });
+    if (wantGradient) {
+      for (let i = 0; i < n; i++) {
+        if (omega[i] <= 0) continue;
+        const Si = 4 * Math.PI * d[i];
+        tetsByVertex[i].forEach(function (entry) {
+          const tet = entry.tet;
+          const others = tet.v.filter(function (v) { return v !== i; });
+          const a = sub(atoms[others[0]], atoms[i]);
+          const b = sub(atoms[others[1]], atoms[i]);
+          const c = sub(atoms[others[2]], atoms[i]);
+          const grads = solidAngleGradient(a, b, c); // [d/dp0(=i), d/dp1(=others[0]), d/dp2(=others[1]), d/dp3(=others[2])]
+          const scaleFactor = -Si / (4 * Math.PI);
+          accumGrad(i, scale(grads[0], scaleFactor));
+          accumGrad(others[0], scale(grads[1], scaleFactor));
+          accumGrad(others[1], scale(grads[2], scaleFactor));
+          accumGrad(others[2], scale(grads[3], scaleFactor));
+        });
+      }
     }
 
     // ---- |T|=2: pairwise cap correction, subtracted ----
@@ -904,46 +920,48 @@ CC.DSASA = window.CC.DSASA || {};
       perAtomSASA[j] -= phiFrac * Sij_j;
 
       // ---- gradient ----
-      const uij = scale(sub(atoms[j], atoms[i]), 1 / rij); // unit vector i->j
-      // d(rij)/dp_j = uij, d(rij)/dp_i = -uij
-      const dhi_drij = capHeightDeriv(ri, rj, rij);
-      const dhj_drij = capHeightDeriv(rj, ri, rij);
-      const dSij_i_drij = hi > 0 ? 2 * Math.PI * ri * dhi_drij : 0;
-      const dSij_j_drij = hj > 0 ? 2 * Math.PI * rj * dhj_drij : 0;
+      if (wantGradient) {
+        const uij = scale(sub(atoms[j], atoms[i]), 1 / rij); // unit vector i->j
+        // d(rij)/dp_j = uij, d(rij)/dp_i = -uij
+        const dhi_drij = capHeightDeriv(ri, rj, rij);
+        const dhj_drij = capHeightDeriv(rj, ri, rij);
+        const dSij_i_drij = hi > 0 ? 2 * Math.PI * ri * dhi_drij : 0;
+        const dSij_j_drij = hj > 0 ? 2 * Math.PI * rj * dhj_drij : 0;
 
-      // Phi_ij's gradient: -1/(2pi) * sum of each tetrahedron's signed dihedral gradient.
-      let dPhi_dpi = { x: 0, y: 0, z: 0 }, dPhi_dpj = { x: 0, y: 0, z: 0 };
-      const perOtherGrad = new Map(); // atomIndex -> accumulated gradient contribution
-      tets.forEach(function (tet) {
-        const others = tet.v.filter(function (v) { return v !== i && v !== j; });
-        const k = others[0], l = others[1];
-        const signed = CC.Embed3DShared.dihedralAngle(atoms[k], atoms[i], atoms[j], atoms[l]);
-        const sgn = signed >= 0 ? 1 : -1;
-        // dihedralGradient(p1,p2,p3,p4) returns d/dp1,d/dp2,d/dp3,d/dp4 for chain (k,i,j,l)
-        const g = CC.Embed3DShared.dihedralGradient ? CC.Embed3DShared.dihedralGradient(atoms[k], atoms[i], atoms[j], atoms[l]) : null;
-        if (!g) return;
-        const f = -sgn / (2 * Math.PI);
-        dPhi_dpi = add(dPhi_dpi, scale(g[1], f));
-        dPhi_dpj = add(dPhi_dpj, scale(g[2], f));
-        const gk = perOtherGrad.get(k) || { x: 0, y: 0, z: 0 };
-        perOtherGrad.set(k, add(gk, scale(g[0], f)));
-        const gl = perOtherGrad.get(l) || { x: 0, y: 0, z: 0 };
-        perOtherGrad.set(l, add(gl, scale(g[3], f)));
-      });
+        // Phi_ij's gradient: -1/(2pi) * sum of each tetrahedron's signed dihedral gradient.
+        let dPhi_dpi = { x: 0, y: 0, z: 0 }, dPhi_dpj = { x: 0, y: 0, z: 0 };
+        const perOtherGrad = new Map(); // atomIndex -> accumulated gradient contribution
+        tets.forEach(function (tet) {
+          const others = tet.v.filter(function (v) { return v !== i && v !== j; });
+          const k = others[0], l = others[1];
+          const signed = CC.Embed3DShared.dihedralAngle(atoms[k], atoms[i], atoms[j], atoms[l]);
+          const sgn = signed >= 0 ? 1 : -1;
+          // dihedralGradient(p1,p2,p3,p4) returns d/dp1,d/dp2,d/dp3,d/dp4 for chain (k,i,j,l)
+          const g = CC.Embed3DShared.dihedralGradient ? CC.Embed3DShared.dihedralGradient(atoms[k], atoms[i], atoms[j], atoms[l]) : null;
+          if (!g) return;
+          const f = -sgn / (2 * Math.PI);
+          dPhi_dpi = add(dPhi_dpi, scale(g[1], f));
+          dPhi_dpj = add(dPhi_dpj, scale(g[2], f));
+          const gk = perOtherGrad.get(k) || { x: 0, y: 0, z: 0 };
+          perOtherGrad.set(k, add(gk, scale(g[0], f)));
+          const gl = perOtherGrad.get(l) || { x: 0, y: 0, z: 0 };
+          perOtherGrad.set(l, add(gl, scale(g[3], f)));
+        });
 
-      // d(perAtomSASA[i])/dp = -(dPhi*Sij_i + phiFrac*dSij_i)
-      const dSij_i_dpi = scale(uij, -dSij_i_drij);
-      const dSij_i_dpj = scale(uij, dSij_i_drij);
-      const dSij_j_dpi = scale(uij, -dSij_j_drij);
-      const dSij_j_dpj = scale(uij, dSij_j_drij);
+        // d(perAtomSASA[i])/dp = -(dPhi*Sij_i + phiFrac*dSij_i)
+        const dSij_i_dpi = scale(uij, -dSij_i_drij);
+        const dSij_i_dpj = scale(uij, dSij_i_drij);
+        const dSij_j_dpi = scale(uij, -dSij_j_drij);
+        const dSij_j_dpj = scale(uij, dSij_j_drij);
 
-      accumGrad(i, scale(add(scale(dPhi_dpi, Sij_i), scale(dSij_i_dpi, phiFrac)), -1));
-      accumGrad(j, scale(add(scale(dPhi_dpj, Sij_i), scale(dSij_i_dpj, phiFrac)), -1));
-      accumGrad(i, scale(add(scale(dPhi_dpi, Sij_j), scale(dSij_j_dpi, phiFrac)), -1));
-      accumGrad(j, scale(add(scale(dPhi_dpj, Sij_j), scale(dSij_j_dpj, phiFrac)), -1));
-      perOtherGrad.forEach(function (g, atomIdx) {
-        accumGrad(atomIdx, scale(g, -(Sij_i + Sij_j)));
-      });
+        accumGrad(i, scale(add(scale(dPhi_dpi, Sij_i), scale(dSij_i_dpi, phiFrac)), -1));
+        accumGrad(j, scale(add(scale(dPhi_dpj, Sij_i), scale(dSij_i_dpj, phiFrac)), -1));
+        accumGrad(i, scale(add(scale(dPhi_dpi, Sij_j), scale(dSij_j_dpi, phiFrac)), -1));
+        accumGrad(j, scale(add(scale(dPhi_dpj, Sij_j), scale(dSij_j_dpj, phiFrac)), -1));
+        perOtherGrad.forEach(function (g, atomIdx) {
+          accumGrad(atomIdx, scale(g, -(Sij_i + Sij_j)));
+        });
+      }
     });
 
     // ---- |T|=3: triple-overlap correction (Hummel thesis eqs 4.4.45-
@@ -1118,20 +1136,26 @@ CC.DSASA = window.CC.DSASA || {};
       // with the full analytical formulation (thesis Chapter 5,
       // "Gradient Discontinuities" -- not unique to finite-differencing).
       // Only the continuous inner quantity (Si+Sj+Sk at the fixed point)
-      // is re-evaluated per perturbed sample.
-      [i, j, k].forEach(function (m) {
-        const base = { x: atoms[m].x, y: atoms[m].y, z: atoms[m].z };
-        const g = { x: 0, y: 0, z: 0 };
-        ['x', 'y', 'z'].forEach(function (axis) {
-          atoms[m][axis] = base[axis] + TRIPLE_FD_STEP;
-          const plus = tripleSumAt(atoms, i, j, k, r, d, usedSecond);
-          atoms[m][axis] = base[axis] - TRIPLE_FD_STEP;
-          const minus = tripleSumAt(atoms, i, j, k, r, d, usedSecond);
-          atoms[m][axis] = base[axis];
-          if (plus !== null && minus !== null) g[axis] = (plus - minus) / (2 * TRIPLE_FD_STEP);
+      // is re-evaluated per perturbed sample. By far the most expensive
+      // part of a full compute() call (18 extra tripleSumAt evaluations
+      // per qualifying triangle -- see wantGradient's own comment above),
+      // so this is the block that matters most to skip when energy alone
+      // was asked for.
+      if (wantGradient) {
+        [i, j, k].forEach(function (m) {
+          const base = { x: atoms[m].x, y: atoms[m].y, z: atoms[m].z };
+          const g = { x: 0, y: 0, z: 0 };
+          ['x', 'y', 'z'].forEach(function (axis) {
+            atoms[m][axis] = base[axis] + TRIPLE_FD_STEP;
+            const plus = tripleSumAt(atoms, i, j, k, r, d, usedSecond);
+            atoms[m][axis] = base[axis] - TRIPLE_FD_STEP;
+            const minus = tripleSumAt(atoms, i, j, k, r, d, usedSecond);
+            atoms[m][axis] = base[axis];
+            if (plus !== null && minus !== null) g[axis] = (plus - minus) / (2 * TRIPLE_FD_STEP);
+          });
+          accumGrad(m, scale(g, factor));
         });
-        accumGrad(m, scale(g, factor));
-      });
+      }
     });
 
     let totalSASA = 0;

@@ -184,11 +184,34 @@ CC.Solvent = window.CC.Solvent || {};
    * by SURFACE_TENSION, matching `energy`'s own units) when CC.DSASA
    * computed it, or null when the Shrake-Rupley fallback was used.
    */
-  CC.Solvent.nonpolarSolvationEnergy = function (atoms) {
-    if (window.CC && CC.DSASA && CC.DSASA.compute) {
-      const res = CC.DSASA.compute(atoms);
-      const gradient = new Float64Array(res.gradient.length);
-      for (let i = 0; i < gradient.length; i++) gradient[i] = SURFACE_TENSION * res.gradient[i];
+  // wantGradient (default true): threaded straight through to
+  // CC.DSASA.compute -- see that function's own comment. Pass false when
+  // only `.energy`/`.totalSasa` are needed (e.g. CC.Solvent.predict below,
+  // which never reads `.gradient` at all) to skip real, measured
+  // per-call cost for no benefit.
+  //
+  // sasaModel ('dsasa' default, or 'shrake-rupley'): user-selectable via
+  // the Implicit Solvent panel's "Nonpolar (SASA) model" dropdown (see
+  // app.js's setupSolventPanel) -- an explicit choice now, not silent
+  // auto-detection. 'shrake-rupley' forces the original sampled-sphere
+  // method this app used before dsasa.js existed, even if CC.DSASA is
+  // loaded; it has no analytical gradient (`gradient` comes back null),
+  // so embed3d.js's numericResidualGradient falls back to finite-
+  // differencing this term too when it's selected (see that function's
+  // own comment) -- slower per iteration than dSASA's energy-only fast
+  // path, but the same numerical behavior this app originally shipped
+  // with, kept available as a real fallback/comparison rather than
+  // removed outright.
+  CC.Solvent.nonpolarSolvationEnergy = function (atoms, wantGradient, sasaModel) {
+    if (wantGradient === undefined) wantGradient = true;
+    const useDsasa = sasaModel !== 'shrake-rupley' && window.CC && CC.DSASA && CC.DSASA.compute;
+    if (useDsasa) {
+      const res = CC.DSASA.compute(atoms, wantGradient);
+      let gradient = null;
+      if (wantGradient) {
+        gradient = new Float64Array(res.gradient.length);
+        for (let i = 0; i < gradient.length; i++) gradient[i] = SURFACE_TENSION * res.gradient[i];
+      }
       return { energy: SURFACE_TENSION * res.totalSASA, totalSasa: res.totalSASA, gradient: gradient };
     }
     const perAtom = CC.SASA.compute(atoms, {});
@@ -220,7 +243,7 @@ CC.Solvent = window.CC.Solvent || {};
    * (heavy + implicit H, real Angstroms). charges: same length/order,
    * partial charge per atom (e.g. CC.NAGL.predictAll().charges).
    */
-  CC.Solvent.predict = function (atoms, charges, epsSolvent) {
+  CC.Solvent.predict = function (atoms, charges, epsSolvent, sasaModel) {
     if (!atoms || atoms.length === 0) throw new Error('No 3D structure to compute solvation energy from');
     if (atoms.length !== charges.length) {
       throw new Error('Atom count (' + atoms.length + ') does not match charge count (' + charges.length + ')');
@@ -228,7 +251,11 @@ CC.Solvent = window.CC.Solvent || {};
     if (!(epsSolvent >= 1)) throw new Error('Solvent dielectric constant must be a number ≥ 1');
 
     const polar = CC.Solvent.polarSolvationEnergy(atoms, charges, epsSolvent);
-    const nonpolar = CC.Solvent.nonpolarSolvationEnergy(atoms);
+    // false: this function's own return value below never exposes
+    // nonpolar's `.gradient` (only `.energy`/`.totalSasa`), and every
+    // caller of predict() only ever reads polar/nonpolar/total/totalSasa
+    // -- see nonpolarSolvationEnergy's wantGradient comment.
+    const nonpolar = CC.Solvent.nonpolarSolvationEnergy(atoms, false, sasaModel);
     return {
       polar: polar,
       nonpolar: nonpolar.energy,

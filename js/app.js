@@ -3396,6 +3396,7 @@
     const enableCheckbox = document.getElementById('solvent-enable-checkbox');
     const controls = document.getElementById('solvent-controls');
     const solventSelect = document.getElementById('solvent-select');
+    const sasaModelSelect = document.getElementById('sasa-model-select');
     const customRow = document.getElementById('solvent-custom-row');
     const customEpsInput = document.getElementById('solvent-custom-eps');
     const computeBtn = document.getElementById('compute-solvent-btn');
@@ -3436,7 +3437,7 @@
     getSolventSettings = function () {
       const enabled = enableCheckbox.checked;
       const epsSolvent = enabled ? selectedEps() : NaN;
-      return { enabled: enabled && epsSolvent >= 1, epsSolvent: epsSolvent };
+      return { enabled: enabled && epsSolvent >= 1, epsSolvent: epsSolvent, sasaModel: sasaModelSelect.value };
     };
 
     function showError(text) {
@@ -3507,7 +3508,7 @@
       }
 
       try {
-        const result = CC.Solvent.predict(existing.atoms, naglResult.charges, epsSolvent);
+        const result = CC.Solvent.predict(existing.atoms, naglResult.charges, epsSolvent, sasaModelSelect.value);
         renderResult(result, existing.converged);
         CC.Logger.success('Computed implicit solvation energy (ε=' + epsSolvent.toFixed(1) + '): ' +
           'ΔG = ' + result.total.toFixed(2) + ' kcal/mol');
