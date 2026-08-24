@@ -72,6 +72,21 @@ python3 -m http.server 8000
 (Opening `index.html` directly via `file://` will not work — the WASM
 modules and JSON data files need to be fetched over HTTP.)
 
+`model/ocsrglyph/*.onnx` (the OCSR image-recognition weights, ~209MB) is
+stored via [Git LFS](https://git-lfs.github.com) — every other model in
+`model/` is a plain git blob. If `git clone`/`git pull` leaves you with
+tiny (~130-byte) text files there instead of real `.onnx` binaries, you're
+missing the LFS client or it didn't run automatically; install it and run:
+
+```bash
+git lfs install
+git lfs pull
+```
+
+A plain-text stub served as if it were the model surfaces in the app as
+`ONNX Runtime Web`'s "Failed to load model because protobuf parsing
+failed" — that error means this, not a broken conversion.
+
 ## Project layout
 
 ```

@@ -28,6 +28,19 @@ page and exercise the feature (draw a structure, check the console/status
 bar) rather than assuming it works — there's no automated test suite to
 fall back on.
 
+`model/ocsrglyph/*.onnx` (~209MB) is the one exception to "every model is
+a plain git blob" — it's tracked via Git LFS (`.gitattributes`) because it
+exceeds GitHub's 100MB hard file-size limit. A checkout without the LFS
+client, or a `git lfs migrate`-style history rewrite, silently leaves
+~130-byte pointer-stub text files in `model/ocsrglyph/` instead of real
+weights (`git lfs checkout model/ocsrglyph/*.onnx` or `git lfs pull` fixes
+it in-place, no re-fetch from the remote needed if the objects are
+already in the local LFS cache). Symptom in the app: ONNX Runtime Web's
+"Failed to load model because protobuf parsing failed" on the Image →
+Structure tab — that message means this, not a bad conversion. Check
+`ls -la model/ocsrglyph/*.onnx` (should be ~196MB/~13MB, not ~130 bytes)
+before debugging the conversion script.
+
 Model-tooling scripts under `scripts/` are ordinary argparse CLIs, e.g.:
 
 ```bash
