@@ -7,14 +7,38 @@
  * elsewhere (atom-heatmap.js is the same kind of pure rendering module).
  *
  * Each axis has its own reference range used only for *visual*
- * normalization (mapping a raw value to a 0-1 radius) -- these are rough,
- * roughly drug-like-space ranges, not a scientific claim about where
- * "good" and "bad" sit. A value outside its range is clamped, not
- * distorting the rest of the chart.
+ * normalization (mapping a raw value to a 0-1 radius). A value outside
+ * its range is clamped, not distorting the rest of the chart.
  *
- * Three axes (MP, logP, logS) depend on GNN models that may not be
- * loaded/run -- those are drawn as a distinct "no data" marker (a small
- * ring at the axis, not silently plotted at 0) rather than pretending
+ * 13 of the 15 ranges below are REAL, derived from the same ChEMBL
+ * max_phase==4 (approved) reference population druglikeness.js's own
+ * percentile-rank comparison uses (n=3311, largest-fragment-desalted --
+ * see that file's header and scripts/compute_druglikeness_distributions.py
+ * for the full provenance/caveats, which apply here identically) --
+ * specifically the [5th, 95th] percentile band of each descriptor's real
+ * distribution across that set, computed by
+ * scripts/compute_radar_reference_ranges.py using real RDKit (matched
+ * field-for-field against what js/chemistry.js's own get_descriptors()
+ * call and js/sascorer.js actually compute -- see that script's own
+ * comments for the exact correspondence, e.g. NumHBD/NumHBA are RDKit's
+ * plain definition, NOT the separate Lipinski-specific variant
+ * druglikeness.js deliberately uses for its own Rule-of-Five filter).
+ * Trimmed to the 5th-95th band (not literal min/max) so the small
+ * fraction of real approved-drug outliers at either extreme (e.g. a
+ * handful under 150 Da or over 1000 Da) don't compress the visual scale
+ * for the typical case -- this means a real molecule CAN legitimately
+ * clamp to an axis's edge without being an error.
+ *
+ * The remaining two (MP, logS) are NOT derived from that population --
+ * ChEMBL's small-molecule pull has no reliable per-molecule melting-
+ * point/solubility data, and this project's own melting-point-v1/
+ * logs-aqsoldb-v1 GNN checkpoints aren't practical to batch-run outside
+ * the browser (they're this project's own hand-rolled JS D-MPNN format,
+ * not a retained standard ONNX/PyTorch artifact). Those two keep their
+ * original hand-picked, honestly-approximate ranges. Both MP and logP
+ * also depend on GNN models that may not be loaded/run -- those (plus
+ * logS, GNN-only) are drawn as a distinct "no data" marker (a small ring
+ * at the axis, not silently plotted at 0) rather than pretending
  * "unknown" and "worst possible value" are the same thing.
  */
 
@@ -28,21 +52,24 @@ window.CC = window.CC || {};
   // and 10=hard, so "more accessible" should read as "bigger on the
   // chart" like every other axis here).
   CC.RADAR_AXES = [
+    // Not derived (see file header) -- original hand-picked heuristic ranges.
     { key: 'mp', label: 'Melt. pt.', unit: 'K', min: 250, max: 600, source: 'gnn' },
-    { key: 'logP', label: 'logP', unit: '', min: -3, max: 7, source: 'gnn-or-rdkit' },
+    // Derived (5th-95th pctile, n=3311 approved drugs): min=-1.47 max=6.301.
+    { key: 'logP', label: 'logP', unit: '', min: -1.47, max: 6.3, source: 'gnn-or-rdkit' },
+    // Not derived (see file header) -- original hand-picked heuristic range.
     { key: 'logS', label: 'logS', unit: '', min: -8, max: 2, source: 'gnn' },
-    { key: 'mw', label: 'MW', unit: 'g/mol', min: 100, max: 600, source: 'rdkit' },
-    { key: 'tpsa', label: 'TPSA', unit: '\u00c5\u00b2', min: 0, max: 180, source: 'rdkit' },
-    { key: 'hbd', label: 'HBD', unit: '', min: 0, max: 8, source: 'rdkit' },
-    { key: 'hba', label: 'HBA', unit: '', min: 0, max: 12, source: 'rdkit' },
-    { key: 'fsp3', label: 'Fsp3', unit: '', min: 0, max: 1, source: 'rdkit' },
-    { key: 'rotb', label: 'Rot. bonds', unit: '', min: 0, max: 15, source: 'rdkit' },
-    { key: 'qed', label: 'QED', unit: '', min: 0, max: 1, source: 'rdkit' },
+    { key: 'mw', label: 'MW', unit: 'g/mol', min: 135.12, max: 670.87, source: 'rdkit' },
+    { key: 'tpsa', label: 'TPSA', unit: '\u00c5\u00b2', min: 12.03, max: 193.91, source: 'rdkit' },
+    { key: 'hbd', label: 'HBD', unit: '', min: 0, max: 5, source: 'rdkit' },
+    { key: 'hba', label: 'HBA', unit: '', min: 1, max: 11, source: 'rdkit' },
+    { key: 'fsp3', label: 'Fsp3', unit: '', min: 0, max: 0.93, source: 'rdkit' },
+    { key: 'rotb', label: 'Rot. bonds', unit: '', min: 0, max: 12, source: 'rdkit' },
+    { key: 'qed', label: 'QED', unit: '', min: 0.12, max: 0.85, source: 'rdkit' },
     { key: 'rings', label: 'Rings', unit: '', min: 0, max: 6, source: 'rdkit' },
-    { key: 'aromaticFraction', label: 'Aromatic frac.', unit: '', min: 0, max: 1, source: 'rdkit' },
-    { key: 'heteroFraction', label: 'Heteroatom frac.', unit: '', min: 0, max: 0.5, source: 'rdkit' },
-    { key: 'complexity', label: 'Complexity*', unit: '', min: 0, max: 1.5, source: 'rdkit' },
-    { key: 'saScore', label: 'Synth. access.', unit: '', min: 1, max: 10, invert: true, source: 'rdkit' },
+    { key: 'aromaticFraction', label: 'Aromatic frac.', unit: '', min: 0, max: 0.68, source: 'rdkit' },
+    { key: 'heteroFraction', label: 'Heteroatom frac.', unit: '', min: 0.1, max: 0.56, source: 'rdkit' },
+    { key: 'complexity', label: 'Complexity*', unit: '', min: 0.21, max: 0.65, source: 'rdkit' },
+    { key: 'saScore', label: 'Synth. access.', unit: '', min: 2.03, max: 5.58, invert: true, source: 'rdkit' },
   ];
 
   /**
