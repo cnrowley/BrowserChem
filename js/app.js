@@ -1939,6 +1939,14 @@
 
   // ---------- 2D -> 3D generation ----------
 
+  // 'smirnoff' and 'smirnoff-mod' (see openff-forcefield.js's
+  // classifyNbfixAtoms/getNbfixAliphaticHParams) share every precondition
+  // below (needs the Sage force field + NAGL-MBIS charges loaded) --
+  // 'smirnoff-mod' just also sets useNbfix:true on the actual optimize
+  // call. Centralized here so every "if (model === 'smirnoff')" site
+  // below only has to change once for both variants.
+  function isSmirnoffFamily(model) { return model === 'smirnoff' || model === 'smirnoff-mod'; }
+
   function setup3DPanel() {
     generate3dBtn = document.getElementById('quick-preview-btn');
     viewer3dNote = document.getElementById('viewer3d-note');
@@ -2377,9 +2385,9 @@
             exitReason: stopToken.stopped ? 'user-stopped' : aniResult.exitReason,
           };
         } else {
-          if (model === 'smirnoff' || solvent.enabled) naglModelId = await ensureNaglModelLoaded(progressNote);
+          if (isSmirnoffFamily(model) || solvent.enabled) naglModelId = await ensureNaglModelLoaded(progressNote);
 
-          if (model === 'smirnoff') {
+          if (isSmirnoffFamily(model)) {
             if (!CC.OpenFF.isForceFieldLoaded()) {
               progressNote.textContent = 'Loading OpenFF Sage force field…';
               await CC.OpenFF.loadForceField();
@@ -2388,7 +2396,7 @@
             if (!RDKit) throw new Error('RDKit not available yet');
             CC.OpenFF.compileAll(RDKit);
             const chargesResult = CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId);
-            result = await CC.OpenFF.optimizeSeed(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solvent, stopToken);
+            result = await CC.OpenFF.optimizeSeed(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solvent, stopToken, model === 'smirnoff-mod');
           } else {
             const naglSolvent = solvent.enabled && naglModelId
               ? Object.assign({}, solvent, { charges: CC.OpenFF.getChargesForAtoms3D(controller.molecule, atoms3d, bonds3d, naglModelId).charges })
@@ -2611,7 +2619,7 @@
           },
         };
 
-        if (model === 'smirnoff') {
+        if (isSmirnoffFamily(model)) {
           // A missing/failed NAGL load is NOT fatal here: CC.ConformerSearch
           // just omits electrostatics rather than refusing to run (same
           // honest fallback OPENFF_INTEGRATION.md documents).
@@ -2625,7 +2633,7 @@
         // AND for implicit solvent (any energy model) -- load once here
         // either way rather than duplicating this same load-on-click
         // logic per consumer (see ensureNaglModelLoaded above).
-        if (model === 'smirnoff' || solvent.enabled) {
+        if (isSmirnoffFamily(model) || solvent.enabled) {
           opts.naglModelId = await ensureNaglModelLoaded(progressNote);
         }
 
@@ -2639,10 +2647,10 @@
           CC.Logger.warning('Conformer search (' + modelLabelForLog + '): no conformers found');
         } else {
           renderConformerList(result);
-          const missingCharges = (model === 'smirnoff' || solvent.enabled) && !result.chargesAvailable;
+          const missingCharges = (isSmirnoffFamily(model) || solvent.enabled) && !result.chargesAvailable;
           const chargeNote = missingCharges
             ? ' (no NAGL-MBIS charges loaded \u2014 ' +
-              [model === 'smirnoff' ? 'electrostatics' : null, solvent.enabled ? 'solvation' : null].filter(Boolean).join(' & ') +
+              [isSmirnoffFamily(model) ? 'electrostatics' : null, solvent.enabled ? 'solvation' : null].filter(Boolean).join(' & ') +
               ' omitted)'
             : (solvent.enabled ? ' (implicit solvent included)' : '');
           const stoppedNote = stopToken.stopped ? ' (stopped early by user — fewer seeds than usual)' : '';

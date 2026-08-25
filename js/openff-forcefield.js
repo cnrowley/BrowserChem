@@ -23,6 +23,17 @@
  *  - Constraints/LibraryCharges/ToolkitAM1BCC sections of the offxml:
  *    not used -- see convert_openff_forcefield.py's header for why.
  *
+ * SMIRNOFF-MOD (the 'smirnoff-mod' energy-model option in the UI, vs.
+ * plain 'smirnoff'): real Sage 2.1.0 as above, plus ONE user-requested
+ * CHARMM-style NBFIX override for a single nonbonded atom-type pair --
+ * polar hydroxyl H vs. plain aliphatic C-H -- see classifyNbfixAtoms/
+ * getNbfixAliphaticHParams/combineVdw below for the exact rule and the
+ * real bug report (a short, near-zero-repulsion O-H...H-C contact at a
+ * SMIRNOFF gas-phase minimum) that motivated it. Every other pair,
+ * including the ORIGINAL reported case of O-H vs an AROMATIC ring H, is
+ * untouched real Sage -- SMIRNOFF-MOD was scoped to exactly the pair
+ * type asked for, not broadened silently.
+ *
  * ---------------------------------------------------------------------
  * SMIRKS typing, concretely
  * ---------------------------------------------------------------------
@@ -410,7 +421,13 @@ CC.OpenFF = window.CC.OpenFF || {};
   // exhaustive topology candidates (not the typed/matched subsets), since
   // exclusion is purely about graph distance, independent of whether a
   // SMIRKS parameter was actually found for a given angle/torsion.
-  function buildPairs(bonds3d, angleCandidates, properCandidates, atomCount) {
+  // `nbfixClasses` (optional -- callers outside typeMolecule that don't
+  // care about SMIRNOFF-MOD can omit it) marks each pair as `isNbfix` per
+  // classifyNbfixAtoms' polar-O-H/aliphatic-C-H sets, computed once here
+  // rather than re-checked every energy/gradient evaluation -- the flag
+  // just sits unused on the pair when ff.useNbfix is off (see
+  // buildEnergyModel), so plain "smirnoff" runs pay nothing extra for it.
+  function buildPairs(bonds3d, angleCandidates, properCandidates, atomCount, nbfixClasses) {
     const excluded = new Set();
     bonds3d.forEach(function (b) { excluded.add(bondKey(b.a1, b.a2)); });
     angleCandidates.forEach(function (a) { excluded.add(bondKey(a.i, a.k)); });
@@ -418,15 +435,117 @@ CC.OpenFF = window.CC.OpenFF || {};
     const pairs14 = new Set();
     properCandidates.forEach(function (t) { pairs14.add(bondKey(t.i, t.l)); });
 
+    const isPolarOH = nbfixClasses ? nbfixClasses.isPolarOH : null;
+    const isAliphaticH = nbfixClasses ? nbfixClasses.isAliphaticH : null;
+
     const pairs = [];
     for (let a = 0; a < atomCount; a++) {
       for (let b = a + 1; b < atomCount; b++) {
         const key = bondKey(a, b);
         if (excluded.has(key)) continue;
-        pairs.push({ a: a, b: b, is14: pairs14.has(key) });
+        const isNbfix = !!(isPolarOH && isAliphaticH &&
+          ((isPolarOH[a] && isAliphaticH[b]) || (isPolarOH[b] && isAliphaticH[a])));
+        pairs.push({ a: a, b: b, is14: pairs14.has(key), isNbfix: isNbfix });
       }
     }
     return pairs;
+  }
+
+  // ---------- SMIRNOFF-MOD: OH-hydrogen / aliphatic-hydrogen NBFIX ----------
+  //
+  // Real Sage 2.1.0 gives a hydroxyl hydrogen (SMIRKS "[#1:1]-[#8]", id
+  // n12) an extremely small vdW well -- epsilon 1.2326e-05 kcal/mol,
+  // rminHalf 0.29999... A (see data/openff-sage-2.1.0.json) -- correct
+  // per the published force field (see embed3d.js's ljFloorRadius
+  // comment), but it lets a polar O-H hydrogen sit implausibly close to
+  // an ordinary aliphatic C-H with almost no steric penalty (reported:
+  // gas-phase SMIRNOFF minima placing a phenolic O-H hydrogen right next
+  // to a nearby aliphatic/aromatic C-H). SMIRNOFF-MOD is real Sage 2.1.0
+  // plus one CHARMM-style NBFIX: for exactly one atom-type pair --
+  // hydroxyl H vs. plain aliphatic C-H, both intramolecular, same 1-5+
+  // nonbonded scope as everything else (buildPairs) -- the standard
+  // per-atom combining rule is overridden with a fixed, symmetric,
+  // ordinary-aliphatic-hydrogen-sized well instead of whatever the
+  // combining rule would give the (near-zero-epsilon) hydroxyl H. Every
+  // other nonbonded pair, INCLUDING hydroxyl-H-vs-aromatic-H (the pair
+  // in the original bug report) and aliphatic-H-vs-aliphatic-H, is
+  // untouched -- still pure, unmodified Sage. Scoped to exactly what was
+  // asked for; broadening it to aromatic H too is a one-line change (see
+  // classifyNbfixAtoms below) if wanted later.
+
+  // Looked up from the loaded ffData itself (matched by SMIRKS text, the
+  // stable/meaningful identifier -- NOT by "id", which is just an
+  // arbitrary FFXML label) rather than hardcoding a duplicate copy of
+  // Sage's numbers here, so this always reflects whatever vdW section
+  // the loaded force field JSON actually contains. GENERIC_ALIPHATIC_H_SMIRKS
+  // is Sage's own most-general aliphatic-hydrogen pattern -- id "n2" in
+  // 2.1.0, epsilon 0.01577948280971 kcal/mol, rminHalf 1.48419980825 A
+  // (matches the classic AMBER GAFF/ff94 "HC" type almost exactly, which
+  // is where Sage's own base H parameters originally came from).
+  const GENERIC_ALIPHATIC_H_SMIRKS = '[#1:1]-[#6X4]';
+  let nbfixAliphaticHParams = null; // memoized per loaded ffData; see getNbfixAliphaticHParams
+
+  function getNbfixAliphaticHParams() {
+    if (nbfixAliphaticHParams) return nbfixAliphaticHParams;
+    const entry = ffData && ffData.vdw && ffData.vdw.find(function (v) { return v.smirks === GENERIC_ALIPHATIC_H_SMIRKS; });
+    // Fallback is the real Sage 2.1.0 n2 values themselves (see comment
+    // above) -- only exercised if a future force field JSON ever drops
+    // or renames this exact SMIRKS, so SMIRNOFF-MOD degrades to "the
+    // current real numbers, just not re-derived from the live file"
+    // rather than silently doing nothing.
+    nbfixAliphaticHParams = entry
+      ? { epsilon: entry.epsilon, rminHalf: entry.rminHalf }
+      : { epsilon: 0.01577948280971, rminHalf: 1.48419980825 };
+    return nbfixAliphaticHParams;
+  }
+
+  // Real RDKit aromaticity perception (same JSON-export path chemistry.js
+  // already uses for the descriptor table's aromaticAtomCount) on the
+  // SAME `mol` typeMolecule already builds from atoms3d -- so atom index
+  // i in this set is exactly atoms3d[i], no separate index mapping needed.
+  function aromaticAtomSet(mol) {
+    const set = new Set();
+    try {
+      const molData = JSON.parse(mol.get_json()).molecules[0];
+      const ext = (molData.extensions || []).find(function (e) { return e.name === 'rdkitRepresentation'; });
+      (ext && ext.aromaticAtoms || []).forEach(function (idx) { set.add(idx); });
+    } catch (err) {
+      // Degrade to "nothing perceived as aromatic" -- NBFIX classification
+      // below then just can't mark anything aliphatic that depends on
+      // this, same honest-absence-of-data convention the rest of this
+      // file uses (e.g. getSidecar/checkVocab in applicability-domain.js).
+    }
+    return set;
+  }
+
+  // A terminal H's classification for SMIRNOFF-MOD: polar-O-H if its one
+  // bonded neighbor is oxygen, plain-aliphatic-C-H if its one bonded
+  // neighbor is a non-aromatic carbon with no double/triple bonds of its
+  // own (excludes vinylic/carbonyl-adjacent/aromatic C-H on purpose --
+  // "aliphatic" per the request, not "any non-polar C-H"). Real topology
+  // (bonds3d), not SMIRKS matching -- consistent with this file's own
+  // "topology independent of SMIRKS" section above.
+  function classifyNbfixAtoms(atoms3d, bonds3d, aromaticSet) {
+    const n = atoms3d.length;
+    const isPolarOH = new Array(n).fill(false);
+    const isAliphaticH = new Array(n).fill(false);
+    const hasMultipleBond = new Array(n).fill(false);
+    bonds3d.forEach(function (b) {
+      if (b.order > 1) { hasMultipleBond[b.a1] = true; hasMultipleBond[b.a2] = true; }
+    });
+    for (let i = 0; i < n; i++) {
+      if (atoms3d[i].element !== 'H') continue;
+      const nbrs = neighborsOf(bonds3d, i);
+      if (nbrs.length !== 1) continue; // a terminal H always has exactly one bond
+      const parent = nbrs[0];
+      const parentElement = atoms3d[parent].element;
+      if (parentElement === 'O') {
+        isPolarOH[i] = true;
+      } else if (parentElement === 'C' && !aromaticSet.has(parent) && !hasMultipleBond[parent]) {
+        isAliphaticH[i] = true;
+      }
+    }
+    return { isPolarOH: isPolarOH, isAliphaticH: isAliphaticH };
   }
 
   function typeMolecule(RDKit, atoms3d, bonds3d) {
@@ -459,7 +578,8 @@ CC.OpenFF = window.CC.OpenFF || {};
       const propersAssigned = assignPropers(properCandidates, properWinners);
       const improperTerms = assignImpropers(improperCenters, bonds3d, improperWinners);
       const vdwAssigned = assignVdw(atomCount, vdwWinners);
-      const pairs = buildPairs(bonds3d, angleCandidates, properCandidates, atomCount);
+      const nbfixClasses = classifyNbfixAtoms(atoms3d, bonds3d, aromaticAtomSet(mol));
+      const pairs = buildPairs(bonds3d, angleCandidates, properCandidates, atomCount, nbfixClasses);
 
       return {
         bondTerms: bondsAssigned.terms,
@@ -552,7 +672,7 @@ CC.OpenFF = window.CC.OpenFF || {};
 
   // ---------- energy ----------
 
-  function buildEnergyModel(typed, chargesResult) {
+  function buildEnergyModel(typed, chargesResult, useNbfix) {
     return {
       bonds: typed.bondTerms,
       angles: typed.angleTerms,
@@ -563,6 +683,11 @@ CC.OpenFF = window.CC.OpenFF || {};
       vdwScale14: ffData.vdwScale14,
       elecScale14: ffData.electrostaticsScale14,
       charges: chargesResult.available ? chargesResult.charges : null,
+      // SMIRNOFF-MOD only (see classifyNbfixAtoms/getNbfixAliphaticHParams
+      // above) -- plain "smirnoff" leaves useNbfix falsy, so every pair's
+      // already-computed isNbfix flag (buildPairs) is simply never read.
+      useNbfix: !!useNbfix,
+      nbfixParams: useNbfix ? getNbfixAliphaticHParams() : null,
     };
   }
 
@@ -586,6 +711,21 @@ CC.OpenFF = window.CC.OpenFF || {};
   }
 
   // stage: { torsion: bool, nonbonded: 0..1 } -- see minimizeStagedSMIRNOFF.
+  // Standard Lorentz-Berthelot combining rule (rm additive, eps geometric
+  // mean) -- EXCEPT for a SMIRNOFF-MOD pair (ff.useNbfix && p.isNbfix),
+  // which uses ff.nbfixParams combined with ITSELF instead of either
+  // atom's own real per-atom vdw entry (see classifyNbfixAtoms/
+  // getNbfixAliphaticHParams above for what/why). Shared by both
+  // computeEnergySMIRNOFF and analyticVacuumGradientSMIRNOFF's vdW loops
+  // so the two can never disagree on which rule applied to a given pair.
+  function combineVdw(ff, p, vi, vj) {
+    if (ff.useNbfix && p.isNbfix) {
+      const n = ff.nbfixParams;
+      return { rm: n.rminHalf + n.rminHalf, eps: n.epsilon };
+    }
+    return { rm: vi.rminHalf + vj.rminHalf, eps: Math.sqrt(vi.epsilon * vj.epsilon) };
+  }
+
   function computeEnergySMIRNOFF(positions, atoms3d, ff, stage, shared, solvent) {
     let energy = 0;
 
@@ -643,10 +783,10 @@ CC.OpenFF = window.CC.OpenFF || {};
         const vi = ff.vdw[p.a], vj = ff.vdw[p.b];
         let rm = null;
         if (vi && vj) {
-          rm = vi.rminHalf + vj.rminHalf;
-          const eps = Math.sqrt(vi.epsilon * vj.epsilon);
+          const combined = combineVdw(ff, p, vi, vj);
+          rm = combined.rm;
           const scale = p.is14 ? ff.vdwScale14 : 1.0;
-          energy += stage.nonbonded * scale * eps * shared.ljShape(r, rm);
+          energy += stage.nonbonded * scale * combined.eps * shared.ljShape(r, rm);
         }
 
         if (ff.charges) {
@@ -849,14 +989,14 @@ CC.OpenFF = window.CC.OpenFF || {};
         const vi = ff.vdw[p.a], vj = ff.vdw[p.b];
         let rm = null;
         if (vi && vj) {
-          rm = vi.rminHalf + vj.rminHalf;
-          const eps = Math.sqrt(vi.epsilon * vj.epsilon);
+          const combined = combineVdw(ff, p, vi, vj);
+          rm = combined.rm;
           const scale = p.is14 ? ff.vdwScale14 : 1.0;
           // Differentiates the EXACT same shape computeEnergySMIRNOFF's
           // vdW term calls (shared.ljShape) -- see ljShapeDerivative's own
           // comment in embed3d.js for why this is shared rather than a
           // second copy of the floor constants.
-          dEdr += stage.nonbonded * scale * eps * CC.Embed3DShared.ljShapeDerivative(r, rm);
+          dEdr += stage.nonbonded * scale * combined.eps * CC.Embed3DShared.ljShapeDerivative(r, rm);
         }
 
         if (ff.charges) {
@@ -1080,9 +1220,9 @@ CC.OpenFF = window.CC.OpenFF || {};
   // the exact same, already-validated SMIRNOFF typing/energy path against
   // its own seed geometries without duplicating typeMolecule/
   // buildEnergyModel/minimizeStagedSMIRNOFF wiring a second time.
-  async function optimizeGivenSeedSMIRNOFF(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solventOpts, stopToken) {
+  async function optimizeGivenSeedSMIRNOFF(RDKit, atoms3d, bonds3d, chargesResult, iterations, deadline, onProgress, solventOpts, stopToken, useNbfix) {
     const typed = typeMolecule(RDKit, atoms3d, bonds3d);
-    const ff = buildEnergyModel(typed, chargesResult);
+    const ff = buildEnergyModel(typed, chargesResult, useNbfix);
     // Solvation reuses the SAME NAGL-MBIS charges electrostatics above
     // already computed -- one real charge set, two consumers -- rather
     // than the caller supplying a second copy. Omitted (not faked) if
@@ -1172,7 +1312,7 @@ CC.OpenFF = window.CC.OpenFF || {};
               bestEnergySoFar: best ? best.energy : null,
             });
           }
-        }, opts.solvent);
+        }, opts.solvent, undefined, opts.useNbfix);
       } catch (err) {
         throw new Error('SMIRNOFF typing failed: ' + err.message);
       }

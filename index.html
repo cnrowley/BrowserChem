@@ -160,9 +160,10 @@
       <div class="properties-section-title">Optimize</div>
       <div class="viewer3d-method-row">
         <label for="optimize-model-select">Energy model</label>
-        <select id="optimize-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model. ANI-2x: a trained neural-network potential (real quantitative energies in vacuum only, no implicit solvent) — only usable on neutral molecules built from H/C/N/O/F/S/Cl; loads automatically on first use.">
+        <select id="optimize-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model. SMIRNOFF-MOD: real Sage plus one added NBFIX repulsive term between polar hydroxyl (O-H) hydrogens and aliphatic (C-H) hydrogens, intramolecular only -- Sage's own real vdW parameter for a hydroxyl H is extremely weak (near-zero), which can let it sit implausibly close to an aliphatic C-H at a gas-phase minimum; every other nonbonded pair is untouched, unmodified Sage. ANI-2x: a trained neural-network potential (real quantitative energies in vacuum only, no implicit solvent) — only usable on neutral molecules built from H/C/N/O/F/S/Cl; loads automatically on first use.">
           <option value="classical">Classical force field (MMFF-style)</option>
           <option value="smirnoff" selected>OpenFF Sage (SMIRNOFF)</option>
+          <option value="smirnoff-mod">SMIRNOFF-MOD (Sage + OH/aliphatic-H NBFIX)</option>
           <option value="ani2x">ANI-2x (neural network potential)</option>
         </select>
       </div>
@@ -173,9 +174,10 @@
       <div class="properties-section-title">Conformer search</div>
       <div class="viewer3d-method-row">
         <label for="conformer-model-select">Energy model</label>
-        <select id="conformer-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model.">
+        <select id="conformer-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model. SMIRNOFF-MOD: real Sage plus one added NBFIX repulsive term between polar hydroxyl (O-H) hydrogens and aliphatic (C-H) hydrogens, intramolecular only -- see the Optimize energy-model tooltip above for why.">
           <option value="classical">Classical force field (MMFF-style)</option>
           <option value="smirnoff" selected>OpenFF Sage (SMIRNOFF)</option>
+          <option value="smirnoff-mod">SMIRNOFF-MOD (Sage + OH/aliphatic-H NBFIX)</option>
         </select>
       </div>
       <div class="viewer3d-toolbar">

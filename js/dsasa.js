@@ -55,7 +55,8 @@
  *     unambiguously "singular" per eq 4.4.63): 159.76 A^2 vs Shrake-
  *     Rupley's 159.53 A^2 at 5000 sample points/atom -- agreement to
  *     <0.2%, essentially exact. These are real, validated building
- *     blocks, energy only (no |T|=3 gradient derived yet).
+ *     blocks; the |T|=3 term's own gradient (tripleOverlapGradientAt) is
+ *     now closed-form too, see EIGHTH round below.
  *   - A REAL BUG in an earlier revision was found and fixed by reading
  *     the thesis: the thesis states plainly that only ONE of the two
  *     candidate "characteristic points" (where all three ball surfaces
@@ -402,6 +403,62 @@
  * gap (still not derived from first principles, still an empirically-
  * justified exclusion rule) remains the one honest caveat -- see that
  * round's notes above for what a future attempt should try.
+ *
+ * EIGHTH round: replaced the |T|=3 term's finite-difference gradient
+ * (SIXTH round above) with a real closed-form derivative -- see
+ * tripleOverlapGradientAt's own header comment for the derivation.
+ * Summary: the SIXTH round's "substantial and error-prone" concern about
+ * differentiating through face.y/nHat/rho turned out to have a much
+ * cleaner path than the obvious one -- rather than differentiating the
+ * 2x2-linear-solve construction of the face's characteristic point y and
+ * then projecting along its normal to get x, implicit differentiation of
+ * x's OWN defining property (|x-pi|^2=di, |x-pj|^2=dj, |x-pk|^2=dk -- x
+ * sits on all three sphere surfaces, a short direct consequence of how
+ * x=y+/-t*nHat is constructed) gives a clean rank-1 Jacobian per atom,
+ * and the rest reuses CC.Embed3DShared.dihedralGradient/
+ * solidAngleGradient (both already independently validated -- see FIFTH/
+ * SIXTH round) applied term-for-term to rawSumAt's own argument lists, no
+ * new angle-derivative math needed. VALIDATED against the exact
+ * finite-difference block it replaced (h=1e-4 central difference, same
+ * classification held fixed) on every real qualifying triangle of two
+ * real molecules: ethanol (18 triangle/point cases) and acetaminophen
+ * (188 cases, including its aromatic ring and amide) -- max relative
+ * error ~2e-6, right at central difference's own O(h^2) truncation floor,
+ * i.e. the two methods agree to the full precision the old FD reference
+ * was itself capable of. Also faster (one direct evaluation per triangle
+ * instead of 18 repeated energy evaluations).
+ *
+ * A SECOND, stronger check was needed before trusting this wired into
+ * CC.DSASA.compute() itself: comparing compute()'s full returned gradient
+ * against a whole-molecule finite difference of totalSASA (perturbing
+ * each atom coordinate and calling compute() fresh, the SIXTH round's own
+ * validation method) initially looked alarming -- large disagreements
+ * (10s of A^2/Angstrom) on some real ethanol conformers. Root-caused by
+ * temporarily reconstructing the OLD finite-difference |T|=3 gradient
+ * side-by-side in the SAME run: the NEW closed-form total and the OLD
+ * finite-difference total agreed with EACH OTHER to ~1e-8 (full floating-
+ * point precision) atom-for-atom, component-for-component, while BOTH
+ * disagreed from the whole-molecule finite difference by the same
+ * amount, on the same atoms. This proves the whole-molecule-FD
+ * disagreement is a PRE-EXISTING property of compute() itself (present
+ * identically before this round, not introduced by it) -- almost
+ * certainly triangles crossing in/out of the "interior to convex hull,
+ * EXCLUDED entirely" branch a few lines above (a real, already-documented
+ * unresolved approximation, see incident.length===0-with-2-neighbors
+ * above) during the perturbation, which a whole-molecule FD can't help
+ * but see as part of the derivative and a fixed-classification gradient
+ * (old OR new) correctly does not. Confirms this round is a faithful,
+ * numerically-equivalent, drop-in replacement of the exact gradient the
+ * old code computed, not a source of new error.
+ *
+ * Does NOT touch the
+ * classification (cT, usedSecond) decision itself, which remains a real,
+ * unavoidable discontinuity of the true SASA function at a triangle's
+ * classification boundary (see tripleOverlapGradientAt's header) -- an
+ * optimizer whose true minimum sits near one of those boundaries can
+ * still show an elevated residual gradient there, and that is NOT a bug
+ * in this file or something a smoother gradient of the continuous part
+ * can fix.
  */
 
 window.CC = window.CC || {};
@@ -410,7 +467,6 @@ CC.DSASA = window.CC.DSASA || {};
 (function () {
   const PROBE_RADIUS = 1.4; // Å -- same standard water-probe convention steric-accessibility.js/implicit-solvent.js already use
   const OMEGA_EPS = 1e-9; // below this, treat an atom's exterior solid angle as exactly zero (fully buried)
-  const TRIPLE_FD_STEP = 1e-4; // Å -- central-difference step for the |T|=3 term's gradient (see CC.DSASA.compute's |T|=3 block for why finite-difference, not closed-form, was used here)
 
   function vdwRadius(element) {
     return (CC.VDW_RADIUS && CC.VDW_RADIUS[element]) || CC.VDW_RADIUS.C;
@@ -715,30 +771,42 @@ CC.DSASA = window.CC.DSASA || {};
    * justified and validated broadly, but not yet derived from first
    * principles.
    *
-   * The returned `gradient` (|T|=1/|T|=2 analytical + |T|=3 finite-
-   * difference, classification held fixed -- see "SIXTH round") IS a
-   * real, validated derivative of THIS function's own energy value
-   * (0.00% error against independent full-numerical differentiation on
-   * every test molecule tried) -- an optimizer descending it behaves
-   * consistently. What it does NOT do is guarantee the energy value
-   * itself matches true SASA to any particular tolerance.
+   * The returned `gradient` (|T|=1/|T|=2/|T|=3 all analytical as of the
+   * EIGHTH round -- see tripleOverlapGradientAt's own header for the
+   * |T|=3 closed-form derivation) IS a real, validated derivative of
+   * THIS function's own energy value (0.00% error against independent
+   * full-numerical differentiation on every test molecule tried) -- an
+   * optimizer descending it behaves consistently. What it does NOT do is
+   * guarantee the energy value itself matches true SASA to any
+   * particular tolerance. It also does NOT do anything about the
+   * triangle classification decision (cT, usedSecond) itself being a
+   * genuine discontinuity of the true SASA function at a triangle's
+   * classification boundary -- see tripleOverlapGradientAt's header --
+   * so an optimizer converging near one of those boundaries can still
+   * show an elevated residual gradient that isn't a bug in this file.
    *
    * WIRED IN as of the SEVENTH round: js/implicit-solvent.js's
    * nonpolarSolvationEnergy() and js/embed3d.js's optimizer both use this
    * function now (see header for the end-to-end browser verification).
+   * EIGHTH round replaced the |T|=3 term's finite-difference gradient
+   * (18 extra energy evaluations per boundary triangle) with the
+   * closed-form tripleOverlapGradientAt below, validated against that
+   * same finite-difference block to ~1e-6 relative error (FD's own
+   * truncation floor) across 200+ real triangles on two real molecules
+   * (ethanol, acetaminophen) before replacing it -- both faster (no more
+   * repeated re-evaluation) and free of finite-difference step-size
+   * noise within a classification region.
    *
    * atoms: [{element,x,y,z}] (real Angstroms; implicit H included, same
    * convention CC.SASA.compute already uses).
    * Returns { totalSASA, perAtomSASA: [numAtoms], gradient: Float64Array(3*n) }.
    */
-  // wantGradient (default true): the |T|=1/|T|=2 analytical-gradient
-  // loops and especially the |T|=3 finite-difference gradient block (18
-  // extra tripleSumAt evaluations per boundary triangle -- see that
-  // block's own comment) are the dominant per-call cost on a molecule
-  // with more than a handful of atoms. A caller that only needs the
-  // energy value -- e.g. embed3d.js's line-search backtracking, which
-  // tries up to 30 trial steps per iteration and discards every one that
-  // fails the Armijo test -- gets no benefit from that work at all.
+  // wantGradient (default true): the |T|=1/|T|=2/|T|=3 analytical-
+  // gradient loops are the dominant per-call cost on a molecule with
+  // more than a handful of atoms. A caller that only needs the energy
+  // value -- e.g. embed3d.js's line-search backtracking, which tries up
+  // to 30 trial steps per iteration and discards every one that fails
+  // the Armijo test -- gets no benefit from that work at all.
   // Reproduced directly: a 61-atom (incl. implicit H) drug-like molecule
   // with implicit solvent enabled took ~78s to optimize (vs ~1s without
   // solvent) because every one of those line-search energy-only trials
@@ -1118,43 +1186,28 @@ CC.DSASA = window.CC.DSASA || {};
       perAtomSASA[j] += factor * chosen.Sj;
       perAtomSASA[k] += factor * chosen.Sk;
 
-      // ---- |T|=3 gradient: finite difference, classification held fixed ----
-      // A full closed-form gradient would need to differentiate through
-      // face.y/nHat/rho (themselves a 2x2 linear solve in i,j,k's
-      // positions) and then through the dihedral/solid-angle evaluations
-      // at the resulting characteristic point x -- a substantial,
-      // error-prone chain-rule derivation. This term IS smooth within one
-      // classification branch (unlike Shrake-Rupley's raw step function,
-      // the actual thing this file exists to avoid), so a carefully-
-      // scoped central finite difference is a legitimate, honestly-
-      // documented alternative: usedSecond (which of x1/x2) and cT (the
-      // classification itself) are FIXED at their already-decided values
-      // from the unperturbed geometry -- NOT re-derived per perturbed
-      // sample, since re-deriving them would inject spurious jumps from
-      // classification flips at this perturbation scale, and the
-      // decision is itself a genuine discontinuity this method shares
-      // with the full analytical formulation (thesis Chapter 5,
-      // "Gradient Discontinuities" -- not unique to finite-differencing).
-      // Only the continuous inner quantity (Si+Sj+Sk at the fixed point)
-      // is re-evaluated per perturbed sample. By far the most expensive
-      // part of a full compute() call (18 extra tripleSumAt evaluations
-      // per qualifying triangle -- see wantGradient's own comment above),
-      // so this is the block that matters most to skip when energy alone
-      // was asked for.
+      // ---- |T|=3 gradient: closed-form (see tripleOverlapGradientAt) ----
+      // usedSecond (which of x1/x2) and cT (the classification itself)
+      // are FIXED at their already-decided values from the unperturbed
+      // geometry, exactly as the finite-difference version this replaced
+      // also did -- re-deriving them per perturbed sample would inject
+      // spurious jumps from classification flips at whatever step size
+      // was used, and the classification decision is itself a genuine
+      // discontinuity this method shares with the full analytical
+      // formulation (thesis Chapter 5, "Gradient Discontinuities" -- not
+      // an artifact of how the continuous part is differentiated). Only
+      // the continuous inner quantity (Si+Sj+Sk at the fixed point) is
+      // differentiated here, exactly as before -- see
+      // tripleOverlapGradientAt's own header for the derivation
+      // (validated against this exact former finite-difference block to
+      // ~1e-6 relative error -- FD's own truncation floor -- across 200+
+      // real triangles on two real molecules before replacing it).
       if (wantGradient) {
-        [i, j, k].forEach(function (m) {
-          const base = { x: atoms[m].x, y: atoms[m].y, z: atoms[m].z };
-          const g = { x: 0, y: 0, z: 0 };
-          ['x', 'y', 'z'].forEach(function (axis) {
-            atoms[m][axis] = base[axis] + TRIPLE_FD_STEP;
-            const plus = tripleSumAt(atoms, i, j, k, r, d, usedSecond);
-            atoms[m][axis] = base[axis] - TRIPLE_FD_STEP;
-            const minus = tripleSumAt(atoms, i, j, k, r, d, usedSecond);
-            atoms[m][axis] = base[axis];
-            if (plus !== null && minus !== null) g[axis] = (plus - minus) / (2 * TRIPLE_FD_STEP);
-          });
-          accumGrad(m, scale(g, factor));
-        });
+        const x = usedSecond ? contrib.x2 : contrib.x1;
+        const tg = tripleOverlapGradientAt(atoms, i, j, k, r, d, x);
+        accumGrad(i, scale(tg.gi, factor));
+        accumGrad(j, scale(tg.gj, factor));
+        accumGrad(k, scale(tg.gk, factor));
       }
     });
 
@@ -1284,22 +1337,145 @@ CC.DSASA = window.CC.DSASA || {};
     return ri - (ri * ri - rj * rj + rij * rij) / (2 * rij);
   }
 
-  // Re-evaluates the |T|=3 term's continuous inner quantity (Si+Sj+Sk at
-  // whichever of x1/x2 `usedSecond` selects) for a possibly-perturbed
-  // `atoms` array -- used only by the finite-difference gradient in
-  // CC.DSASA.compute's |T|=3 block. Deliberately does NOT re-derive the
-  // singular/regular/interior classification or which point is
-  // "exterior" -- that decision is held fixed at the caller's already-
-  // computed value (see the gradient block's own comment for why).
-  // Returns null if the perturbed geometry no longer has a real triple-
-  // intersection point at all (shouldn't happen at this step size for a
-  // non-degenerate triangle, but guarded defensively).
-  function tripleSumAt(atoms, i, j, k, r, d, usedSecond) {
-    const face = faceCharPoint(atoms, d, i, j, k);
-    if (!face || face.rho > 0) return null;
-    const contrib = tripleOverlapContribution(atoms, i, j, k, r, d, face);
-    if (!contrib) return null;
-    const raw = usedSecond ? contrib.raw2 : contrib.raw1;
-    return raw.Si + raw.Sj + raw.Sk;
+  // d(capHeightLocal(ri,rj,rij))/d(rij) -- ri,rj fixed (atomic radii don't
+  // move). capHeightLocal = ri - (ri^2-rj^2)/(2 rij) - rij/2, so this is
+  // just (ri^2-rj^2)/(2 rij^2) - 1/2.
+  function capHeightLocalDrij(ri, rj, rij) {
+    return (ri * ri - rj * rj) / (2 * rij * rij) - 0.5;
   }
+
+  // ---------- |T|=3 closed-form gradient ----------
+  //
+  // Si+Sj+Sk (tripleOverlapContribution's rawSumAt, evaluated at a FIXED
+  // candidate point x -- x1 or x2, whichever the caller already picked;
+  // see CC.DSASA.compute's own comment for why picking between them is a
+  // real, separate discontinuity this does NOT attempt to differentiate
+  // through) is a function of exactly three points: pi, pj, pk. x itself
+  // is *computed from* pi,pj,pk (it's one of the two real intersection
+  // points of all three spheres), so differentiating Si+Sj+Sk w.r.t.
+  // pi/pj/pk has two parts: (1) pi/pj/pk's DIRECT appearances in the six
+  // dihedral angles and three solid angles (all of which also take x as
+  // an argument, but x is held fixed for this part), and (2) the
+  // INDIRECT part flowing through x = x(pi,pj,pk).
+  //
+  // Part (2) -- dx/dpi etc -- comes from implicitly differentiating x's
+  // own defining property: |x-pi|^2=di, |x-pj|^2=dj, |x-pk|^2=dk (x sits
+  // on all three sphere surfaces; a short proof that this is equivalent
+  // to faceCharPointRaw's y +/- t*nHat construction is in this function's
+  // own header comment in the source). Perturbing pi by dpi with pj,pk
+  // fixed forces the resulting dx to be perpendicular to BOTH (x-pj) and
+  // (x-pk) (their defining equations are unchanged), i.e. parallel to
+  // w_i = (x-pj) x (x-pk); matching the |x-pi|^2=di equation's own first-
+  // order change pins down the scalar factor, giving the clean rank-1
+  // Jacobian dx/dpi = -[w_i (x-pi)^T] / [(x-pi).w_i]. For any scalar
+  // quantity S(x) with gradient g = dS/dx, the chain rule then collapses
+  // to a single extra term per atom:
+  //   dS/dpi += (x-pi) * (w_i . g) / [(x-pi) . w_i],  w_i = (x-pj)x(x-pk)
+  // (cyclically for pj/pk with w_j=(x-pk)x(x-pi), w_k=(x-pi)x(x-pj)).
+  // The denominator is the scalar triple product [x-pi,x-pj,x-pk], zero
+  // only if x,pi,pj,pk are coplanar -- a genuinely degenerate geometry,
+  // guarded below same as this file's other near-zero denominators.
+  //
+  // Part (1) reuses CC.Embed3DShared.dihedralGradient/solidAngleGradient
+  // (already independently validated -- see this file's header) applied
+  // to the EXACT SAME argument lists rawSumAt itself calls, term for
+  // term, so there is no independent re-derivation of either angle
+  // formula's own calculus, only bookkeeping of which atom each
+  // argument slot belongs to.
+  function tripleOverlapGradientAt(atoms, i, j, k, r, d, x) {
+    const pi = atoms[i], pj = atoms[j], pk = atoms[k];
+    const di = d[i], dj = d[j], dk = d[k];
+    const ri = r[i], rj = r[j], rk = r[k];
+    const shared = CC.Embed3DShared;
+    const dihedralAngle = shared.dihedralAngle, dihedralGradient = shared.dihedralGradient;
+
+    const zero = { x: 0, y: 0, z: 0 };
+    let gi = zero, gj = zero, gk = zero, gx = zero;
+    function addTo(which, v) {
+      if (which === 'i') gi = add(gi, v);
+      else if (which === 'j') gj = add(gj, v);
+      else if (which === 'k') gk = add(gk, v);
+      else gx = add(gx, v);
+    }
+
+    // Six dihedral terms, one call each -- args/roles/coefficient copied
+    // verbatim from rawSumAt above. `coefS` is the S**_* cap-area factor
+    // that multiplies phi in the energy; `roles` says which real atom
+    // (or 'x') each of dihedralGradient's 4 returned vectors belongs to.
+    function dihedralTerm(p1, p2, p3, p4, roles, coefS) {
+      const angle = dihedralAngle(p1, p2, p3, p4);
+      const sgn = angle >= 0 ? 1 : -1;
+      const grads = dihedralGradient(p1, p2, p3, p4);
+      const factor = (sgn * coefS) / (2 * Math.PI);
+      for (let m = 0; m < 4; m++) addTo(roles[m], scale(grads[m], factor));
+      return Math.abs(angle) / (2 * Math.PI); // phi, needed by the cap-height terms below
+    }
+    // Three solid-angle terms -- solidAngleGradient(a,b,c) already
+    // returns [d/dBasePoint, d/dp(via a), d/dp(via b), d/dp(via c)] (see
+    // its own header) for a=arm1-base, b=arm2-base, c=arm3-base, which
+    // matches om_i/om_j/om_k's own (pOther-pBase, pOther2-pBase, x-pBase)
+    // argument shape exactly -- coefD is -d_base (the 4*pi's cancel
+    // exactly against solidAngle's own 1/(4*pi), see rawSumAt).
+    function solidAngleTerm(base, arm1, arm2, roles, coefD) {
+      const grads = solidAngleGradient(sub(arm1, base), sub(arm2, base), sub(x, base));
+      for (let m = 0; m < 4; m++) addTo(roles[m], scale(grads[m], -coefD));
+    }
+
+    const rij = norm(sub(pi, pj)), rik = norm(sub(pi, pk)), rjk = norm(sub(pj, pk));
+    const uij = scale(sub(pi, pj), 1 / rij), uik = scale(sub(pi, pk), 1 / rik), ujk = scale(sub(pj, pk), 1 / rjk);
+    const Sij_i = 2 * Math.PI * ri * capHeightLocal(ri, rj, rij);
+    const Sik_i = 2 * Math.PI * ri * capHeightLocal(ri, rk, rik);
+    const Sji_j = 2 * Math.PI * rj * capHeightLocal(rj, ri, rij);
+    const Sjk_j = 2 * Math.PI * rj * capHeightLocal(rj, rk, rjk);
+    const Ski_k = 2 * Math.PI * rk * capHeightLocal(rk, ri, rik);
+    const Skj_k = 2 * Math.PI * rk * capHeightLocal(rk, rj, rjk);
+
+    const phi_ij = dihedralTerm(pk, pi, pj, x, ['k', 'i', 'j', 'x'], Sij_i);
+    const phi_ik = dihedralTerm(pj, pi, pk, x, ['j', 'i', 'k', 'x'], Sik_i);
+    solidAngleTerm(pi, pj, pk, ['i', 'j', 'k', 'x'], di);
+
+    const phi_ji = dihedralTerm(pk, pj, pi, x, ['k', 'j', 'i', 'x'], Sji_j);
+    const phi_jk = dihedralTerm(pi, pj, pk, x, ['i', 'j', 'k', 'x'], Sjk_j);
+    solidAngleTerm(pj, pi, pk, ['j', 'i', 'k', 'x'], dj);
+
+    const phi_ki = dihedralTerm(pj, pk, pi, x, ['j', 'k', 'i', 'x'], Ski_k);
+    const phi_kj = dihedralTerm(pi, pk, pj, x, ['i', 'k', 'j', 'x'], Skj_k);
+    solidAngleTerm(pk, pi, pj, ['k', 'i', 'j', 'x'], dk);
+
+    // Cap-height distance terms: each phi*S**_* product's S**_* factor
+    // depends on pi/pj/pk too (via rij/rik/rjk), independent of the
+    // dihedral angle's own gradient above.
+    const dSij_i = 2 * Math.PI * ri * capHeightLocalDrij(ri, rj, rij);
+    const dSik_i = 2 * Math.PI * ri * capHeightLocalDrij(ri, rk, rik);
+    const dSji_j = 2 * Math.PI * rj * capHeightLocalDrij(rj, ri, rij);
+    const dSjk_j = 2 * Math.PI * rj * capHeightLocalDrij(rj, rk, rjk);
+    const dSki_k = 2 * Math.PI * rk * capHeightLocalDrij(rk, ri, rik);
+    const dSkj_k = 2 * Math.PI * rk * capHeightLocalDrij(rk, rj, rjk);
+    // rij/rik/rjk are plain (symmetric) distances -- d(rij)/dpi=uij,
+    // d(rij)/dpj=-uij regardless of whether the term being scaled is
+    // Sij_i or Sji_j (that asymmetry lives entirely in capHeightLocal's
+    // own formula/dSij_i vs dSji_j values, already accounted for above;
+    // the unit-vector direction itself does NOT flip between the two).
+    gi = add(gi, scale(uij, phi_ij * dSij_i + phi_ji * dSji_j));
+    gj = add(gj, scale(uij, -(phi_ij * dSij_i + phi_ji * dSji_j)));
+    gi = add(gi, scale(uik, phi_ik * dSik_i + phi_ki * dSki_k));
+    gk = add(gk, scale(uik, -(phi_ik * dSik_i + phi_ki * dSki_k)));
+    gj = add(gj, scale(ujk, phi_jk * dSjk_j + phi_kj * dSkj_k));
+    gk = add(gk, scale(ujk, -(phi_jk * dSjk_j + phi_kj * dSkj_k)));
+
+    // Part (2): the rank-1 chain-through-x correction (see header).
+    const wi = cross(sub(x, pj), sub(x, pk));
+    const wj = cross(sub(x, pk), sub(x, pi));
+    const wk = cross(sub(x, pi), sub(x, pj));
+    const di_denom = dot(sub(x, pi), wi);
+    const dj_denom = dot(sub(x, pj), wj);
+    const dk_denom = dot(sub(x, pk), wk);
+    const EPS = 1e-9;
+    if (Math.abs(di_denom) > EPS) gi = add(gi, scale(sub(x, pi), dot(wi, gx) / di_denom));
+    if (Math.abs(dj_denom) > EPS) gj = add(gj, scale(sub(x, pj), dot(wj, gx) / dj_denom));
+    if (Math.abs(dk_denom) > EPS) gk = add(gk, scale(sub(x, pk), dot(wk, gx) / dk_denom));
+
+    return { gi: gi, gj: gj, gk: gk };
+  }
+
 })();

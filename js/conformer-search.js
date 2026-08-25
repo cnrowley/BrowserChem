@@ -52,7 +52,7 @@
  * ---------------------------------------------------------------------
  * Energy models
  * ---------------------------------------------------------------------
- * All three of this app's existing 3D optimizers are pluggable here via
+ * All four of this app's existing 3D optimizers are pluggable here via
  * a small adapter (MODELS below), each reusing that engine's own
  * already-validated single-seed optimizer rather than a new one:
  *   - classical: CC.Embed3DShared.optimizeSeedClassical (embed3d.js)
@@ -60,6 +60,9 @@
  *                electrostatics from NAGL-MBIS if opts.naglModelId names
  *                a loaded model, omitted otherwise -- same substitution
  *                OPENFF_INTEGRATION.md documents for single-structure use.
+ *   - smirnoff-mod: identical to smirnoff, plus the OH-hydrogen/
+ *                aliphatic-hydrogen NBFIX (see openff-forcefield.js's
+ *                classifyNbfixAtoms/getNbfixAliphaticHParams).
  *   - ani2x:     CC.ANI.optimizeGeometry (ani2x-model.js), preceded by a
  *                quick classical pre-relax per each seed -- load-bearing,
  *                not optional (see app.js's ANI-2x button handler for the
@@ -144,6 +147,33 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
       },
       optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts, stopToken) {
         return CC.OpenFF.optimizeSeed(ctx.RDKit, atoms3d, bonds3d, ctx.chargesResult, iterations, deadline, onProgress, solventOpts, stopToken);
+      },
+    },
+
+    // Real Sage 2.1.0 plus the OH-hydrogen/aliphatic-hydrogen NBFIX -- see
+    // openff-forcefield.js's classifyNbfixAtoms/getNbfixAliphaticHParams
+    // header comment for what/why. Identical to the plain `smirnoff`
+    // adapter above except the trailing useNbfix:true on optimizeSeed;
+    // typing/charges/prepare are all unchanged (NBFIX only changes which
+    // vdW parameters two already-nonbonded atoms combine to, not the
+    // topology/typing/exclusion logic that decides pairs or charges).
+    'smirnoff-mod': {
+      id: 'smirnoff-mod',
+      label: 'SMIRNOFF-MOD (Sage + OH/aliphatic-H NBFIX)',
+      energyUnit: 'kcal/mol',
+      toKcalMol: function (e) { return e; },
+      prepare: async function (molecule, opts) {
+        if (!CC.OpenFF.isForceFieldLoaded()) await CC.OpenFF.loadForceField();
+        const RDKit = window.chemCanvasLibs && window.chemCanvasLibs.RDKit;
+        if (!RDKit) throw new Error('RDKit not available yet');
+        CC.OpenFF.compileAll(RDKit);
+        const shared = CC.Embed3DShared;
+        const seed = shared.withImplicitHydrogens(molecule, opts.aromaticSet || new Set());
+        const chargesResult = CC.OpenFF.getChargesForAtoms3D(molecule, seed.atoms3d, seed.bonds3d, opts.naglModelId);
+        return { RDKit: RDKit, chargesResult: chargesResult };
+      },
+      optimizeSeed: async function (atoms3d, bonds3d, aromaticSet, ctx, iterations, deadline, onProgress, solventOpts, stopToken) {
+        return CC.OpenFF.optimizeSeed(ctx.RDKit, atoms3d, bonds3d, ctx.chargesResult, iterations, deadline, onProgress, solventOpts, stopToken, true);
       },
     },
 
@@ -248,7 +278,7 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
 
   /**
    * opts:
-   *   energyModel      'classical' | 'smirnoff' | 'ani2x' (required)
+   *   energyModel      'classical' | 'smirnoff' | 'smirnoff-mod' | 'ani2x' (required)
    *   naglModelId      loaded NAGL-MBIS model id -- smirnoff electrostatics only
    *   aniModelId       loaded ANI-2x model id -- required for ani2x
    *   maxSeeds         starting geometries to generate (default scales with
@@ -272,7 +302,7 @@ CC.ConformerSearch = window.CC.ConformerSearch || {};
     if (!molecule || molecule.isEmpty()) return empty;
 
     const modelAdapter = MODELS[opts.energyModel];
-    if (!modelAdapter) throw new Error('Unknown energy model "' + opts.energyModel + '" -- expected classical, smirnoff, or ani2x');
+    if (!modelAdapter) throw new Error('Unknown energy model "' + opts.energyModel + '" -- expected classical, smirnoff, smirnoff-mod, or ani2x');
 
     const initial = CC.buildInitial3D(molecule);
     if (initial.atoms.length === 0) return empty;
