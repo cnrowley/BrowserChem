@@ -13,6 +13,7 @@
     <span class="brand-mark" aria-hidden="true"></span>
     <span class="brand-name">ChemCanvas</span>
   </div>
+  <input type="text" id="export-title-input" class="doc-title-input" placeholder="Untitled (defaults to molecular formula)" title="Title used as the PDF/report heading and the base filename for every export (CSV/XLSX/PDF/SDF/BibTeX/RIS)" autocomplete="off" spellcheck="false">
   <div class="smiles-input-group">
     <input type="text" id="smiles-input" class="smiles-input" placeholder="Enter a SMILES string&hellip;" autocomplete="off" spellcheck="false">
     <button class="btn btn-ghost" id="load-smiles-btn" title="Parse this SMILES and replace the canvas with it">Load SMILES</button>
@@ -21,7 +22,7 @@
   <div class="header-actions">
     <button class="btn btn-ghost" id="open-btn" title="Open a .mol file">Open</button>
     <button class="btn btn-ghost" id="save-btn" title="Save as a .mol file">Save</button>
-    <button class="btn btn-accent" disabled title="Not yet implemented">Export</button>
+    <button class="btn btn-accent" id="header-export-btn" title="Jump to the Properties panel's export toolbar (CSV / XLSX / PDF / SDF)">Export</button>
     <input type="file" id="file-input" accept=".mol,.sdf,.txt" hidden>
   </div>
 </header>
@@ -307,7 +308,6 @@
           <thead><tr><th colspan="2" class="properties-section-title">2D properties (RDKit)</th></tr></thead>
           <tbody id="descriptor-table"></tbody>
         </table>
-        <input type="text" id="export-title-input" class="export-title-input" placeholder="Title (default: molecular formula) — used as report title + filename" autocomplete="off" spellcheck="false">
         <div class="export-toolbar">
           <button class="btn btn-ghost btn-small" id="copy-properties-btn" disabled>Copy all</button>
           <button class="btn btn-ghost btn-small" id="download-csv-btn" disabled>CSV</button>
@@ -316,6 +316,23 @@
           <button class="btn btn-ghost btn-small" id="download-sdf-btn" disabled>SDF</button>
         </div>
         <p class="side-panel-note" id="export-status"></p>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">References</h3>
+        <p class="side-panel-note">The real papers/datasets behind every model currently loaded above (plus RDKit, QED, and SA Score, which every molecule uses) — updates automatically as you load more models. A DOI link is given wherever one has been confirmed; an entry with no link has one deliberately left out rather than guessed, not just missed (see the [?] note on that entry).</p>
+        <ol class="references-list" id="references-list"></ol>
+        <p class="side-panel-note" id="references-empty-note">Draw a structure and run a prediction to see its references here.</p>
+        <div class="export-toolbar">
+          <button class="btn btn-ghost btn-small" id="download-bibtex-btn" disabled>BibTeX</button>
+          <button class="btn btn-ghost btn-small" id="download-ris-btn" disabled>RIS</button>
+        </div>
+        <p class="side-panel-note" id="references-status"></p>
+        <details class="other-methods-details">
+          <summary>Other methods used elsewhere in this app</summary>
+          <p class="side-panel-note">Physics/ML components this app uses that aren't loadable "models" above, so they aren't auto-detected the way the list above is — dSASA/implicit solvent, CREST-inspired conformer search, PAINS/structural-alert filters, OpenFF Sage, 3Dmol.js, OCSRGlyph, NMRShiftDB2/NMRexp. Include the ones you actually used.</p>
+          <ol class="references-list" id="other-methods-references-list"></ol>
+        </details>
       </div>
 
       <div class="properties-section">
@@ -410,12 +427,17 @@
         <h3 class="properties-section-title">Aqueous pKa &amp; titration curve <button type="button" class="property-info-btn" id="titration-info-btn" aria-label="About this property">[?]</button></h3>
         <p class="side-panel-note">Detects ionizable groups by SMARTS pattern matching, looks up each site's pKa from a trained model, then computes a titration curve treating sites as independent (no site-site electrostatic coupling) — a standard, documented simplifying assumption, not a hidden one.</p>
         <button class="btn btn-accent btn-small" id="compute-titration-btn">Compute titration curve</button>
+        <label class="heatmap-text-toggle" id="titration-correction-label">
+          <input type="checkbox" id="titration-correction-checkbox">
+          Include electrostatic correction (needs an optimized 3D structure, from the 3D view tab)
+        </label>
         <p class="side-panel-note" id="titration-status"></p>
+        <p class="side-panel-note" id="titration-correction-status"></p>
       </div>
 
       <div class="properties-section" id="titration-sites-section" style="display:none;">
         <table class="descriptor-table" id="titration-sites-table">
-          <thead><tr><th colspan="3" class="properties-section-title">Detected ionizable sites</th></tr></thead>
+          <thead><tr><th colspan="4" class="properties-section-title">Detected ionizable sites</th></tr></thead>
           <tbody id="titration-sites-output"></tbody>
         </table>
       </div>
@@ -608,6 +630,7 @@
 <script src="js/gnn-heads.js"></script>
 <script src="js/chemprop-model.js"></script>
 <script src="js/model-registry.js"></script>
+<script src="js/citations.js"></script>
 <script src="js/nagl-features.js"></script>
 <script src="js/nagl-model.js"></script>
 <script src="js/openff-forcefield.js"></script>
@@ -615,6 +638,7 @@
 <script src="js/pka-model.js"></script>
 <script src="js/pka-microstates.js"></script>
 <script src="js/pka-titration.js"></script>
+<script src="js/pka-electrostatic-correction.js"></script>
 <script src="js/titration-chart.js"></script>
 <script src="js/convergence-chart.js"></script>
 <script src="js/ani2x-features.js"></script>

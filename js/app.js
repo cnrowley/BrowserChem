@@ -26,6 +26,7 @@
   let smilesExpanded = false;
   let currentDescriptors = null;
   let currentValidityText = 'no structure yet';
+  let lastReferenceKeys = []; // set by refreshReferencesList(); read by the BibTeX/RIS/PDF export handlers
   let validationTimer = null;
   let generate3dBtn = null;
   let viewer3dNote = null;
@@ -40,6 +41,7 @@
   let openMicrostateModal = function () {};
   let openPropertyInfoModal = function () {};
   let getCurrent3DGeometry = function () { return null; }; // set by setup3DPanel() -- lets SASA reuse an already-generated structure instead of building its own
+  let getCurrentConformerEnsemble = function () { return null; }; // set by setup3DPanel() -- lets the pKa titration panel average its electrostatic correction over the last conformer search's full pruned ensemble instead of one arbitrary structure (see setupTitrationPanel)
   let getSolventSettings = function () { return { enabled: false }; }; // set by setupSolventPanel() -- lets 3D optimize/conformer search read the checkbox+solvent pulldown without a second copy of that UI state
   let refreshValidationPanel = function () {}; // set by setupValidationPanel() -- called from runValidation() on every 2D edit
   let lastStructureReport = null; // most recent CC.Validate.checkStructure() result, for other panels (e.g. gating a Run/Load button) to read without recomputing
@@ -108,6 +110,7 @@
       updateExportButtons();
       refreshRadarChart();
       refreshSolvationPanel();
+      refreshReferencesList();
       updateHRMSButton();
       updateSmartsFiltersButton();
       return;
@@ -123,6 +126,7 @@
       updateExportButtons();
       refreshRadarChart();
       refreshSolvationPanel();
+      refreshReferencesList();
       updateHRMSButton();
       updateSmartsFiltersButton();
       return;
@@ -135,6 +139,7 @@
       updateExportButtons();
       refreshRadarChart();
       refreshSolvationPanel();
+      refreshReferencesList();
       updateHRMSButton();
       updateSmartsFiltersButton();
       return;
@@ -146,6 +151,7 @@
     updateExportButtons();
     refreshRadarChart();
     refreshSolvationPanel();
+    refreshReferencesList();
     updateHRMSButton();
     updateSmartsFiltersButton();
   }
@@ -185,6 +191,103 @@
     if (!container) return;
     const values = lastMolecularProperties ? lastMolecularProperties.values : {};
     CC.renderSolvationTable(container, CC.buildSolvationRows(values));
+  }
+
+  // Trim a trailing period before rejoining parts with '. ' -- an
+  // "et al." author list or an already-punctuated title would otherwise
+  // double up ("...et al.. Title" / "...Title.. Journal").
+  function trimPeriod(s) { return s.replace(/\.\s*$/, ''); }
+
+  // Renders one <li> per key into the <ol id="listId">, each key looked
+  // up via CC.Citations.get() -- shared by the dynamic "models currently
+  // loaded" list and the static "other methods" list below, which are
+  // the same rendering logic over two different key sets.
+  function renderCitationList(listId, keys) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    list.innerHTML = '';
+    keys.forEach(function (key) {
+      const entry = CC.Citations.get(key);
+      const li = document.createElement('li');
+      if (!entry) {
+        li.textContent = key + ' (unresolved citation key)';
+        list.appendChild(li);
+        return;
+      }
+      const authors = (entry.authors || []).length <= 3
+        ? (entry.authors || []).join(', ')
+        : entry.authors[0] + ' et al.';
+      const venue = entry.journal || entry.booktitle || entry.school || entry.publisher || '';
+      const venueBits = [venue, entry.year, entry.volume, entry.pages].filter(Boolean).join(', ');
+      li.appendChild(document.createTextNode(
+        [authors, entry.title, venueBits].filter(Boolean).map(trimPeriod).join('. ') + '.'
+      ));
+      const link = entry.doi ? 'https://doi.org/' + entry.doi : entry.url;
+      if (link) {
+        li.appendChild(document.createTextNode(' '));
+        const a = document.createElement('a');
+        a.href = link;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = link;
+        li.appendChild(a);
+      }
+      if (entry.note) {
+        const note = document.createElement('span');
+        note.className = 'reference-note';
+        note.textContent = entry.note;
+        li.appendChild(note);
+      }
+      list.appendChild(li);
+    });
+  }
+
+  /**
+   * Re-derives the References list from whatever registry models are
+   * CURRENTLY LOADED (CC.Citations.forLoadedModels(), see citations.js)
+   * -- session-wide state, same as refreshRadarChart/refreshSolvationPanel
+   * above read from lastMolecularProperties, not tied to any one
+   * prediction run. Core citations (RDKit/QED/SA Score) only show once
+   * there's an actual valid structure (currentDescriptors), matching
+   * when those are actually computed. Also (re-)populates the static
+   * "other methods" list the first time citations data becomes
+   * available -- that one never changes with the molecule/loaded models,
+   * so it doesn't need to be rebuilt on every call, but this is the one
+   * function guaranteed to run after CC.Citations.load() resolves.
+   */
+  function refreshReferencesList() {
+    const list = document.getElementById('references-list');
+    const emptyNote = document.getElementById('references-empty-note');
+    const bibtexBtn = document.getElementById('download-bibtex-btn');
+    const risBtn = document.getElementById('download-ris-btn');
+    if (!list) return;
+
+    if (!window.CC || !CC.Citations || !CC.Citations.isLoaded()) {
+      list.innerHTML = '';
+      list.style.display = 'none';
+      if (emptyNote) { emptyNote.style.display = ''; emptyNote.textContent = 'Reference data still loading…'; }
+      if (bibtexBtn) bibtexBtn.disabled = true;
+      if (risBtn) risBtn.disabled = true;
+      return;
+    }
+
+    renderCitationList('other-methods-references-list', CC.Citations.OTHER_METHOD_CITATIONS);
+
+    const keys = CC.Citations.forLoadedModels(!!currentDescriptors);
+    lastReferenceKeys = keys;
+    if (bibtexBtn) bibtexBtn.disabled = keys.length === 0;
+    if (risBtn) risBtn.disabled = keys.length === 0;
+
+    if (keys.length === 0) {
+      list.innerHTML = '';
+      list.style.display = 'none';
+      if (emptyNote) { emptyNote.style.display = ''; emptyNote.textContent = 'Draw a structure and run a prediction to see its references here.'; }
+      return;
+    }
+
+    if (emptyNote) emptyNote.style.display = 'none';
+    list.style.display = '';
+    renderCitationList('references-list', keys);
   }
 
   /**
@@ -718,6 +821,9 @@
     const xlsxBtn = document.getElementById('download-xlsx-btn');
     const pdfBtn = document.getElementById('download-pdf-btn');
     const sdfBtn = document.getElementById('download-sdf-btn');
+    const bibtexBtn = document.getElementById('download-bibtex-btn');
+    const risBtn = document.getElementById('download-ris-btn');
+    const referencesStatus = document.getElementById('references-status');
     const titleInput = document.getElementById('export-title-input');
     const status = document.getElementById('export-status');
 
@@ -782,7 +888,7 @@
       const bondTable = CC.Export.buildBondTable(controller.molecule, lastBondProperties);
       const result = CC.Export.downloadPDF(
         currentRows(), filenameBase() + '.pdf', reportTitle(),
-        atomTable, bondTable
+        atomTable, bondTable, lastReferenceKeys
       );
       flashStatus(result.ok ? 'Downloaded PDF.' : result.message, !result.ok);
     });
@@ -793,6 +899,23 @@
         lastAtomProperties, lastBondProperties, filenameBase() + '.sdf'
       );
       flashStatus(result.ok ? 'Downloaded SDF.' : result.message, !result.ok);
+    });
+
+    function flashReferencesStatus(text, isError) {
+      referencesStatus.textContent = text;
+      referencesStatus.style.color = isError ? 'var(--danger)' : 'var(--text-dark-muted)';
+      setTimeout(function () { referencesStatus.textContent = ''; }, 2500);
+      CC.Logger[isError ? 'error' : 'success'](text);
+    }
+
+    bibtexBtn.addEventListener('click', function () {
+      const result = CC.Export.downloadBibTeX(lastReferenceKeys, filenameBase() + '-references.bib');
+      flashReferencesStatus(result.ok ? 'Downloaded BibTeX.' : result.message, !result.ok);
+    });
+
+    risBtn.addEventListener('click', function () {
+      const result = CC.Export.downloadRIS(lastReferenceKeys, filenameBase() + '-references.ris');
+      flashReferencesStatus(result.ok ? 'Downloaded RIS.' : result.message, !result.ok);
     });
   }
 
@@ -872,11 +995,13 @@
 
     // 2. Dataset
     const ds = entry.dataset || {};
+    const citeEntry = window.CC && CC.Citations && ds.citationKey ? CC.Citations.get(ds.citationKey) : null;
     section('Dataset', defList([
       ['Name', ds.name],
       ['Size', ds.size ? ds.size + ' molecules' : null],
       ['Split strategy', ds.splitStrategy],
       ['Source', ds.sourceUrl, 'link'],
+      ['Cite as', citeEntry ? CC.Citations.formatLine(ds.citationKey) : null],
     ]));
 
     // 3. Domain of applicability
@@ -1047,6 +1172,8 @@
     const logdSection = document.getElementById('titration-logd-section');
     const logdOutput = document.getElementById('titration-logd-output');
     const infoBtn = document.getElementById('titration-info-btn');
+    const correctionCheckbox = document.getElementById('titration-correction-checkbox');
+    const correctionStatus = document.getElementById('titration-correction-status');
 
     // Room-temperature (298.15 K) RT in kcal/mol (R = 1.987e-3 kcal/
     // (mol*K)) -- the standard Henderson-Hasselbalch logD correction
@@ -1098,6 +1225,7 @@
 
     function reset() {
       status.textContent = '';
+      correctionStatus.textContent = '';
       sitesSection.style.display = 'none';
       curveSection.style.display = 'none';
       microstatesSection.style.display = 'none';
@@ -1173,6 +1301,55 @@
           }
         });
 
+        // Optional electrostatic correction (js/pka-electrostatic-
+        // correction.js) -- needs an already-optimized 3D structure (same
+        // "reuse the 3D tab's own structure" pattern as the implicit
+        // solvent panel, see getCurrent3DGeometry's own comment) and only
+        // does anything for 2+ sites (a lone site has no other charged
+        // site to interact with). Prefers averaging over the 3D view's
+        // last conformer SEARCH ensemble (getCurrentConformerEnsemble) when
+        // one exists, falling back to whatever single structure is
+        // currently viewed (getCurrent3DGeometry) otherwise -- see the
+        // branch below. A clean, honest fallback to the base predictions
+        // -- never blocks the instant 2D-only path when the checkbox is
+        // off or a 3D structure isn't ready yet.
+        let correctedPKa = null;
+        correctionStatus.textContent = '';
+        if (correctionCheckbox.checked && validSites.length > 1) {
+          const ensemble = getCurrentConformerEnsemble();
+          const geom3D = getCurrent3DGeometry();
+          if (ensemble && ensemble.conformers.length > 1) {
+            // Preferred path: average over the 3D view's own last conformer
+            // search ensemble instead of one arbitrary structure -- fixes a
+            // real, disclosed run-to-run jitter (+-0.1-0.3 pKa units) this
+            // correction otherwise has (see pka-electrostatic-correction.js
+            // header, computeEnsemble's own doc comment).
+            try {
+              const conformersAtoms3D = ensemble.conformers.map(function (c) { return c.atoms; });
+              const correction = CC.PKAElectrostaticCorrection.computeEnsemble(controller.molecule, validSites, validPKa, conformersAtoms3D);
+              correctedPKa = correction.correctedPKa;
+              correctionStatus.textContent = 'Electrostatic correction applied, averaged over ' + correction.conformerCount +
+                ' conformers from the 3D view’s conformer search (Generalized-Born-screened charge-charge interaction, see [?] for details/known limits).';
+            } catch (err) {
+              correctionStatus.textContent = 'Electrostatic correction failed (' + err.message + ') — showing base (uncorrected) predictions.';
+              console.error('[ChemCanvas] pKa electrostatic correction failed', err);
+            }
+          } else if (!geom3D || !geom3D.optimized) {
+            correctionStatus.textContent = 'No optimized 3D structure yet — go to the 3D view tab and run a conformer search first. Showing base (uncorrected) predictions.';
+          } else {
+            try {
+              const correction = CC.PKAElectrostaticCorrection.compute(controller.molecule, validSites, validPKa, geom3D.atoms);
+              correctedPKa = correction.correctedPKa;
+              correctionStatus.textContent = (geom3D.converged ? '' : '⚠ the 3D structure did not fully converge — this correction may be unreliable. ') +
+                'Electrostatic correction applied from a single 3D structure (Generalized-Born-screened charge-charge interaction, see [?] for details/known limits). Run a conformer search in the 3D view tab for a more stable, ensemble-averaged estimate.';
+            } catch (err) {
+              correctionStatus.textContent = 'Electrostatic correction failed (' + err.message + ') — showing base (uncorrected) predictions.';
+              console.error('[ChemCanvas] pKa electrostatic correction failed', err);
+            }
+          }
+        }
+        const curvePKa = correctedPKa || validPKa;
+
         sitesOutput.innerHTML = '';
         sites.forEach(function (site) {
           const row = document.createElement('tr');
@@ -1183,9 +1360,17 @@
           const pkaCell = document.createElement('td');
           const pkaValue = pkaByAtomId[site.atomId];
           pkaCell.textContent = typeof pkaValue === 'number' ? pkaValue.toFixed(1) : '—';
+          const correctedCell = document.createElement('td');
+          if (correctedPKa) {
+            const idx = validSites.indexOf(site);
+            correctedCell.textContent = idx >= 0 ? correctedPKa[idx].toFixed(1) : '—';
+          } else {
+            correctedCell.textContent = '—';
+          }
           row.appendChild(nameCell);
           row.appendChild(classCell);
           row.appendChild(pkaCell);
+          row.appendChild(correctedCell);
           sitesOutput.appendChild(row);
         });
         sitesSection.style.display = '';
@@ -1196,7 +1381,7 @@
           : '';
 
         if (validSites.length > 0) {
-          const curve = CC.PKATitration.computeCurve(validSites, validPKa);
+          const curve = CC.PKATitration.computeCurve(validSites, curvePKa);
           CC.renderTitrationChart(chartContainer, curve);
           const pI = CC.PKATitration.isoelectricPoint(curve);
           piNote.textContent = pI !== null
@@ -1231,7 +1416,7 @@
           });
           microstatesSection.style.display = regions.length > 0 ? '' : 'none';
           CC.Logger.success('Computed titration curve: ' + validSites.length + ' site(s), ' + regions.length + ' dominant microstate region(s)');
-          renderLogD(validSites, validPKa);
+          renderLogD(validSites, curvePKa);
         } else {
           curveSection.style.display = 'none';
           microstatesSection.style.display = 'none';
@@ -1371,6 +1556,21 @@
       const propertiesTab = document.querySelector('.side-tab[data-panel="properties"]');
       if (propertiesTab) propertiesTab.click();
     });
+
+    // Header "Export" button: this app has no separate export flow of its
+    // own -- CSV/XLSX/PDF/SDF all live in the Properties panel's export
+    // toolbar (they need the computed descriptor/GNN rows that panel
+    // already holds). Rather than a second, disabled-looking "Export"
+    // control, this jumps straight to that toolbar.
+    const headerExportBtn = document.getElementById('header-export-btn');
+    if (headerExportBtn) {
+      headerExportBtn.addEventListener('click', function () {
+        const propertiesTab = document.querySelector('.side-tab[data-panel="properties"]');
+        if (propertiesTab) propertiesTab.click();
+        const toolbar = document.querySelector('.export-toolbar');
+        if (toolbar) toolbar.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
   }
 
   function setupSidePanelTabs() {
@@ -1778,6 +1978,7 @@
     let currentGeometry = null; // {atoms, bonds} of whatever conformer is currently rendered/selected.
     let currentGeometryOptimized = false; // whether currentGeometry has been through a real energy-model optimization (vs. just a raw seed) -- SASA and similar panels check this via getCurrent3DGeometry.
     let currentGeometryConverged = false; // whether that optimization pass actually settled (vs. just hit its time/iteration budget).
+    let lastConformerEnsemble = null; // full CC.ConformerSearch.run() result (every kept conformer, not just the one currently selected/viewed) -- read by the pKa titration panel via getCurrentConformerEnsemble() below. Cleared inside resetConformerList() so it can never outlive the molecule/settings it was computed for.
     // Set right before an XYZ import's loadNewMolecule() call: that call
     // triggers scheduleValidation()'s DEBOUNCED (120ms) runValidation(),
     // which calls invalidate3DView() -- the standard "2D structure
@@ -1806,6 +2007,7 @@
     function resetConformerList() {
       conformerListTable.style.display = 'none';
       conformerListBody.innerHTML = '';
+      lastConformerEnsemble = null;
     }
 
     // Renders the ensemble table and selects (views) `idx` within it --
@@ -1825,6 +2027,7 @@
     }
 
     function renderConformerList(result) {
+      lastConformerEnsemble = result;
       // The static "ΔE (kcal/mol)" header is only true for smirnoff/
       // ani2x -- classical's relativeEnergyKcal is a relative difference
       // of its own arbitrary units, not real kcal/mol (see conformer-
@@ -2459,6 +2662,17 @@
         converged: currentGeometryConverged,
       };
     };
+
+    // Same "safe to reuse without re-deriving" guarantee as
+    // getCurrent3DGeometry above: lastConformerEnsemble is null'd by
+    // resetConformerList() on every 2D edit / model switch / XYZ import,
+    // so a non-null result here is guaranteed to still match the molecule
+    // currently on the canvas.
+    getCurrentConformerEnsemble = function () {
+      return lastConformerEnsemble && lastConformerEnsemble.conformers && lastConformerEnsemble.conformers.length > 0
+        ? lastConformerEnsemble
+        : null;
+    };
   }
 
   // ---------- GNN prediction (demo D-MPNN + optional ONNX model) ----------
@@ -2722,6 +2936,7 @@
       lastMolecularProperties = { values: result.molecularProperties || {}, meta: result.propertyMeta || {} };
       refreshRadarChart();
       refreshSolvationPanel();
+      refreshReferencesList();
 
       const warningsEl = document.getElementById('gnn-prediction-warnings');
       if (warningsEl) {
@@ -3030,6 +3245,7 @@
       sasaStatus.textContent = '';
       refreshRadarChart();
       refreshSolvationPanel();
+      refreshReferencesList();
     };
 
     runDemoBtn.addEventListener('click', runPrediction);
@@ -3290,6 +3506,17 @@
       .catch(function (err) {
         registryStatus.textContent = 'Could not load model registry: ' + err.message;
         console.warn('[ChemCanvas] Model registry failed to load', err);
+      });
+
+    // Bibliography for the References panel (see citations.js) -- fetched
+    // once at startup, same load-once pattern as the model registry above.
+    // Not on the registry's own load-on-demand critical path (nothing here
+    // blocks predicting), so a slow/failed fetch only affects the
+    // References panel, not the rest of the app.
+    CC.Citations.load()
+      .then(function () { refreshReferencesList(); })
+      .catch(function (err) {
+        console.warn('[ChemCanvas] Citations bibliography failed to load', err);
       });
 
     function applyLoadedChempropModel(id, loadPromise) {

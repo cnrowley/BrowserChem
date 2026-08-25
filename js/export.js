@@ -170,8 +170,16 @@ CC.Export = {};
    * atomTable/bondTable (optional): { head, body } from buildAtomTable /
    * buildBondTable above -- each renders as its own labeled table below
    * the main property list, only if it actually has rows.
+   *
+   * citationKeys (optional): array of data/citations.json keys (e.g.
+   * from CC.Citations.forLoadedModels()) -- rendered as a numbered
+   * "References" section at the end, DOI/URL as a real clickable link,
+   * matching the "cite what was actually loaded/run for THIS molecule"
+   * scope js/citations.js's forLoadedModels() already implements. Silently
+   * skipped (not an error) if CC.Citations isn't loaded or the list is
+   * empty -- every other export path already works with zero citations.
    */
-  CC.Export.downloadPDF = function (rows, filename, title, atomTable, bondTable) {
+  CC.Export.downloadPDF = function (rows, filename, title, atomTable, bondTable, citationKeys) {
     const jspdfNs = window.jspdf;
     if (!jspdfNs || !jspdfNs.jsPDF) {
       return { ok: false, message: 'PDF library still loading \u2014 try again in a moment' };
@@ -228,6 +236,41 @@ CC.Export = {};
 
     drawLabeledTable('Atom properties', atomTable, 16, { 1: { cellWidth: 18 } });
     drawLabeledTable('Bond properties', bondTable, 16, { 1: { cellWidth: 22 }, 2: { cellWidth: 16 } });
+
+    if (citationKeys && citationKeys.length && window.CC && CC.Citations && CC.Citations.isLoaded()) {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const textWidth = pageWidth - 28; // 14pt margin each side, matches everything else on this page
+      if (nextY > pageHeight - 30) { doc.addPage(); nextY = 20; }
+      doc.setFontSize(11);
+      doc.setTextColor(40);
+      doc.text('References', 14, nextY);
+      nextY += 6;
+      doc.setFontSize(8);
+      citationKeys.forEach(function (key, i) {
+        const entry = CC.Citations.get(key);
+        const line = (i + 1) + '. ' + CC.Citations.formatLine(key);
+        const link = entry && (entry.doi ? 'https://doi.org/' + entry.doi : entry.url);
+        // Split off the trailing link (formatLine always appends it last)
+        // so it can be a real clickable annotation instead of plain text.
+        const linkStart = link ? line.lastIndexOf(link) : -1;
+        const bodyText = linkStart >= 0 ? line.slice(0, linkStart) : line;
+        const wrapped = doc.splitTextToSize(bodyText, textWidth);
+        wrapped.forEach(function (wline) {
+          if (nextY > pageHeight - 14) { doc.addPage(); nextY = 20; }
+          doc.setTextColor(40);
+          doc.text(wline, 14, nextY);
+          nextY += 4;
+        });
+        if (linkStart >= 0) {
+          if (nextY > pageHeight - 14) { doc.addPage(); nextY = 20; }
+          doc.setTextColor(30, 100, 180);
+          doc.textWithLink(link, 14, nextY, { url: link });
+          doc.setTextColor(40);
+          nextY += 4;
+        }
+        nextY += 2;
+      });
+    }
 
     doc.save(filename || 'properties.pdf');
     return { ok: true };
@@ -300,6 +343,37 @@ CC.Export = {};
     const sdf = CC.Export.buildSDF(molecule, title, rows, atomProperties, bondProperties);
     const blob = new Blob([sdf], { type: 'chemical/x-mdl-sdfile' });
     triggerDownload(blob, filename || 'molecule.sdf');
+    return { ok: true };
+  };
+
+  /**
+   * BibTeX/RIS export of the models+datasets actually used for this
+   * molecule -- `keys` is whatever CC.Citations.forLoadedModels()
+   * returns at export time (see app.js's setupReferencesPanel). Both
+   * degrade the same way the other export paths do if CC.Citations
+   * hasn't finished loading data/citations.json yet.
+   */
+  CC.Export.downloadBibTeX = function (keys, filename) {
+    if (!window.CC || !CC.Citations || !CC.Citations.isLoaded()) {
+      return { ok: false, message: 'Reference data still loading — try again in a moment' };
+    }
+    if (!keys || keys.length === 0) {
+      return { ok: false, message: 'No models/datasets loaded yet to cite' };
+    }
+    const blob = new Blob([CC.Citations.toBibTeX(keys)], { type: 'application/x-bibtex' });
+    triggerDownload(blob, filename || 'references.bib');
+    return { ok: true };
+  };
+
+  CC.Export.downloadRIS = function (keys, filename) {
+    if (!window.CC || !CC.Citations || !CC.Citations.isLoaded()) {
+      return { ok: false, message: 'Reference data still loading — try again in a moment' };
+    }
+    if (!keys || keys.length === 0) {
+      return { ok: false, message: 'No models/datasets loaded yet to cite' };
+    }
+    const blob = new Blob([CC.Citations.toRIS(keys)], { type: 'application/x-research-info-systems' });
+    triggerDownload(blob, filename || 'references.ris');
     return { ok: true };
   };
 })();

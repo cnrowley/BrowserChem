@@ -4,3 +4,14 @@ properties/
 scripts/data_cache/
 scripts/__pycache__/
 __pycache__/
+
+# Copyrighted third-party reference material (AMBER GPU source, a
+# paywalled ACS paper, a PhD thesis) kept locally only while developing
+# the dSASA feature and verifying citations -- never meant to be
+# redistributed as part of this repo.
+GDelHost.h
+Pba.h
+kCalculateGBNonbondEnergy1.cu
+kCalculateSA.h
+ct3c01366.pdf
+hummel_thesis.pdf

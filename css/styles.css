@@ -688,6 +688,7 @@ body {
 
 .smiles-box code {
   flex: 1;
+  min-width: 70px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-dark);
@@ -712,6 +713,45 @@ body {
 
 .smiles-toggle-link:hover {
   text-decoration: underline;
+}
+
+.references-list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dark);
+}
+
+.references-list li {
+  margin-bottom: 8px;
+}
+
+.references-list a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.references-list .reference-note {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dark-muted);
+  font-style: italic;
+}
+
+.other-methods-details {
+  margin-top: 10px;
+}
+
+.other-methods-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dark-muted);
+}
+
+.other-methods-details .references-list {
+  margin-top: 8px;
 }
 
 .side-panel-content {
@@ -840,9 +880,9 @@ div.properties-section-title {
   margin: 0 0 10px;
 }
 
-.export-title-input {
-  display: block;
-  width: 100%;
+.doc-title-input {
+  flex-shrink: 0;
+  width: 220px;
   box-sizing: border-box;
   font-size: 13px;
   padding: 6px 10px;
@@ -850,15 +890,14 @@ div.properties-section-title {
   border: 1px solid var(--border-dark);
   background: var(--bg-app-raised);
   color: var(--text-light);
-  margin-top: 10px;
 }
 
-.export-title-input:focus {
+.doc-title-input:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.export-title-input::placeholder {
+.doc-title-input::placeholder {
   color: var(--text-dim);
 }
 
@@ -899,7 +938,6 @@ div.properties-section-title {
   font-size: 11px;
   color: var(--text-dark-muted);
   cursor: pointer;
-  white-space: nowrap;
 }
 
 .heatmap-text-toggle input {

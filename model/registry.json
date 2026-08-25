@@ -277,7 +277,7 @@
       },
       "dataset": {
         "name": null,
-        "citationKey": null,
+        "citationKey": "nagl-mbis-software",
         "size": null,
         "splitStrategy": null,
         "sourceUrl": "https://github.com/jthorton/nagl-mbis"
@@ -460,7 +460,7 @@
       },
       "dataset": {
         "name": "NMRShiftDB2 (nmrshiftdb.nmr.uni-koeln.de)",
-        "citationKey": null,
+        "citationKey": "nmrshiftdb2",
         "size": "30322 molecules, 311760 atom-level 13C shift labels",
         "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
         "sourceUrl": "https://sourceforge.net/projects/nmrshiftdb2/"
@@ -517,7 +517,7 @@
       },
       "dataset": {
         "name": "NMRShiftDB2 (969 native records) + NMRexp (Zenodo 10.5281/zenodo.17296666, single-F molecules only)",
-        "citationKey": null,
+        "citationKey": "nmrexp2025",
         "size": "49738 molecules, 53402 atom-level 19F shift labels",
         "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
         "sourceUrl": "https://doi.org/10.5281/zenodo.17296666"
@@ -574,7 +574,7 @@
       },
       "dataset": {
         "name": "NMRShiftDB2 (nmrshiftdb.nmr.uni-koeln.de)",
-        "citationKey": null,
+        "citationKey": "nmrshiftdb2",
         "size": "13085 molecules, 137926 atom-level (explicit-H) 1H shift labels",
         "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
         "sourceUrl": "https://sourceforge.net/projects/nmrshiftdb2/"
@@ -629,7 +629,7 @@
       },
       "dataset": {
         "name": null,
-        "citationKey": "Devereux et al., J. Chem. Theory Comput. 2020, 16, 7, 4192-4202",
+        "citationKey": "Devereux2020ANI2x",
         "size": null,
         "splitStrategy": null,
         "sourceUrl": "https://github.com/aiqm/torchani"
@@ -668,7 +668,7 @@
       },
       "dataset": {
         "name": "GEOM-Drugs",
-        "citationKey": "Ganea, Pattanaik et al., NeurIPS 2021 (GeoMol) -- github.com/PattanaikL/GeoMol",
+        "citationKey": "Ganea2021GeoMol",
         "size": null,
         "splitStrategy": null,
         "sourceUrl": "https://github.com/PattanaikL/GeoMol"

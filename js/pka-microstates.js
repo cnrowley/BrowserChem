@@ -61,6 +61,13 @@
  *     P-OH beyond simple phosphoric-acid-ester-style matching, no
  *     imidazole ring N-H acidity (pKa ~14, rarely relevant) -- common,
  *     well-understood groups are covered; exotic/weak ones are not yet.
+ *     Confirmed live case, not just theoretical: cytosine's ring N1-H
+ *     (real pKa ~12.25, a cyclic amide/lactam-style acidic N-H) is
+ *     completely undetected for exactly this reason -- see
+ *     js/pka-electrostatic-correction.js's own header ("Deliberately NOT
+ *     fixed", item 2) for the full root-cause writeup and why a new
+ *     SMARTS for this wasn't attempted without a broad validated
+ *     benchmark to check it against ordinary amides/ureas elsewhere.
  *   - Imidazole/guanidine/amidine are each treated as ONE ionizable
  *     site (their real, single delocalized cation), not one site per
  *     nitrogen -- correct for how these groups actually titrate.
