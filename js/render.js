@@ -157,12 +157,19 @@ window.CC = window.CC || {};
       hSpan.textContent = 'H';
       text.appendChild(hSpan);
       if (hCount > 1) {
-        const countSpan = el('tspan', { class: 'atom-label-h-count', dy: '3' });
+        // dominant-baseline is repeated explicitly on these tspans (not
+        // just inherited from the parent <text>) because Safari resolves
+        // a tspan's dy against its own default (alphabetic) baseline
+        // instead of the parent's shifted one, stacking an extra offset
+        // on top and rendering this subscript noticeably too high --
+        // Chrome/Firefox already compute it relative to the inherited
+        // baseline, so this is a no-op for them.
+        const countSpan = el('tspan', { class: 'atom-label-h-count', dy: '3', 'dominant-baseline': 'central' });
         countSpan.textContent = String(hCount);
         text.appendChild(countSpan);
         // reset baseline for anything appended after (the charge tspan
         // below) so it doesn't inherit this subscript's lowered dy
-        const resetSpan = el('tspan', { dy: '-3' });
+        const resetSpan = el('tspan', { dy: '-3', 'dominant-baseline': 'central' });
         resetSpan.textContent = '';
         text.appendChild(resetSpan);
       }

@@ -309,8 +309,19 @@ CC.GNN = window.CC.GNN || {};
     return 'outside its training vocabulary (' + check.issues.join('; ') + ')';
   }
 
+  // QM9's B3LYP/6-31G(2df,p)-computed targets (isotropic polarizability,
+  // HOMO-LUMO gap): QM9's training distribution is <=9-heavy-atom C/H/O/N/F
+  // molecules, so virtually every real-world drug-like molecule reads as
+  // 'out-of-domain' -- a true but uninformative badge on every single
+  // prediction. Suppressed per explicit user request, consistent with this
+  // app's existing policy of only surfacing applicability-domain confidence
+  // for models trained on experimental (not DFT/QM-computed) data -- see
+  // CLAUDE.md and model/registry.json's per-model notes.
+  const CONFIDENCE_BADGE_EXCLUDED_MODELS = new Set(['qm9-polarizability', 'qm9-homo-lumo-gap']);
+
   function confidenceMeta(model, pooled) {
     if (!window.CC.AD || !CC.AD.tierForEmbedding) return undefined;
+    if (CONFIDENCE_BADGE_EXCLUDED_MODELS.has(model.id)) return undefined;
     const tier = CC.AD.tierForEmbedding(model.id, pooled);
     return tier.tier === 'unknown' ? undefined : tier;
   }

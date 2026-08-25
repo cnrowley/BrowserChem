@@ -379,10 +379,19 @@ body {
 #structure-svg {
   width: 100%;
   height: 100%;
-  background:
-    linear-gradient(var(--border-light) 1px, transparent 1px) 0 0 / 24px 24px,
-    linear-gradient(90deg, var(--border-light) 1px, transparent 1px) 0 0 / 24px 24px,
-    #ffffff;
+  /* Longhand background-color/background-image (not the shorthand
+     `background:` with var() inside the gradients) -- Safari has been
+     seen resolving that combination on an <svg> element to a solid,
+     unrelated fill (reported: opaque blue) instead of the intended
+     white-with-grid-lines. Longhand + literal colors renders correctly
+     in every browser and is the standard cross-browser-safe pattern for
+     multi-layer CSS backgrounds. */
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(#dedad0 1px, transparent 1px),
+    linear-gradient(90deg, #dedad0 1px, transparent 1px);
+  background-position: 0 0, 0 0;
+  background-size: 24px 24px, 24px 24px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
 }

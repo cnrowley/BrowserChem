@@ -145,16 +145,18 @@ CC.zoomViewBoxAt = function (svg, clientX, clientY, factor) {
  * point, returns the angle that bisects the largest open gap between
  * them -- the natural "next bond direction" a chemistry drawing tool
  * picks so a new bond or ring doesn't crowd/overlap what's already
- * there. One existing bond at angle θ -> returns θ+π (directly
- * opposite, the only open direction). Two existing bonds -> bisects
- * whichever of the two remaining gaps is wider. `preferredAngle`
- * (typically wherever the pointer currently is) only matters as a
- * tie-breaker between two or more gaps of the same (or very nearly the
- * same) size -- whichever gap's own bisector is angularly closest to it
- * wins, e.g. two existing bonds exactly 180° apart leaves two equally
- * "best" 180° gaps, and the pointer picks which side. Returns
- * `preferredAngle` unchanged when `existingAngles` is empty -- nothing
- * to avoid, so plain freehand placement is correct.
+ * there. One existing bond at angle θ -> returns θ±120°, whichever side
+ * is closer to `preferredAngle` (standard 2D bond-angle convention --
+ * NOT θ+π/directly opposite, which would draw a linear, unnatural-
+ * looking chain). Two existing bonds -> bisects whichever of the two
+ * remaining gaps is wider. `preferredAngle` (typically wherever the
+ * pointer currently is) also breaks ties between two or more gaps of
+ * the same (or very nearly the same) size -- whichever gap's own
+ * bisector is angularly closest to it wins, e.g. two existing bonds
+ * exactly 180° apart leaves two equally "best" 180° gaps, and the
+ * pointer picks which side. Returns `preferredAngle` unchanged when
+ * `existingAngles` is empty -- nothing to avoid, so plain freehand
+ * placement is correct.
  */
 CC.bestOpenDirection = function (existingAngles, preferredAngle) {
   if (!existingAngles || existingAngles.length === 0) return preferredAngle;
@@ -164,6 +166,14 @@ CC.bestOpenDirection = function (existingAngles, preferredAngle) {
   function angularDist(a, b) {
     const d = Math.abs(normalize(a) - normalize(b));
     return Math.min(d, TWO_PI - d);
+  }
+
+  if (existingAngles.length === 1) {
+    const base = normalize(existingAngles[0]);
+    const ONE_TWENTY = (120 * Math.PI) / 180;
+    const c1 = normalize(base + ONE_TWENTY);
+    const c2 = normalize(base - ONE_TWENTY);
+    return angularDist(c1, preferredAngle) <= angularDist(c2, preferredAngle) ? c1 : c2;
   }
 
   const sorted = existingAngles.map(normalize).sort(function (a, b) { return a - b; });

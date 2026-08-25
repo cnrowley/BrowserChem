@@ -1152,6 +1152,28 @@
     });
   }
 
+  // References list lives in its own popup rather than inline in the
+  // properties panel -- refreshReferencesList() (above) keeps populating
+  // the same #references-list/#other-methods-references-list elements
+  // regardless of whether the modal is currently open, same as every
+  // other panel that renders into a hidden tab.
+  function setupReferencesModal() {
+    const btn = document.getElementById('references-btn');
+    const modal = document.getElementById('references-modal');
+    const closeBtn = document.getElementById('references-modal-close');
+    if (!btn || !modal) return;
+
+    function close() { modal.style.display = 'none'; }
+
+    btn.addEventListener('click', function () { modal.style.display = ''; });
+
+    closeBtn.addEventListener('click', close);
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display !== 'none') close();
+    });
+  }
+
   // Aqueous pKa / titration curve panel -- its own tab (per the user's
   // explicit request for a separate panel, not folded into the GNN
   // atom-heatmap system every other atom-level property uses). Own
@@ -4012,6 +4034,7 @@
     setupSmartsFiltersModal();
     setupPropertyInfoModal();
     setupTransferMatrixModal();
+    setupReferencesModal();
     setupTitrationPanel();
     setupOCSRPanel();
 

@@ -161,8 +161,8 @@
       <div class="viewer3d-method-row">
         <label for="optimize-model-select">Energy model</label>
         <select id="optimize-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model. ANI-2x: a trained neural-network potential (real quantitative energies in vacuum only, no implicit solvent) — only usable on neutral molecules built from H/C/N/O/F/S/Cl; loads automatically on first use.">
-          <option value="classical" selected>Classical force field (MMFF-style)</option>
-          <option value="smirnoff">OpenFF Sage (SMIRNOFF)</option>
+          <option value="classical">Classical force field (MMFF-style)</option>
+          <option value="smirnoff" selected>OpenFF Sage (SMIRNOFF)</option>
           <option value="ani2x">ANI-2x (neural network potential)</option>
         </select>
       </div>
@@ -174,8 +174,8 @@
       <div class="viewer3d-method-row">
         <label for="conformer-model-select">Energy model</label>
         <select id="conformer-model-select" title="Classical: this app's own hand-tuned harmonic/Lennard-Jones (MMFF-style) force field (chemically sane structures, not quantitative energies). OpenFF Sage (SMIRNOFF): a real published force field (openff-2.1.0) typed via SMARTS matching, with electrostatics from this app's own NAGL-MBIS charge model.">
-          <option value="classical" selected>Classical force field (MMFF-style)</option>
-          <option value="smirnoff">OpenFF Sage (SMIRNOFF)</option>
+          <option value="classical">Classical force field (MMFF-style)</option>
+          <option value="smirnoff" selected>OpenFF Sage (SMIRNOFF)</option>
         </select>
       </div>
       <div class="viewer3d-toolbar">
@@ -204,6 +204,36 @@
 
     <div class="side-panel-content is-hidden" id="panel-properties" role="tabpanel">
       <div class="properties-section">
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-general" data-category="general">General properties</label></h3>
+        <p class="side-panel-note">Broadly-applicable physicochemical and electronic properties. Check a category's box (here and below) to load whatever's applicable to the current molecule and compute it &mdash; nothing in these catalog sections loads until you activate it.</p>
+        <div id="model-registry-list-general" class="model-registry-list is-hidden"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-characterization" data-category="characterization">Characterization</label></h3>
+        <p class="side-panel-note">The classic bench toolkit for identifying/confirming a compound: melting point, UV-Vis absorption (via HOMO-LUMO gap), and NMR. Also listed under their other sections below -- intentionally redundant, not a typo.</p>
+        <div id="model-registry-list-characterization" class="model-registry-list is-hidden"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-environmental-analytical" data-category="environmental-analytical">Environmental &amp; analytical</label></h3>
+        <p class="side-panel-note">Physical characterization and spectroscopic/analytical identification.</p>
+        <div id="model-registry-list-environmental-analytical" class="model-registry-list is-hidden"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-medicinal" data-category="medicinal">Medicinal chemistry</label></h3>
+        <p class="side-panel-note">Drug-discovery-relevant reactivity, ionization, and metabolic stability.</p>
+        <div id="model-registry-list-medicinal" class="model-registry-list is-hidden"></div>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-structure-tools" data-category="structure-tools">3D structure tools</label></h3>
+        <p class="side-panel-note">Conformer generation/optimization -- also reachable from the 3D view tab. Browsable only here (ANI-2x/GeoMol aren't triggered by "Compute properties" -- use the 3D view tab).</p>
+        <div id="model-registry-list-structure-tools" class="model-registry-list is-hidden"></div>
+      </div>
+
+      <div class="properties-section">
         <h3 class="properties-section-title">GNN prediction (D-MPNN)</h3>
         <p class="side-panel-note">One click loads whatever's applicable to THIS molecule (skipping e.g. 19F NMR for a fluorine-free structure) and runs every model below together &mdash; no per-model "Load" step needed. Already-loaded models stay loaded for the rest of the session.</p>
         <p class="side-panel-note compatibility-warning" id="compatibility-warning" style="display:none;"></p>
@@ -212,13 +242,7 @@
 
         <div class="gnn-controls">
           <button class="btn btn-accent btn-small" id="run-demo-gnn-btn">Compute properties</button>
-          <button class="btn btn-ghost btn-small" id="load-chemprop-btn">Load model from files&hellip;</button>
-          <input type="file" id="chemprop-file-input" accept=".json,.bin" multiple hidden>
-          <button class="btn btn-ghost btn-small" id="load-onnx-btn">Load ONNX model&hellip;</button>
-          <input type="file" id="onnx-file-input" accept=".onnx" hidden>
         </div>
-        <p class="side-panel-note" id="chemprop-model-status"></p>
-        <p class="side-panel-note" id="onnx-model-status"></p>
 
         <table class="descriptor-table" id="gnn-molecular-output-table" style="display:none;">
           <thead><tr><th colspan="2" class="properties-section-title">Predictions</th></tr></thead>
@@ -320,19 +344,8 @@
 
       <div class="properties-section">
         <h3 class="properties-section-title">References</h3>
-        <p class="side-panel-note">The real papers/datasets behind every model currently loaded above (plus RDKit, QED, and SA Score, which every molecule uses) — updates automatically as you load more models. A DOI link is given wherever one has been confirmed; an entry with no link has one deliberately left out rather than guessed, not just missed (see the [?] note on that entry).</p>
-        <ol class="references-list" id="references-list"></ol>
-        <p class="side-panel-note" id="references-empty-note">Draw a structure and run a prediction to see its references here.</p>
-        <div class="export-toolbar">
-          <button class="btn btn-ghost btn-small" id="download-bibtex-btn" disabled>BibTeX</button>
-          <button class="btn btn-ghost btn-small" id="download-ris-btn" disabled>RIS</button>
-        </div>
-        <p class="side-panel-note" id="references-status"></p>
-        <details class="other-methods-details">
-          <summary>Other methods used elsewhere in this app</summary>
-          <p class="side-panel-note">Physics/ML components this app uses that aren't loadable "models" above, so they aren't auto-detected the way the list above is — dSASA/implicit solvent, CREST-inspired conformer search, PAINS/structural-alert filters, OpenFF Sage, 3Dmol.js, OCSRGlyph, NMRShiftDB2/NMRexp. Include the ones you actually used.</p>
-          <ol class="references-list" id="other-methods-references-list"></ol>
-        </details>
+        <p class="side-panel-note">The real papers/datasets behind every model currently loaded above (plus RDKit, QED, and SA Score, which every molecule uses) — updates automatically as you load more models.</p>
+        <button class="btn btn-ghost btn-small" id="references-btn">View references&hellip;</button>
       </div>
 
       <div class="properties-section">
@@ -346,36 +359,6 @@
           <tbody id="druglikeness-percentiles-output"></tbody>
         </table>
         <p class="side-panel-note" id="druglikeness-note">Draw a structure to see drug-likeness filters.</p>
-      </div>
-
-      <div class="properties-section">
-        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-general" data-category="general">General properties</label></h3>
-        <p class="side-panel-note">Broadly-applicable physicochemical and electronic properties. Check a category's box (here and below) to load whatever's applicable to the current molecule and compute it &mdash; nothing in these catalog sections loads until you activate it.</p>
-        <div id="model-registry-list-general" class="model-registry-list is-hidden"></div>
-      </div>
-
-      <div class="properties-section">
-        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-characterization" data-category="characterization">Characterization</label></h3>
-        <p class="side-panel-note">The classic bench toolkit for identifying/confirming a compound: melting point, UV-Vis absorption (via HOMO-LUMO gap), and NMR. Also listed under their other sections below -- intentionally redundant, not a typo.</p>
-        <div id="model-registry-list-characterization" class="model-registry-list is-hidden"></div>
-      </div>
-
-      <div class="properties-section">
-        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-environmental-analytical" data-category="environmental-analytical">Environmental &amp; analytical</label></h3>
-        <p class="side-panel-note">Physical characterization and spectroscopic/analytical identification.</p>
-        <div id="model-registry-list-environmental-analytical" class="model-registry-list is-hidden"></div>
-      </div>
-
-      <div class="properties-section">
-        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-medicinal" data-category="medicinal">Medicinal chemistry</label></h3>
-        <p class="side-panel-note">Drug-discovery-relevant reactivity, ionization, and metabolic stability.</p>
-        <div id="model-registry-list-medicinal" class="model-registry-list is-hidden"></div>
-      </div>
-
-      <div class="properties-section">
-        <h3 class="properties-section-title"><label class="category-toggle"><input type="checkbox" id="category-toggle-structure-tools" data-category="structure-tools">3D structure tools</label></h3>
-        <p class="side-panel-note">Conformer generation/optimization -- also reachable from the 3D view tab. Browsable only here (ANI-2x/GeoMol aren't triggered by "Compute properties" -- use the 3D view tab).</p>
-        <div id="model-registry-list-structure-tools" class="model-registry-list is-hidden"></div>
       </div>
 
       <div class="properties-section">
@@ -419,6 +402,19 @@
       <div class="properties-section">
         <h3 class="properties-section-title">Structural alerts</h3>
         <button class="btn btn-ghost btn-small" id="smarts-filters-btn" disabled>Check medchem filters (PAINS, BMS, etc.)&hellip;</button>
+      </div>
+
+      <div class="properties-section">
+        <h3 class="properties-section-title">Advanced: load a model manually</h3>
+        <p class="side-panel-note">For a checkpoint that isn't in the catalog above, or a legacy ONNX export &mdash; most users won't need these; "Compute properties" above already loads and runs everything applicable automatically.</p>
+        <div class="gnn-controls">
+          <button class="btn btn-ghost btn-small" id="load-chemprop-btn">Load model from files&hellip;</button>
+          <input type="file" id="chemprop-file-input" accept=".json,.bin" multiple hidden>
+          <button class="btn btn-ghost btn-small" id="load-onnx-btn">Load ONNX model&hellip;</button>
+          <input type="file" id="onnx-file-input" accept=".onnx" hidden>
+        </div>
+        <p class="side-panel-note" id="chemprop-model-status"></p>
+        <p class="side-panel-note" id="onnx-model-status"></p>
       </div>
     </div>
 
@@ -599,6 +595,30 @@
       <button class="modal-close-btn" id="transfer-matrix-modal-close" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body" id="transfer-matrix-modal-body"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="references-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="references-modal-title">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <h3 id="references-modal-title">References</h3>
+      <button class="modal-close-btn" id="references-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="side-panel-note">The real papers/datasets behind every model currently loaded above (plus RDKit, QED, and SA Score, which every molecule uses) — updates automatically as you load more models. A DOI link is given wherever one has been confirmed; an entry with no link has one deliberately left out rather than guessed, not just missed (see the [?] note on that entry).</p>
+      <ol class="references-list" id="references-list"></ol>
+      <p class="side-panel-note" id="references-empty-note">Draw a structure and run a prediction to see its references here.</p>
+      <div class="export-toolbar">
+        <button class="btn btn-ghost btn-small" id="download-bibtex-btn" disabled>BibTeX</button>
+        <button class="btn btn-ghost btn-small" id="download-ris-btn" disabled>RIS</button>
+      </div>
+      <p class="side-panel-note" id="references-status"></p>
+      <details class="other-methods-details">
+        <summary>Other methods used elsewhere in this app</summary>
+        <p class="side-panel-note">Physics/ML components this app uses that aren't loadable "models" above, so they aren't auto-detected the way the list above is — dSASA/implicit solvent, CREST-inspired conformer search, PAINS/structural-alert filters, OpenFF Sage, 3Dmol.js, OCSRGlyph, NMRShiftDB2/NMRexp. Include the ones you actually used.</p>
+        <ol class="references-list" id="other-methods-references-list"></ol>
+      </details>
+    </div>
   </div>
 </div>
 
