@@ -10,6 +10,12 @@ computer.
 
 ![ChemCanvas: 2D structure editor next to a live 3D view](docs/screenshots/hero-2d-3d.png)
 
+**[Try it live](https://cnrowley.github.io/BrowserChem/)** — nothing to
+install. (One exception: the Image → Structure tab needs a ~209MB model
+file served via Git LFS, which GitHub Pages can't serve directly — that
+one tab only works when you clone the repo and run it locally, see
+"Running it" below. Everything else works fully on the hosted version.)
+
 ## What is this?
 
 Think of it as a cross between a structure-drawing program (like
