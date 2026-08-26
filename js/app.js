@@ -1205,13 +1205,45 @@
     // physical quantity, not just an opaque log10 factor.
     const RT_KCAL_298K = 0.5924;
 
+    // Loads+runs the logp-v1 GNN model if it isn't already, so LogD can
+    // use the real ML prediction instead of always falling back to
+    // RDKit's Crippen LogP. Mirrors setupGNNPanel's own runPrediction()
+    // (load model -> CC.GNN.predictMolecule -> update the SAME
+    // lastMolecularProperties the rest of the app reads) rather than a
+    // second, parallel path -- this also means a titration-triggered
+    // load shows up on the Properties tab too, and vice versa (whichever
+    // ran first "wins", CC.GNN.isRegistryModelLoaded skips a reload).
+    // Failure here is never fatal to the titration curve itself --
+    // renderLogD's own Crippen fallback still applies if this throws or
+    // the model turns out incompatible with the current molecule.
+    async function ensureLogPModel() {
+      try {
+        if (!CC.GNN.isRegistryModelLoaded('logp-v1')) {
+          const entry = CC.GNN.getRegistryEntry('logp-v1');
+          if (!entry) return;
+          if (window.CC.Validate && lastStructureReport) {
+            const compat = CC.Validate.checkModelCompatibility(controller.molecule, lastStructureReport)
+              .find(function (c) { return c.id === 'logp-v1'; });
+            if (compat && compat.tier === 'blocked') return;
+          }
+          await CC.GNN.loadRegistryModel(entry.id);
+          refreshRegistryList();
+        }
+        const result = await CC.GNN.predictMolecule(controller.molecule);
+        lastMolecularProperties = { values: result.molecularProperties || {}, meta: result.propertyMeta || {} };
+      } catch (err) {
+        console.error('[ChemCanvas] logp-v1 auto-load for LogD failed, falling back to Crippen', err);
+      }
+    }
+
     // Renders (or hides) the LogD (pH 7) section. sites/pKaValues: the
     // SAME validated (site, predicted-pKa) pairs the titration curve
     // above uses -- pass [], [] for a molecule with no detected
     // ionizable sites at all, in which case fraction neutral is
     // trivially 1 (empty product) and logD reduces to logP exactly, a
     // useful confirming case to still show rather than hide.
-    function renderLogD(sites, pKaValues) {
+    async function renderLogD(sites, pKaValues) {
+      await ensureLogPModel();
       const logPValue = lastMolecularProperties && typeof lastMolecularProperties.values.logP === 'number'
         ? lastMolecularProperties.values.logP
         : (currentDescriptors && typeof currentDescriptors.CrippenClogP === 'number' ? currentDescriptors.CrippenClogP : null);
@@ -1291,7 +1323,7 @@
       if (sites.length === 0) {
         reset();
         status.textContent = 'No ionizable groups detected in this structure.';
-        renderLogD([], []); // no ionization -- fraction neutral is trivially 1, so logD reduces to logP exactly
+        await renderLogD([], []); // no ionization -- fraction neutral is trivially 1, so logD reduces to logP exactly
         return;
       }
 
@@ -1438,7 +1470,7 @@
           });
           microstatesSection.style.display = regions.length > 0 ? '' : 'none';
           CC.Logger.success('Computed titration curve: ' + validSites.length + ' site(s), ' + regions.length + ' dominant microstate region(s)');
-          renderLogD(validSites, curvePKa);
+          await renderLogD(validSites, curvePKa);
         } else {
           curveSection.style.display = 'none';
           microstatesSection.style.display = 'none';
