@@ -15,6 +15,10 @@ install. (One exception: the Image → Structure tab needs a ~209MB model
 file served via Git LFS, which GitHub Pages can't serve directly — that
 one tab only works when you clone the repo and run it locally, see
 "Running it" below. Everything else works fully on the hosted version.)
+The hosted version also re-fetches every model/WASM asset from GitHub's
+CDN on each use, so it can feel noticeably slower than a local copy,
+especially on a slow connection — see "Running it" below for a faster,
+fully-local setup.
 
 ## What is this?
 
@@ -130,16 +134,23 @@ versus what's a documented, reasonable approximation.
 
 ## Running it
 
-No build step, no dependencies to install. Serve the directory with any
-static file server and open `index.html`:
+A local copy is snappier than the hosted GitHub Pages version — every
+model/WASM asset loads from disk over localhost instead of being
+re-fetched from GitHub's CDN — and it's the only way to use the
+Image → Structure tab (see the note above). No build step, no
+dependencies to install:
 
 ```bash
+git clone https://github.com/cnrowley/BrowserChem.git
+cd BrowserChem
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
-(Opening `index.html` directly via `file://` will not work — the WASM
-modules and JSON data files need to be fetched over HTTP.)
+(Any static file server works, not just Python's — `npx serve`,
+`php -S localhost:8000`, etc. Opening `index.html` directly via `file://`
+will NOT work — the WASM modules and JSON data files need to be fetched
+over HTTP.)
 
 `model/ocsrglyph/*.onnx` (the OCSR image-recognition weights, ~209MB) is
 stored via [Git LFS](https://git-lfs.github.com) — every other model in
