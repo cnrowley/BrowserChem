@@ -83,8 +83,24 @@ function init3Dmol() {
   // to work, but don't load any molecule into it yet.
   const container = document.getElementById('viewer3d');
   if (container) {
+    // antialias:false is load-bearing for interactive framerate, not just
+    // edge smoothness -- 3Dmol.js's GLViewer defaults `antialias` to true
+    // when unset, and its Renderer separately defaults `upscale` to
+    // whatever `antialias` resolved to; `upscale` forces the WebGL
+    // canvas's internal (backing-store) resolution to at least 2x its CSS
+    // size regardless of the display's own devicePixelRatio (confirmed
+    // directly: with antialias left at its default, a 332x220 CSS-pixel
+    // container rendered a 664x440 canvas even on a devicePixelRatio:1
+    // display). That's 4x the pixels the GPU has to shade every frame for
+    // every sphere/cylinder in the ball-and-stick view -- fine on a
+    // discrete GPU, but exactly the kind of fill-rate cost that makes
+    // real-time orbit/rotate feel choppy on integrated/older GPUs. This
+    // app's own zoom-to-canvas-size rendering already looks fine without
+    // supersampling, so the tradeoff (very slightly more jagged sphere/
+    // cylinder edges) is worth taking as the default.
     const viewer = window.$3Dmol.createViewer(container, {
       backgroundColor: 'white',
+      antialias: false,
     });
     viewer.render();
     window.chemCanvasLibs.viewer3d = viewer;
