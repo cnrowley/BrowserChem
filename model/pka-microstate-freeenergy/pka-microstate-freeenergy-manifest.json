@@ -1,0 +1,113 @@
+{
+  "task": "pka-microstate-freeenergy",
+  "taskType": "regression",
+  "outputLevel": "molecule",
+  "graphType": "heavy",
+  "applicableElement": null,
+  "architecture": "chemprop-dmpnn-v2",
+  "dims": {
+    "d_v": 72,
+    "d_e": 14,
+    "d_h": 300,
+    "depth": 3,
+    "aggNorm": 100.0
+  },
+  "ffnHiddenDim": 300,
+  "numExtraDescriptors": 3,
+  "physicalScale": -0.001058152411133051,
+  "physicalOffset": 0.0,
+  "nTasks": 1,
+  "tensors": {
+    "W_i": {
+      "shape": [
+        300,
+        86
+      ],
+      "offset": 0,
+      "length": 25800
+    },
+    "W_h": {
+      "shape": [
+        300,
+        300
+      ],
+      "offset": 25800,
+      "length": 90000
+    },
+    "W_o_weight": {
+      "shape": [
+        300,
+        372
+      ],
+      "offset": 115800,
+      "length": 111600
+    },
+    "W_o_bias": {
+      "shape": [
+        300
+      ],
+      "offset": 227400,
+      "length": 300
+    },
+    "ffn0_weight": {
+      "shape": [
+        300,
+        303
+      ],
+      "offset": 227700,
+      "length": 90900
+    },
+    "ffn0_bias": {
+      "shape": [
+        300
+      ],
+      "offset": 318600,
+      "length": 300
+    },
+    "ffn1_weight": {
+      "shape": [
+        1,
+        300
+      ],
+      "offset": 318900,
+      "length": 300
+    },
+    "ffn1_bias": {
+      "shape": [
+        1
+      ],
+      "offset": 319200,
+      "length": 1
+    },
+    "out_mean": {
+      "shape": [
+        1
+      ],
+      "offset": 319201,
+      "length": 1
+    },
+    "out_scale": {
+      "shape": [
+        1
+      ],
+      "offset": 319202,
+      "length": 1
+    },
+    "descriptor_mean": {
+      "shape": [
+        3
+      ],
+      "offset": 319203,
+      "length": 3
+    },
+    "descriptor_scale": {
+      "shape": [
+        3
+      ],
+      "offset": 319206,
+      "length": 3
+    }
+  },
+  "byteLength": 1276836,
+  "dtype": "float32"
+}

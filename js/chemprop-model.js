@@ -187,6 +187,31 @@ CC.GNN = window.CC.GNN || {};
       model.Weo = toRows(tensor('W_eo_weight'), tensorShape('W_eo_weight'));
       model.WeoBias = Array.from(tensor('W_eo_bias'));
     }
+    // Extra molecule-level descriptors (chemprop v2's own --descriptors-path
+    // mechanism: MPNN.fingerprint() does torch.cat((H, X_d_transform(X_d)),
+    // dim=1) before the FFN head -- confirmed directly from chemprop's real
+    // source, not assumed). ffn0's own weight matrix already has the wider
+    // input dimension baked in (hiddenSize + numExtraDescriptors columns) --
+    // no separate "expected width" check needed here beyond what applyHead's
+    // matVecBias already does implicitly (a length mismatch there would
+    // throw). X_d_transform's mean/scale (a plain per-descriptor
+    // standardization, ScaleTransform: (x-mean)/scale) only exists in the
+    // manifest for checkpoints actually trained with extra descriptors.
+    if (manifest.numExtraDescriptors) {
+      model.numExtraDescriptors = manifest.numExtraDescriptors;
+      model.descriptorMean = Array.from(tensor('descriptor_mean'));
+      model.descriptorScale = Array.from(tensor('descriptor_scale'));
+    }
+    // Delta-learning physical-baseline recalibration (see
+    // scripts/train_pka_microstate_freeenergy.py's own header for why a
+    // plain learned affine transform on the physical term is needed, not
+    // optional): a real pair of top-level manifest scalars, not part of
+    // chemprop's own architecture -- present only for a checkpoint
+    // actually trained this way.
+    if (manifest.physicalScale != null) {
+      model.physicalScale = manifest.physicalScale;
+      model.physicalOffset = manifest.physicalOffset || 0;
+    }
 
     models.set(id, model);
     return { id: id, task: model.task, taskType: model.taskType, dims: model.dims };
@@ -198,7 +223,12 @@ CC.GNN = window.CC.GNN || {};
   };
   CC.GNN.getChempropModelInfo = function (id) {
     const m = models.get(id);
-    return m ? { id: m.id, task: m.task, taskType: m.taskType, outputLevel: m.outputLevel, graphType: m.graphType, applicableElement: m.applicableElement, dims: m.dims } : null;
+    return m ? {
+      id: m.id, task: m.task, taskType: m.taskType, outputLevel: m.outputLevel, graphType: m.graphType,
+      applicableElement: m.applicableElement, dims: m.dims,
+      physicalScale: m.physicalScale, physicalOffset: m.physicalOffset,
+      numExtraDescriptors: m.numExtraDescriptors || 0,
+    } : null;
   };
   CC.GNN.getLoadedChempropModelIds = function () { return Array.from(models.keys()); };
   CC.GNN.getLoadedChempropModels = function () {
@@ -278,11 +308,22 @@ CC.GNN = window.CC.GNN || {};
   // CC.AD.tierForEmbedding compares against a model's training-set
   // centroids (see applicability-domain.js), already computed for free
   // here, not a second forward pass.
-  function runOneMolecule(model, graph) {
+  function runOneMolecule(model, graph, extraDescriptors) {
     const out = runDMPNNFor(model, graph);
     const pooled = CC.GNN.poolSum(out.atomEmbeddings, model.dims.d_h)
       .map(function (x) { return x / model.dims.aggNorm; });
-    const head = applyHead(model, pooled);
+    let fingerprint = pooled;
+    if (model.numExtraDescriptors) {
+      if (!extraDescriptors || extraDescriptors.length !== model.numExtraDescriptors) {
+        throw new Error('"' + model.id + '" needs ' + model.numExtraDescriptors + ' extra descriptor(s), got ' +
+          (extraDescriptors ? extraDescriptors.length : 0));
+      }
+      const scaled = extraDescriptors.map(function (v, i) {
+        return (v - model.descriptorMean[i]) / model.descriptorScale[i];
+      });
+      fingerprint = pooled.concat(scaled);
+    }
+    const head = applyHead(model, fingerprint);
     // regression-mve's applyHead returns { value, uncertainty }; every
     // other taskType returns a plain number -- unwrap here so `value`
     // stays a plain number everywhere else, and `uncertainty` (undefined
@@ -467,7 +508,7 @@ CC.GNN = window.CC.GNN || {};
    *                    atomProperties (the per-atom "weakest attached-H bond" aggregate, key `TASK + '-XH'`, e.g. "BDE-XH"), atomIds,
    *                    backend: 'chemprop', modelId }.
    */
-  CC.GNN.predictChemprop = function (molecule, id) {
+  CC.GNN.predictChemprop = function (molecule, id, extraDescriptors) {
     const model = models.get(id);
     if (!model) throw new Error('No Chemprop model loaded under id "' + id + '"');
     const blocked = blockedReason(model, molecule);
@@ -509,7 +550,7 @@ CC.GNN = window.CC.GNN || {};
     const graph = graphs.forGraphType('heavy');
     const molecularProperties = {};
     const propertyMeta = {};
-    const out = runOneMolecule(model, graph);
+    const out = runOneMolecule(model, graph, extraDescriptors);
     molecularProperties[model.task] = out.value;
     propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled), uncertainty: out.uncertainty };
     return { molecularProperties: molecularProperties, propertyMeta: propertyMeta, atomIds: graph.atomIds, backend: 'chemprop', modelId: id };
@@ -561,6 +602,19 @@ CC.GNN = window.CC.GNN || {};
     let bondIds = [];
 
     models.forEach(function (model) {
+      // A model needing extra runtime descriptors (e.g. a physical
+      // baseline energy the caller computed separately) has no way to get
+      // them through this generic per-molecule merge loop -- skip it here
+      // with a clear reason rather than letting runOneMolecule's own
+      // length-mismatch throw surface as a confusing generic error. A
+      // direct CC.GNN.predictChemprop(molecule, id, extraDescriptors) call
+      // (this function's single-model sibling above) is the real call path
+      // for such a model, and is unaffected by this check.
+      if (model.numExtraDescriptors) {
+        warnings.push('"' + model.id + '" skipped: requires extra runtime descriptors not available ' +
+          'through the generic prediction path -- call CC.GNN.predictChemprop(molecule, id, extraDescriptors) directly');
+        return;
+      }
       const blocked = blockedReason(model, molecule);
       if (blocked) {
         warnings.push('"' + model.id + '" skipped: ' + blocked);

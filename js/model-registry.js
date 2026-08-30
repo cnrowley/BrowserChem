@@ -52,16 +52,26 @@
  *                                   compatibility. Decides which loader/
  *                                   predictor (chemprop-model.js /
  *                                   nagl-model.js / ani2x-model.js /
- *                                   geomol-model.js / pka-model.js) this
- *                                   entry's files get handed to -- each
- *                                   is a genuinely different
+ *                                   geomol-model.js / pka-model.js)
+ *                                   this entry's files get handed to --
+ *                                   each is a genuinely different
  *                                   architecture/manifest shape, not
  *                                   just different weights. "pka" models
  *                                   additionally require their
  *                                   descriptor.chargeSource NAGL model
  *                                   (baked into their own manifest.json,
  *                                   not this registry entry) to already
- *                                   be loaded before predicting.
+ *                                   be loaded before predicting. A model
+ *                                   trained with extra Chemprop
+ *                                   descriptors (js/chemprop-model.js's
+ *                                   numExtraDescriptors fusion path, e.g.
+ *                                   "pka-microstate-freeenergy") is still
+ *                                   plain `engine: "chemprop"` -- no
+ *                                   special engine needed, just called via
+ *                                   CC.GNN.predictChemprop(molecule, id,
+ *                                   extraDescriptors) instead of the
+ *                                   generic no-argument path (see
+ *                                   js/pka-freeenergy-predict.js).
  *         "taskType": "regression" | "classification" | "regression-mve",
  *                      required for "chemprop" entries ("regression-mve"
  *                      is molecule-level only -- see chemprop-model.js);

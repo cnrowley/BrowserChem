@@ -17,6 +17,9 @@
   let openBtn = null;
   let saveBtn = null;
   let fileInput = null;
+  let loadSessionBtn = null;
+  let saveSessionBtn = null;
+  let sessionFileInput = null;
   let validityDot = null;
   let validityText = null;
   let smilesOutput = null;
@@ -1196,6 +1199,7 @@
     const infoBtn = document.getElementById('titration-info-btn');
     const correctionCheckbox = document.getElementById('titration-correction-checkbox');
     const correctionStatus = document.getElementById('titration-correction-status');
+    const pkaSourceSelect = document.getElementById('titration-pka-source');
 
     // Room-temperature (298.15 K) RT in kcal/mol (R = 1.987e-3 kcal/
     // (mol*K)) -- the standard Henderson-Hasselbalch logD correction
@@ -1272,7 +1276,7 @@
     }
     if (infoBtn) {
       infoBtn.addEventListener('click', function () {
-        const entry = CC.GNN.getRegistryEntry('aqueous-pka');
+        const entry = CC.GNN.getRegistryEntry(pkaSourceSelect.value);
         if (entry) openPropertyInfoModal(entry.displayName, buildPropertyInfoBox(entry));
       });
     }
@@ -1327,24 +1331,53 @@
         return;
       }
 
+      const pkaSource = pkaSourceSelect ? pkaSourceSelect.value : 'aqueous-pka';
       computeBtn.disabled = true;
-      status.textContent = 'Loading pKa model…';
+      status.textContent = pkaSource === 'pka-microstate-freeenergy'
+        ? 'Loading pKa model (physics + Chemprop, ~1MB)…'
+        : 'Loading pKa model…';
 
       try {
-        if (!CC.GNN.hasChempropModel('aqueous-pka')) {
-          const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.id === 'aqueous-pka'; });
-          if (!entry) throw new Error('aqueous-pka model not found in the registry');
-          await CC.GNN.loadRegistryModel(entry.id);
-          refreshRegistryList();
-        }
+        let pkaByAtomId = {};
+        if (pkaSource === 'pka-microstate-freeenergy') {
+          // js/pka-freeenergy-predict.js: a real Chemprop D-MPNN scoring
+          // one microstate pair per detected site (independent-site
+          // simplification -- see that file's header for the real scope
+          // vs. a full multi-microstate treatment) via the same
+          // thermodynamic free-energy-cycle formula (js/unipka-thermo.js)
+          // instead of aqueous-pka's single-shot atom-level regression --
+          // each microstate's free energy combines the learned graph
+          // embedding with a real physical baseline energy (SMIRNOFF +
+          // GB/SA solvation, js/pka-physical-baseline.js) as an extra
+          // Chemprop descriptor. Real cost: several seconds per site (one
+          // SMIRNOFF-optimized conformer per microstate), not instant.
+          if (!CC.GNN.hasChempropModel('pka-microstate-freeenergy')) {
+            const entry = CC.GNN.getRegistryEntry('pka-microstate-freeenergy');
+            if (!entry) throw new Error('pka-microstate-freeenergy model not found in the registry');
+            await CC.GNN.loadRegistryModel(entry.id);
+            refreshRegistryList();
+          }
+          status.textContent = 'Predicting pKa values (physics + Chemprop, this can take a while)…';
+          const result = await CC.PKAFreeEnergy.predictAllSites('pka-microstate-freeenergy', controller.molecule);
+          result.atomIds.forEach(function (atomId, i) {
+            const props = result.atomProperties[i];
+            if (props && typeof props['pka-microstate-freeenergy'] === 'number') pkaByAtomId[atomId] = props['pka-microstate-freeenergy'];
+          });
+        } else {
+          if (!CC.GNN.hasChempropModel('aqueous-pka')) {
+            const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.id === 'aqueous-pka'; });
+            if (!entry) throw new Error('aqueous-pka model not found in the registry');
+            await CC.GNN.loadRegistryModel(entry.id);
+            refreshRegistryList();
+          }
 
-        status.textContent = 'Predicting pKa values…';
-        const result = CC.GNN.predictChemprop(controller.molecule, 'aqueous-pka');
-        const pkaByAtomId = {};
-        result.atomIds.forEach(function (atomId, i) {
-          const props = result.atomProperties[i];
-          if (props && typeof props.pka === 'number') pkaByAtomId[atomId] = props.pka;
-        });
+          status.textContent = 'Predicting pKa values…';
+          const result = CC.GNN.predictChemprop(controller.molecule, 'aqueous-pka');
+          result.atomIds.forEach(function (atomId, i) {
+            const props = result.atomProperties[i];
+            if (props && typeof props.pka === 'number') pkaByAtomId[atomId] = props.pka;
+          });
+        }
 
         const validSites = [];
         const validPKa = [];
@@ -1799,6 +1832,106 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       CC.Logger.info('Saved structure.mol');
+    });
+  }
+
+  /**
+   * Session save/load: the current structure, which registry models are
+   * loaded, and which side-panel tab is active -- saved to a downloadable
+   * .json file, restorable later via file upload. Deliberately does NOT
+   * persist computed prediction values (lastMolecularProperties/
+   * lastAtomProperties/lastBondProperties) -- this app's own existing
+   * design already treats those as ephemeral/derived (invalidateGNNResults
+   * nulls them on every structure edit, prompting "click Run prediction"
+   * rather than caching stale results across a structure change), so a
+   * restored session recomputes them fresh the same way instead of risking
+   * showing predictions from a possibly-since-updated model checkpoint.
+   */
+  function setupSessionIO() {
+    loadSessionBtn = document.getElementById('load-session-btn');
+    saveSessionBtn = document.getElementById('save-session-btn');
+    sessionFileInput = document.getElementById('session-file-input');
+
+    saveSessionBtn.addEventListener('click', function () {
+      const loadedModelIds = CC.GNN.getRegistryEntries()
+        .filter(function (e) { return CC.GNN.isRegistryModelLoaded(e.id); })
+        .map(function (e) { return e.id; });
+      const activeTab = document.querySelector('.side-tab.is-active');
+      const session = {
+        chemCanvasSession: 1, // bump if this shape ever changes incompatibly
+        savedAt: new Date().toISOString(),
+        molecule: controller.molecule.toJSON(),
+        loadedModelIds: loadedModelIds,
+        activePanel: activeTab ? activeTab.dataset.panel : null,
+      };
+      const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'session.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      CC.Logger.info('Saved session.json (' + loadedModelIds.length + ' loaded model' + (loadedModelIds.length === 1 ? '' : 's') + ')');
+    });
+
+    loadSessionBtn.addEventListener('click', function () { sessionFileInput.click(); });
+
+    sessionFileInput.addEventListener('change', function () {
+      const file = sessionFileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async function () {
+        sessionFileInput.value = '';
+        let session;
+        try {
+          session = JSON.parse(String(reader.result));
+          if (!session || typeof session !== 'object' || !session.molecule) {
+            throw new Error('missing "molecule" field -- not a ChemCanvas session file');
+          }
+        } catch (err) {
+          window.alert('Could not read that file as a session: ' + err.message);
+          CC.Logger.error('Failed to load session "' + file.name + '": ' + err.message);
+          return;
+        }
+
+        try {
+          loadNewMolecule(CC.Molecule.fromJSON(session.molecule));
+        } catch (err) {
+          window.alert('Session file\'s structure could not be restored: ' + err.message);
+          CC.Logger.error('Failed to restore session structure: ' + err.message);
+          return;
+        }
+
+        const modelIds = Array.isArray(session.loadedModelIds) ? session.loadedModelIds : [];
+        const toLoad = modelIds.filter(function (id) { return CC.GNN.getRegistryEntry(id) && !CC.GNN.isRegistryModelLoaded(id); });
+        if (toLoad.length) {
+          CC.Logger.info('Restoring session: loading ' + toLoad.length + ' model' + (toLoad.length === 1 ? '' : 's') + '…');
+          const outcomes = await Promise.allSettled(toLoad.map(function (id) { return CC.GNN.loadRegistryModel(id); }));
+          const failed = outcomes.filter(function (o) { return o.status === 'rejected'; }).length;
+          if (failed) CC.Logger.warning(failed + ' of ' + toLoad.length + ' session model(s) failed to load');
+          refreshRegistryList();
+        }
+        const missing = modelIds.filter(function (id) { return !CC.GNN.getRegistryEntry(id); });
+        if (missing.length) {
+          CC.Logger.warning('Session referenced ' + missing.length + ' model id(s) no longer in the registry: ' + missing.join(', '));
+        }
+
+        if (session.activePanel) {
+          const tabBtn = document.querySelector('.side-tab[data-panel="' + session.activePanel + '"]');
+          if (tabBtn) tabBtn.click();
+        }
+
+        // runPrediction() itself is a nested closure inside setupGNNPanel,
+        // not reachable from here -- clicking its real button is the same
+        // "poke the DOM control programmatically" idiom already used above
+        // for tab restoration, not a workaround.
+        const runBtn = document.getElementById('run-demo-gnn-btn');
+        if (!controller.molecule.isEmpty() && runBtn) runBtn.click();
+        CC.Logger.success('Session restored from ' + file.name);
+      };
+      reader.readAsText(file);
     });
   }
 
@@ -4065,6 +4198,7 @@
     setupRingSizePicker();
     setupUndoRedo();
     setupFileIO();
+    setupSessionIO();
     setupSmilesInput();
     setupPropertiesPanel();
     setupExportPanel();

@@ -22,8 +22,11 @@
   <div class="header-actions">
     <button class="btn btn-ghost" id="open-btn" title="Open a .mol file">Open</button>
     <button class="btn btn-ghost" id="save-btn" title="Save as a .mol file">Save</button>
+    <button class="btn btn-ghost" id="load-session-btn" title="Restore a saved session (structure + loaded models + active panel) from a .json file">Load session</button>
+    <button class="btn btn-ghost" id="save-session-btn" title="Save the current structure, loaded models, and active panel to a .json file">Save session</button>
     <button class="btn btn-accent" id="header-export-btn" title="Jump to the Properties panel's export toolbar (CSV / XLSX / PDF / SDF)">Export</button>
     <input type="file" id="file-input" accept=".mol,.sdf,.txt" hidden>
+    <input type="file" id="session-file-input" accept=".json" hidden>
   </div>
 </header>
 
@@ -424,6 +427,13 @@
       <div class="properties-section">
         <h3 class="properties-section-title">Aqueous pKa &amp; titration curve <button type="button" class="property-info-btn" id="titration-info-btn" aria-label="About this property">[?]</button></h3>
         <p class="side-panel-note">Detects ionizable groups by SMARTS pattern matching, looks up each site's pKa from a trained model, then computes a titration curve treating sites as independent (no site-site electrostatic coupling) — a standard, documented simplifying assumption, not a hidden one.</p>
+        <label class="heatmap-text-toggle" id="titration-source-label">
+          pKa source:
+          <select id="titration-pka-source">
+            <option value="aqueous-pka">Chemprop (aqueous-pka) — fast, single-shot atom regression</option>
+            <option value="pka-microstate-freeenergy">Chemprop + physics (microstate free energy) — slower, thermodynamic free-energy cycle</option>
+          </select>
+        </label>
         <button class="btn btn-accent btn-small" id="compute-titration-btn">Compute titration curve</button>
         <label class="heatmap-text-toggle" id="titration-correction-label">
           <input type="checkbox" id="titration-correction-checkbox">
@@ -529,6 +539,7 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ml-matrix@6.15.0/matrix.umd.js"></script>
 
 <!-- App code -->
 <script src="js/logger.js"></script>
@@ -635,6 +646,7 @@
 <script src="js/elements.js"></script>
 <script src="js/xyz.js"></script>
 <script src="js/embed3d.js"></script>
+<script src="js/internal-coords.js"></script>
 <script src="js/steric-accessibility.js"></script>
 <script src="js/dsasa.js"></script>
 <script src="js/implicit-solvent.js"></script>
@@ -667,6 +679,9 @@
 <script src="js/ani2x-model.js"></script>
 <script src="js/geomol-model.js"></script>
 <script src="js/geomol-assembly.js"></script>
+<script src="js/unipka-thermo.js"></script>
+<script src="js/pka-physical-baseline.js"></script>
+<script src="js/pka-freeenergy-predict.js"></script>
 <script src="js/gnn-inference.js"></script>
 <script src="js/ocsrglyph-model.js"></script>
 <script src="js/conformer-search.js"></script>

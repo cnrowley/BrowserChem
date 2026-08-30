@@ -1,0 +1,12 @@
+{
+  "name": "pka-physical-baseline-harness",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headless Node harness that loads this project's own browser JS (RDKit.js, NAGL-MBIS, SMIRNOFF, GB/SA implicit solvent) unmodified to batch-score physical_energy_protonated/deprotonated for microstate-pair training CSVs.",
+  "main": "harness.js",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@rdkit/rdkit": "^2025.3.4-1.0.0",
+    "ml-matrix": "^6.15.0"
+  }
+}

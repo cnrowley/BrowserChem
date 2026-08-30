@@ -33,6 +33,16 @@ Only supports the architecture this project's JS actually implements:
     time): a real per-prediction uncertainty head, molecule-level only --
     see chemprop-model.js's applyHead() for how the browser reads back
     the (mean, variance) pair this doubles the FFN's output width to.
+  - Optional extra molecule-level descriptors (chemprop's own
+    `--descriptors-path`/`X_d`): if the checkpoint's state_dict has an
+    `X_d_transform.mean`/`.scale` (a ScaleTransform standardizing X_d
+    before it's concatenated onto the pooled graph embedding -- see
+    chemprop/models/model.py's fingerprint()), those get exported too and
+    ffn0_weight's own (wider) input dimension is read directly off its
+    real shape, no separate flag needed. A checkpoint built this way needs
+    the extra descriptor value(s) supplied at inference time via
+    `CC.GNN.predictChemprop(molecule, id, extraDescriptors)`, not the
+    generic no-argument prediction path (see chemprop-model.js).
 
 If your checkpoint uses a different message-passing scheme
 (AtomMessagePassing), a different aggregation (mean/sum/attentive), a
@@ -239,6 +249,38 @@ def main():
         tensors["out_mean"] = arr(f"{pred_prefix}.output_transform.mean").reshape(-1)
         tensors["out_scale"] = arr(f"{pred_prefix}.output_transform.scale").reshape(-1)
 
+    # Extra molecule-level descriptors (chemprop v2's --descriptors-path):
+    # MPNN.fingerprint() does torch.cat((H, X_d_transform(X_d)), dim=1)
+    # before the FFN head (confirmed directly from chemprop's real
+    # nn/predictors.py + models/model.py source -- not assumed), so
+    # ffn0_weight's own input dimension already reflects this (wider than
+    # just the message-passing hidden size) with no separate check needed;
+    # this block only needs to additionally export X_d_transform's
+    # mean/scale (a plain per-descriptor (x-mean)/scale standardization,
+    # ScaleTransform) so chemprop-model.js can apply the identical
+    # preprocessing to whatever raw descriptor value a caller supplies at
+    # inference time.
+    num_extra_descriptors = 0
+    if "X_d_transform.mean" in sd:
+        descriptor_mean = arr("X_d_transform.mean").reshape(-1)
+        descriptor_scale = arr("X_d_transform.scale").reshape(-1)
+        num_extra_descriptors = int(descriptor_mean.shape[0])
+        tensors["descriptor_mean"] = descriptor_mean
+        tensors["descriptor_scale"] = descriptor_scale
+
+    # Delta-learning physical-baseline recalibration (a real, plain
+    # top-level pair of scalars -- not routed through the tensor blob,
+    # since they're single numbers, not arrays): scripts/
+    # train_pka_microstate_freeenergy.py registers `physical_scale`/
+    # `physical_offset` directly as extra nn.Parameters on the model
+    # itself (not part of chemprop's own architecture), needed because
+    # this app's own classical force-field energy is explicitly NOT on a
+    # real physical (kcal/mol-comparable) scale -- confirmed as a real bug
+    # this recalibration fixes, not a theoretical concern (see that
+    # script's own header for the exact before/after MAE numbers).
+    physical_scale = float(sd["physical_scale"]) if "physical_scale" in sd else None
+    physical_offset = float(sd["physical_offset"]) if "physical_offset" in sd else None
+
     offset = 0
     manifest_tensors = {}
     blob = bytearray()
@@ -267,6 +309,9 @@ def main():
             "aggNorm": (agg_hp["norm"] if agg_hp else None),
         },
         "ffnHiddenDim": ffn_hidden_dim,
+        "numExtraDescriptors": num_extra_descriptors,
+        "physicalScale": physical_scale,
+        "physicalOffset": physical_offset,
         "nTasks": 1,
         "tensors": manifest_tensors,
         "byteLength": len(blob),

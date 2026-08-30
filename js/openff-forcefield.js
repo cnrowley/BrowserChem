@@ -798,8 +798,15 @@ CC.OpenFF = window.CC.OpenFF || {};
           // where sterics already gave up resisting as hard as it
           // structurally can, which is exactly what collapsed a real
           // non-bonded O...H pair to r=0.0009 Angstrom before this fix.
+          // coulombShape (not a bare qi*qj/Math.max(r,rFloor) clip) keeps
+          // the FORCE smooth across that floor too -- see coulombShape's
+          // own comment in embed3d.js for the real optimizer-trap this
+          // fixes (a hard clip's force drops to exactly zero the instant
+          // r crosses rFloor, which isn't just a numerical-precision
+          // nicety: it was reproduced as a genuine convergence stall
+          // shared by BOTH this app's optimizers).
           const rFloor = rm !== null ? shared.ljFloorRadius(rm) : 1e-3;
-          energy += stage.nonbonded * scale * COULOMB_CONST * qi * qj / Math.max(r, rFloor);
+          energy += stage.nonbonded * shared.coulombShape(r, rFloor, scale * COULOMB_CONST * qi * qj);
         }
       }
     }
@@ -1002,13 +1009,13 @@ CC.OpenFF = window.CC.OpenFF || {};
         if (ff.charges) {
           const qi = ff.charges[p.a], qj = ff.charges[p.b];
           const scale = p.is14 ? ff.elecScale14 : 1.0;
-          // Matches computeEnergySMIRNOFF's Math.max(r, rFloor) floor
-          // (see ljFloorRadius's comment in embed3d.js): below rFloor the
-          // energy is pinned to a constant (C*qi*qj/rFloor, independent
-          // of r), so its derivative is genuinely zero there -- not a
-          // approximation, the exact derivative of that floored energy.
+          // Differentiates the EXACT same shape computeEnergySMIRNOFF's
+          // Coulomb term now calls (shared.coulombShape) -- see
+          // coulombShapeDerivative's own comment in embed3d.js for why a
+          // bare "zero below rFloor" derivative (this file's old behavior)
+          // was a real optimizer trap, not just a cosmetic mismatch.
           const rFloor = rm !== null ? CC.Embed3DShared.ljFloorRadius(rm) : 1e-3;
-          if (r > rFloor) dEdr += -stage.nonbonded * scale * COULOMB_CONST * qi * qj / (r * r);
+          dEdr += stage.nonbonded * CC.Embed3DShared.coulombShapeDerivative(r, rFloor, scale * COULOMB_CONST * qi * qj);
         }
 
         accum(p.a, -dEdr * ux, -dEdr * uy, -dEdr * uz);
@@ -1053,7 +1060,7 @@ CC.OpenFF = window.CC.OpenFF || {};
   // Mirrors embed3d.js's minimize() -- see that file for why numeric
   // gradients + L-BFGS (two-loop recursion, via shared.lbfgsDirection) +
   // Armijo backtracking, not plain steepest descent.
-  async function minimizeSMIRNOFF(atoms3d, ff, iterations, deadline, stage, startFlat, onProgress, solvent, stopToken, historyState) {
+  async function minimizeSMIRNOFF(atoms3d, ff, iterations, deadline, stage, startFlat, onProgress, solvent, stopToken, historyState, precon) {
     const shared = CC.Embed3DShared;
     let flat = startFlat || shared.flatten(atoms3d);
     let energy = computeEnergySMIRNOFF(shared.unflatten(flat), atoms3d, ff, stage, shared, solvent);
@@ -1083,7 +1090,13 @@ CC.OpenFF = window.CC.OpenFF || {};
       if (shouldReport && onProgress) onProgress({ iteration: iter, gradNorm: gradNorm, energy: energy });
       if (gradNorm < 1e-5) { exitReason = 'gradient-converged'; break; }
 
-      const direction = shared.lbfgsDirection(grad, sHistory, yHistory, rhoHistory);
+      // See internal-coords.js's buildCartesianPreconditioner for what
+      // `precon` is and why it helps: a static Cartesian-space Hessian
+      // approximation from bond/angle/dihedral force constants, used as
+      // L-BFGS's initial curvature guess instead of an isotropic gamma*I.
+      const direction = precon
+        ? shared.lbfgsDirectionWithH0(grad, sHistory, yHistory, rhoHistory, precon.applyH0)
+        : shared.lbfgsDirection(grad, sHistory, yHistory, rhoHistory);
       for (let i = 0; i < direction.length; i++) direction[i] = -direction[i];
       let dirDotGrad = shared.dot(direction, grad);
       if (!(dirDotGrad < 0)) {
@@ -1128,6 +1141,11 @@ CC.OpenFF = window.CC.OpenFF || {};
       grad = newGrad;
       gradNorm = Math.sqrt(shared.dot(grad, grad));
       lastGradNorm = gradNorm;
+
+      // See embed3d.js's minimize() for why this (the standard 4-criterion
+      // Berny/Gaussian test, not energy alone) is checked before the
+      // plateau fallback below.
+      if (shared.bernyConvergence(grad, s).converged) { exitReason = 'gradient-converged'; break; }
 
       if (improvement < 1e-7) { exitReason = 'energy-plateau'; break; }
     }
@@ -1245,6 +1263,164 @@ CC.OpenFF = window.CC.OpenFF || {};
     };
   }
 
+  // Same contract as optimizeGivenSeedSMIRNOFF above, but takes RFO steps
+  // in redundant internal coordinates (js/internal-coords.js) instead of
+  // Cartesian L-BFGS -- see that file's own header for why/what's
+  // simplified. No staged bonds-first curriculum here: unlike Cartesian
+  // L-BFGS (which needs stiff bond/angle terms introduced gradually so a
+  // cold torsion-randomized seed doesn't start in the LJ term's near-
+  // singular-curvature regime -- see minimizeStagedSMIRNOFF's own
+  // comment), an internal-coordinate RFO step is well-conditioned enough
+  // to run every term (bonds/angles/torsions/impropers/vdW/electrostatics)
+  // at full strength from the first iteration.
+  async function optimizeGivenSeedSMIRNOFFInternal(RDKit, atoms3d, bonds3d, chargesResult, iterations, onProgress, solventOpts, stopToken, useNbfix) {
+    const typed = typeMolecule(RDKit, atoms3d, bonds3d);
+    const ff = buildEnergyModel(typed, chargesResult, useNbfix);
+    const solvent = solventOpts && solventOpts.enabled && chargesResult.available
+      ? { enabled: true, epsSolvent: solventOpts.epsSolvent, charges: chargesResult.charges }
+      : null;
+    const shared = CC.Embed3DShared;
+
+    function makeEnergyGradFn(stage) {
+      return function (atoms) {
+        const flat = shared.flatten(atoms);
+        const positions = shared.unflatten(flat);
+        const energy = computeEnergySMIRNOFF(positions, atoms3d, ff, stage, shared, solvent);
+        const grad = gradientSMIRNOFF(flat, atoms3d, ff, stage, shared, solvent);
+        return { energy: energy, grad: grad };
+      };
+    }
+
+    // A quadratic-model method (RFO) fundamentally assumes the starting
+    // point is close enough to a minimum for a quadratic approximation to
+    // mean something -- CC.buildInitial3D's raw seed is a crude template,
+    // not a relaxed structure, and can violate that badly: reproduced
+    // directly, one real molecule's seed had EVERY bond sitting around
+    // 1.07-1.08 Angstrom regardless of element (vs. a real C-C equilibrium
+    // ~1.54 A). Handing that straight to the internal-coordinate optimizer
+    // let already-catastrophic bond-stretch energy compound with equally
+    // bad nonbonded clashes and blew the energy up 100x instead of down.
+    // Fix: pre-relax with the ALREADY-robust classical Cartesian L-BFGS
+    // path (bonds/angles/torsions only, nonbonded off -- the same
+    // curriculum minimizeStagedSMIRNOFF's own first two stages use) for a
+    // modest iteration budget first, matching the exact same "cheap
+    // pre-relax before a fussier refinement" precedent this codebase
+    // already uses for ANI-2x (see conformer-search.js's own comment on
+    // why skipping ANI-2x's classical pre-relax is a real structure-
+    // collapse failure mode, not a hypothetical one).
+    const preRelaxIters = Math.max(20, Math.round(iterations * 0.2));
+    // Second pre-relax stage, nonbonded now on: the internal-coordinate
+    // stage's guess Hessian (guessHessianDiag in internal-coords.js) only
+    // has bond/angle/dihedral force constants -- it has NO term for
+    // nonbonded (LJ/Coulomb) curvature, since redundant internal
+    // coordinates don't naturally express a non-bonded atom pair's
+    // interaction. Handing the internal-coordinate optimizer a geometry
+    // where nonbonded forces are still substantial (straight from the
+    // nonbonded=0 pre-relax above) means its very first RFO steps are
+    // badly miscalibrated for the ACTUAL gradient it's trying to descend --
+    // reproduced directly on aspirin: the first trial step at the standard
+    // starting trust radius (0.1) overshot to +409000 kcal/mol, needing 8-10
+    // halvings just to find an acceptable step, and a second iteration
+    // exhausted all 10 retries without ever finding one (dE bottoming out
+    // at +9e-5, never negative) before the safety-exit fired -- a real
+    // stall, not a false alarm; see internal-coords.js's own accept-reject
+    // loop for why forcing that step through anyway isn't the fix. A short
+    // Cartesian L-BFGS pass with nonbonded ON (L-BFGS builds its own
+    // curvature estimate from realized gradients, so it doesn't share the
+    // guess-Hessian's blind spot) relieves most of that nonbonded gradient
+    // first, so the internal-coordinate stage starts close enough to
+    // quadratic for its bonded-only guess Hessian to actually apply.
+    const nonbondedPreRelaxIters = Math.max(20, Math.round(iterations * 0.2));
+    const internalIters = Math.max(10, iterations - preRelaxIters - nonbondedPreRelaxIters);
+
+    // preRelax and the internal-coordinate stage evaluate DIFFERENT energy
+    // functions (nonbonded off vs. on) -- reproduced directly: piping both
+    // through the SAME onProgress callback with the same {iteration,
+    // gradNorm, energy} shape made a pre-relax checkpoint (no electrostatics/
+    // sterics counted, so systematically lower) look like it came from the
+    // same trajectory as an internal-stage checkpoint, which made the
+    // combined history look non-monotonic even though each stage's OWN
+    // energy is monotonically non-increasing on its own. Tag each report
+    // with its stage so a caller (or a human reading the history) can tell
+    // them apart instead of comparing energies across the two functions.
+    function stageProgress(stageName) {
+      return onProgress ? function (info) { onProgress(Object.assign({ stage: stageName }, info)); } : undefined;
+    }
+
+    let atoms = atoms3d;
+    if (preRelaxIters > 0) {
+      const preRelax = await minimizeSMIRNOFF(atoms3d, ff, preRelaxIters, null, { torsion: true, nonbonded: 0 }, undefined, stageProgress('prerelax'), undefined, stopToken);
+      const positions = shared.unflatten(preRelax.flat);
+      atoms = atoms3d.map(function (a, i) { return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z }; });
+    }
+    if (!(stopToken && stopToken.stopped) && nonbondedPreRelaxIters > 0) {
+      const flatIn = shared.flatten(atoms);
+      const preRelax2 = await minimizeSMIRNOFF(atoms3d, ff, nonbondedPreRelaxIters, null, { torsion: true, nonbonded: 1 }, flatIn, stageProgress('prerelax-nb'), solvent, stopToken);
+      const positions = shared.unflatten(preRelax2.flat);
+      atoms = atoms3d.map(function (a, i) { return { element: a.element, x: positions[i].x, y: positions[i].y, z: positions[i].z }; });
+    }
+
+    const result = (stopToken && stopToken.stopped)
+      ? { atoms: atoms, energy: computeEnergySMIRNOFF(atoms, atoms3d, ff, { torsion: true, nonbonded: 1 }, shared, solvent), gradNorm: null, converged: false, exitReason: 'user-stopped' }
+      : await CC.InternalOpt.minimize(atoms, bonds3d, makeEnergyGradFn({ torsion: true, nonbonded: 1 }), {
+        maxIterations: internalIters,
+        onProgress: stageProgress('internal'),
+        stopToken: stopToken,
+      });
+
+    return {
+      energy: result.energy,
+      converged: result.converged,
+      gradNorm: result.gradNorm,
+      exitReason: result.exitReason,
+      atoms: result.atoms,
+      bonds: bonds3d,
+      unmatched: typed.unmatched,
+    };
+  }
+
+  // Third alternative: PRECONDITIONED Cartesian L-BFGS (see internal-
+  // coords.js's buildCartesianPreconditioner for the "why" -- Packwood et
+  // al. 2016's scheme, also in ASE's `precon` package). Deliberately does
+  // NOT need optimizeGivenSeedSMIRNOFFInternal's multi-stage classical
+  // pre-relax before running at full strength: this still runs PLAIN
+  // L-BFGS with the SAME Armijo backtracking line search minimizeSMIRNOFF
+  // already uses for every other caller (including a descent-direction
+  // fallback to plain steepest descent if a step ever isn't downhill),
+  // which is already robust to an arbitrarily bad starting geometry --
+  // unlike the internal-coordinate optimizer's RFO trust-region step,
+  // which trusts its Hessian literally enough that a bad starting
+  // geometry sends its very first trial step wildly off (see
+  // optimizeGivenSeedSMIRNOFFInternal's own comment for the reproduced
+  // numbers). The preconditioner only has to get the RELATIVE stiffness
+  // ordering right (bond >> angle >> dihedral), which a crude seed's
+  // rho() covalentness measure -- built from actual interatomic
+  // distances, however far from equilibrium -- already gives reasonably.
+  async function optimizeGivenSeedSMIRNOFFPrecon(RDKit, atoms3d, bonds3d, chargesResult, iterations, onProgress, solventOpts, stopToken, useNbfix) {
+    const typed = typeMolecule(RDKit, atoms3d, bonds3d);
+    const ff = buildEnergyModel(typed, chargesResult, useNbfix);
+    const solvent = solventOpts && solventOpts.enabled && chargesResult.available
+      ? { enabled: true, epsSolvent: solventOpts.epsSolvent, charges: chargesResult.charges }
+      : null;
+    const shared = CC.Embed3DShared;
+
+    const precon = (stopToken && stopToken.stopped) ? null : CC.InternalOpt.buildCartesianPreconditioner(atoms3d, bonds3d);
+
+    const result = (stopToken && stopToken.stopped)
+      ? { positions: atoms3d, energy: computeEnergySMIRNOFF(atoms3d, atoms3d, ff, { torsion: true, nonbonded: 1 }, shared, solvent), gradNorm: null, exitReason: 'user-stopped', settled: false }
+      : await minimizeSMIRNOFF(atoms3d, ff, iterations, null, { torsion: true, nonbonded: 1 }, undefined, onProgress, solvent, stopToken, undefined, precon);
+
+    return {
+      energy: result.energy,
+      converged: result.exitReason === 'gradient-converged',
+      gradNorm: result.gradNorm,
+      exitReason: result.exitReason,
+      atoms: atoms3d.map(function (a, i) { return { element: a.element, x: result.positions[i].x, y: result.positions[i].y, z: result.positions[i].z }; }),
+      bonds: bonds3d,
+      unmatched: typed.unmatched,
+    };
+  }
+
   // ---------- entry point ----------
 
   /**
@@ -1333,6 +1509,43 @@ CC.OpenFF = window.CC.OpenFF || {};
   // search computes charges once per molecule up front, same as
   // CC.OpenFF.optimize3D does, rather than once per seed.
   CC.OpenFF.optimizeSeed = optimizeGivenSeedSMIRNOFF;
+  CC.OpenFF.optimizeSeedInternal = optimizeGivenSeedSMIRNOFFInternal;
+  CC.OpenFF.optimizeSeedPrecon = optimizeGivenSeedSMIRNOFFPrecon;
   CC.OpenFF.getChargesForAtoms3D = getChargesForAtoms3D;
   CC.OpenFF.compileAll = compileAll;
+  // TEMP debug hook for a numerical-analysis benchmark -- remove before shipping.
+  CC.OpenFF.__debugDiagnostics = function (RDKit, atoms3d, bonds3d, chargesResult, finalAtoms, useNbfix) {
+    const typed = typeMolecule(RDKit, atoms3d, bonds3d);
+    const ff = buildEnergyModel(typed, chargesResult, useNbfix);
+    const shared = CC.Embed3DShared;
+    let minVdwRatio = Infinity, maxCoulombTerm = 0, sumAbsCoulomb = 0, nClosePairs = 0;
+    for (let i = 0; i < ff.pairs.length; i++) {
+      const p = ff.pairs[i];
+      const r = CC.vec3.distance(finalAtoms[p.a], finalAtoms[p.b]);
+      const vi = ff.vdw[p.a], vj = ff.vdw[p.b];
+      if (vi && vj) {
+        const combined = combineVdw(ff, p, vi, vj);
+        const ratio = r / combined.rm;
+        if (ratio < minVdwRatio) minVdwRatio = ratio;
+        if (ratio < 1.0) nClosePairs++;
+      }
+      if (ff.charges) {
+        const qi = ff.charges[p.a], qj = ff.charges[p.b];
+        const scale = p.is14 ? ff.elecScale14 : 1.0;
+        const term = Math.abs(scale * COULOMB_CONST * qi * qj / Math.max(r, 0.5));
+        if (term > maxCoulombTerm) maxCoulombTerm = term;
+        sumAbsCoulomb += term;
+      }
+    }
+    const flat = shared.flatten(finalAtoms);
+    const gradFull = gradientSMIRNOFF(flat, atoms3d, ff, { torsion: true, nonbonded: 1 }, shared, null);
+    const gradBondedOnly = gradientSMIRNOFF(flat, atoms3d, ff, { torsion: true, nonbonded: 0 }, shared, null);
+    let normFull = 0, normBonded = 0;
+    for (let i = 0; i < gradFull.length; i++) { normFull += gradFull[i] * gradFull[i]; normBonded += gradBondedOnly[i] * gradBondedOnly[i]; }
+    normFull = Math.sqrt(normFull); normBonded = Math.sqrt(normBonded);
+    return {
+      minVdwRatio: minVdwRatio, nClosePairs: nClosePairs, maxCoulombTerm: maxCoulombTerm, sumAbsCoulomb: sumAbsCoulomb,
+      gradNormFull: normFull, gradNormBondedOnly: normBonded, numPairs: ff.pairs.length,
+    };
+  };
 })();

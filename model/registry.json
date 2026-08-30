@@ -18,9 +18,28 @@
       },
       "applicabilityDomain": {
         "trainingSetSize": 3550,
-        "elements": ["B", "Br", "C", "Cl", "F", "I", "N", "O", "P", "S", "Si"],
-        "formalCharges": [-1, 0, 1],
-        "netMolecularCharges": [0, 1],
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S",
+          "Si"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0,
+          1
+        ],
         "embeddingDomainSelfDistanceP90": 0.2757,
         "notes": "Computed by scripts/compute_applicability_domain.py from data/logp-opera/logp_opera.csv (the exact CSV chemprop train was pointed at). Net charge +2 occurred only 4/3550 times -- dropped as a one-off outlier, not real training support, same convention every other applicability-domain sidecar in this registry uses."
       },
@@ -33,9 +52,16 @@
       },
       "metrics": {
         "testSetSize": 355,
-        "primary": { "name": "Test R²", "value": 0.6912 },
-        "all": { "testR2": 0.6912, "testMAE": 1.0842, "testRMSE": 1.5807 },
-        "note": "Real held-out test-set metrics (SCAFFOLD_BALANCED split, so a genuinely harder generalization test than a random split -- not cherry-picked for a flattering number). chemprop train's own logged test/mse (2.499) matches this RMSE² exactly; R²/MAE computed independently here (scripts/train_logp_chemprop.sh's test_predictions.csv merged back against the source data) since chemprop's own MVE test logging only reports MSE. Replaces the previous logp-v1 checkpoint, which this registry candidly documented as \"provided pre-trained without accompanying dataset/metrics documentation\" -- this one has a real, citable source and real metrics instead."
+        "primary": {
+          "name": "Test R\u00b2",
+          "value": 0.6912
+        },
+        "all": {
+          "testR2": 0.6912,
+          "testMAE": 1.0842,
+          "testRMSE": 1.5807
+        },
+        "note": "Real held-out test-set metrics (SCAFFOLD_BALANCED split, so a genuinely harder generalization test than a random split -- not cherry-picked for a flattering number). chemprop train's own logged test/mse (2.499) matches this RMSE\u00b2 exactly; R\u00b2/MAE computed independently here (scripts/train_logp_chemprop.sh's test_predictions.csv merged back against the source data) since chemprop's own MVE test logging only reports MSE. Replaces the previous logp-v1 checkpoint, which this registry candidly documented as \"provided pre-trained without accompanying dataset/metrics documentation\" -- this one has a real, citable source and real metrics instead."
       },
       "training": {
         "chempropVersion": "2.2.3",
@@ -46,7 +72,7 @@
         },
         "dateTrained": "2026-08-22"
       },
-      "notes": "Retrained 2026-08-22 with a Chemprop MVE (Mean-Variance Estimation, -t regression-mve -l mve) head instead of plain regression -- outputs a real per-prediction uncertainty (aleatoric only, not full ensemble/epistemic uncertainty) alongside the value, surfaced in the UI as '± X.XX' next to the applicability-domain confidence badge. Replaces the prior logp-v1 checkpoint, which this registry candidly documented as having no recorded dataset/training provenance at all -- see scripts/prepare_logp_training_data.py for the real, citable source (EPA/NIEHS OPERA's own curated LogP training set) and its documented curation choices (QC_LEVEL filtering, duplicate-SMILES averaging). Architecture (hiddenSize=300, depth=3, aggNorm=100) unchanged from the prior checkpoint. Not yet independently JS-vs-Python cross-validated on real held-out predictions the way electrophile-reactivity-v1/vapor-pressure-v1 were -- do that before relying on exact numeric agreement, only the test-set aggregate metrics above are confirmed so far.",
+      "notes": "Retrained 2026-08-22 with a Chemprop MVE (Mean-Variance Estimation, -t regression-mve -l mve) head instead of plain regression -- outputs a real per-prediction uncertainty (aleatoric only, not full ensemble/epistemic uncertainty) alongside the value, surfaced in the UI as '\u00b1 X.XX' next to the applicability-domain confidence badge. Replaces the prior logp-v1 checkpoint, which this registry candidly documented as having no recorded dataset/training provenance at all -- see scripts/prepare_logp_training_data.py for the real, citable source (EPA/NIEHS OPERA's own curated LogP training set) and its documented curation choices (QC_LEVEL filtering, duplicate-SMILES averaging). Architecture (hiddenSize=300, depth=3, aggNorm=100) unchanged from the prior checkpoint. Not yet independently JS-vs-Python cross-validated on real held-out predictions the way electrophile-reactivity-v1/vapor-pressure-v1 were -- do that before relying on exact numeric agreement, only the test-set aggregate metrics above are confirmed so far.",
       "tags": [
         "physicochemical",
         "lipophilicity"
@@ -169,9 +195,90 @@
       },
       "applicabilityDomain": {
         "trainingSetSize": 9980,
-        "elements": ["Ag", "Al", "As", "Au", "B", "Ba", "Be", "Bi", "Br", "C", "Ca", "Cd", "Ce", "Cl", "Co", "Cr", "Cs", "Cu", "Dy", "F", "Fe", "Gd", "Ge", "H", "Hf", "Hg", "I", "In", "Ir", "K", "La", "Li", "Lu", "Mg", "Mn", "Mo", "N", "Na", "Nb", "Nd", "Ni", "O", "P", "Pb", "Pd", "Pr", "Pt", "Re", "Rh", "Ru", "S", "Sb", "Se", "Si", "Sm", "Sn", "Sr", "Ta", "Te", "Ti", "V", "W", "Y", "Zn", "Zr"],
-        "formalCharges": [-2, -1, 0, 1, 2, 3, 4, 5],
-        "netMolecularCharges": [-2, -1, 0, 1, 2],
+        "elements": [
+          "Ag",
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Be",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Ce",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cs",
+          "Cu",
+          "Dy",
+          "F",
+          "Fe",
+          "Gd",
+          "Ge",
+          "H",
+          "Hf",
+          "Hg",
+          "I",
+          "In",
+          "Ir",
+          "K",
+          "La",
+          "Li",
+          "Lu",
+          "Mg",
+          "Mn",
+          "Mo",
+          "N",
+          "Na",
+          "Nb",
+          "Nd",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pd",
+          "Pr",
+          "Pt",
+          "Re",
+          "Rh",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sm",
+          "Sn",
+          "Sr",
+          "Ta",
+          "Te",
+          "Ti",
+          "V",
+          "W",
+          "Y",
+          "Zn",
+          "Zr"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
         "embeddingDomainSelfDistanceP90": 0.3026,
         "notes": "Computed by scripts/compute_applicability_domain.py from data/logs-aqsoldb/aqsoldb.csv (the exact CSV chemprop train was pointed at). AqSolDB includes many inorganic/organometallic entries (metal salts, coordination compounds) alongside ordinary organic molecules, hence the unusually broad element list for a solubility model -- a real property of this dataset, not a curation artifact. Net charges -12, -30, -22, -5, -4, 3, 4 each occurred under 5/9980 times -- dropped as one-off outliers."
       },
@@ -185,9 +292,16 @@
       },
       "metrics": {
         "testSetSize": 998,
-        "primary": { "name": "Test R²", "value": 0.8309 },
-        "all": { "testR2": 0.8309, "testMAE": 0.8185, "testRMSE": 1.1085 },
-        "note": "Real held-out test-set metrics (SCAFFOLD_BALANCED split). chemprop train's own logged test/mse (1.229) matches this RMSE² exactly; R²/MAE computed independently here (scripts/train_aqsoldb_chemprop.sh's test_predictions.csv merged back against the source data) since chemprop's own MVE test logging only reports MSE."
+        "primary": {
+          "name": "Test R\u00b2",
+          "value": 0.8309
+        },
+        "all": {
+          "testR2": 0.8309,
+          "testMAE": 0.8185,
+          "testRMSE": 1.1085
+        },
+        "note": "Real held-out test-set metrics (SCAFFOLD_BALANCED split). chemprop train's own logged test/mse (1.229) matches this RMSE\u00b2 exactly; R\u00b2/MAE computed independently here (scripts/train_aqsoldb_chemprop.sh's test_predictions.csv merged back against the source data) since chemprop's own MVE test logging only reports MSE."
       },
       "training": {
         "chempropVersion": "2.2.3",
@@ -198,7 +312,7 @@
         },
         "dateTrained": "2026-08-22"
       },
-      "notes": "Retrained 2026-08-22 directly via scripts/prepare_aqsoldb_training_data.py -> scripts/train_aqsoldb_chemprop.sh, resolving this entry's prior 'likely but not confirmed' AqSolDB provenance hedge -- this checkpoint's source is now the exact, reproducible pipeline named in dataset.sourceUrl, not an inference from directory naming. Also switched to a Chemprop MVE (Mean-Variance Estimation, -t regression-mve -l mve) head instead of plain regression -- outputs a real per-prediction uncertainty (aleatoric only) alongside the value, surfaced in the UI as '± X.XX' next to the applicability-domain confidence badge. Sanity-checked on the same 10 molecules with well-known qualitative solubility the prior checkpoint was: correct relative ordering preserved throughout. Not yet independently JS-vs-Python cross-validated on real held-out predictions the way electrophile-reactivity-v1/vapor-pressure-v1 were -- do that before relying on exact numeric agreement, only the test-set aggregate metrics above are confirmed so far.",
+      "notes": "Retrained 2026-08-22 directly via scripts/prepare_aqsoldb_training_data.py -> scripts/train_aqsoldb_chemprop.sh, resolving this entry's prior 'likely but not confirmed' AqSolDB provenance hedge -- this checkpoint's source is now the exact, reproducible pipeline named in dataset.sourceUrl, not an inference from directory naming. Also switched to a Chemprop MVE (Mean-Variance Estimation, -t regression-mve -l mve) head instead of plain regression -- outputs a real per-prediction uncertainty (aleatoric only) alongside the value, surfaced in the UI as '\u00b1 X.XX' next to the applicability-domain confidence badge. Sanity-checked on the same 10 molecules with well-known qualitative solubility the prior checkpoint was: correct relative ordering preserved throughout. Not yet independently JS-vs-Python cross-validated on real held-out predictions the way electrophile-reactivity-v1/vapor-pressure-v1 were -- do that before relying on exact numeric agreement, only the test-set aggregate metrics above are confirmed so far.",
       "tags": [
         "physicochemical",
         "solubility",
@@ -952,7 +1066,8 @@
       "notes": "Trained on a real, previously-published open dataset combining DataWarrior's own curated pKa training set with ChEMBL25 (Baltruschat AM, Czodrowski P, 'Machine learning meets pKa', J. Cheminformatics 2020). A single unified regression target covers both acid and base chemistry -- the model doesn't need to be told which type a site is; js/pka-microstates.js's own SMARTS detector handles that classification separately, for the charge-sign logic the titration curve needs. Training data quirk found and fixed during development, not glossed over: the dataset's own `marvin_atom` site index is 0-indexed (confirmed empirically against 2000 real records: 99%+ plausible under a 0-indexed reading vs. under 2% for a 1-indexed reading) -- and a naive 'canonical=False preserves atom order' assumption (mirroring an approach used elsewhere in this project) turned out to be wrong for this specific dataset and silently mislabeled 47.7% of rows until caught by a round-trip self-check and fixed using RDKit's real `_smilesAtomOutputOrder` property instead. A third, more consequential quirk was found and fixed after this model shipped: the labeled ionizable atom itself is frequently drawn in its charged/ionized form rather than the neutral form ChemCanvas actually queries at inference time -- see metrics.note for the full root-cause and fix (scripts/prepare_pka_training_data.py now neutralizes the labeled atom's charge before training).",
       "knownLimitations": [
         "Biguanides (e.g. metformin, CN(C)C(=N)NC(=N)N): the training SDF has ZERO biguanide examples (confirmed by direct SMARTS search), vs. 129 real examples of simple isolated guanidines (which predict correctly, matching their real ~9.6-11.3 pKa range). js/pka-microstates.js's guanidine SMARTS matches biguanide's two fused C(=N)N units as two INDEPENDENT guanidine sites (metformin: predicted 8.4/7.3), but a biguanide's strong basicity (real pKaH ~11.5) comes from delocalization across the whole fused system, which neither the site-independence assumption nor this training set's coverage captures. Out-of-distribution extrapolation, not a labeling bug -- no existing training row to relabel.",
-        "Tetracycline and likely other polyketide-derived natural products (C[C@]1(c2cccc(c2C(=O)C3=C([C@]4([C@@H](C[C@@H]31)[C@@H](C(=C(C4=O)C(=O)N)O)N(C)C)O)O)O)O): real tetracycline has 3 macroscopic pKas (3.3 tricarbonylmethane C1-C3, 7.7-7.8 phenolic diketone C10-C12, 9.6-9.7 dimethylamino C4). js/pka-microstates.js's SMARTS PATTERNS list has no pattern at all for the tricarbonylmethane/vinylogous-enol-acid class -- that site (pKa1, the most acidic) is never detected or shown, a real site-detector coverage gap, not a model-accuracy issue (a nearby atom in this model's own raw, undetected per-atom output predicts ~3.06, suggesting the model itself has learned something reasonable here that the detector never surfaces). The two sites that ARE detected (phenol, dimethylamino) predict 8.65 and 8.69 vs. real 7.7-7.8 and 9.6-9.7 -- off by ~0.9-1.9 pKa units, worse than the 0.7 overall test MAE but not the smoking-gun magnitude of the carboxylic-acid bug fixed above; plausibly just normal-to-elevated error for a large, densely conjugated, multi-ring natural-product scaffold this training set has few close analogs of. Not fixed here: adding a new SMARTS pattern for a rare functional class without a broad validated example set to check precision/recall against risked false positives elsewhere in the app more than it was worth guessing at."
+        "Tetracycline and likely other polyketide-derived natural products (C[C@]1(c2cccc(c2C(=O)C3=C([C@]4([C@@H](C[C@@H]31)[C@@H](C(=C(C4=O)C(=O)N)O)N(C)C)O)O)O)O): real tetracycline has 3 macroscopic pKas (3.3 tricarbonylmethane C1-C3, 7.7-7.8 phenolic diketone C10-C12, 9.6-9.7 dimethylamino C4). js/pka-microstates.js's SMARTS PATTERNS list has no pattern at all for the tricarbonylmethane/vinylogous-enol-acid class -- that site (pKa1, the most acidic) is never detected or shown, a real site-detector coverage gap, not a model-accuracy issue (a nearby atom in this model's own raw, undetected per-atom output predicts ~3.06, suggesting the model itself has learned something reasonable here that the detector never surfaces). The two sites that ARE detected (phenol, dimethylamino) predict 8.65 and 8.69 vs. real 7.7-7.8 and 9.6-9.7 -- off by ~0.9-1.9 pKa units, worse than the 0.7 overall test MAE but not the smoking-gun magnitude of the carboxylic-acid bug fixed above; plausibly just normal-to-elevated error for a large, densely conjugated, multi-ring natural-product scaffold this training set has few close analogs of. Not fixed here: adding a new SMARTS pattern for a rare functional class without a broad validated example set to check precision/recall against risked false positives elsewhere in the app more than it was worth guessing at.",
+        "Resorcinols (1,3-dihydroxybenzene) with a substituent at the ring position flanked by BOTH hydroxyls, when that substituent is anything bigger than a methyl -- the cannabinoid/olivetol scaffold shared by cannabigerol, cannabidiol, and other resorcinolic natural products. Real case: cannabigerol (CCCCCCc1cc(O)c(CC=C(C)C)c(O)c1, real phenolic pKa 9.63) predicts 6.8 for BOTH ring oxygens, off by ~2.8 -- worse than any other disclosed failure here. Isolated to a precise, reproducible trigger by testing minimal analogs directly against this checkpoint (not assumed, not extrapolated from the one molecule): a resorcinol with only a methyl at the flanked position predicts fine (9.45, e.g. Cc1cc(O)c(C)c(O)c1); a plain single-OH phenol carrying the identical ortho alkyl/allyl chain also predicts fine (10.29, e.g. CCCCCc1ccccc1O, close to real 2-alkylphenols' ~10.2) -- the failure needs BOTH the second (resorcinol) hydroxyl AND a flanked substituent whose first atom is a CH2 rather than a terminal CH3. Once both conditions hold, the predicted value is bit-identical at 6.83 regardless of the substituent's length, branching, or unsaturation (ethyl/propyl/pentyl/allyl/geranyl all collapse to the same number) and regardless of whatever else is substituted elsewhere on the ring -- a hard, discontinuous collapse onto one learned value rather than a smooth degradation, consistent with the training set (Baltruschat/ChEMBL25) having few or no examples of this specific substructure. Not fixed here: retraining/augmenting this checkpoint needs chemprop+torch, not available in this sandbox (see CLAUDE.md's scripts/convert_chemprop_checkpoint.py note) -- flagged rather than silently left for a user to discover the hard way, same as every other entry in this list."
       ],
       "tags": [
         "physicochemical",
@@ -1564,9 +1679,28 @@
       },
       "applicabilityDomain": {
         "trainingSetSize": 2280,
-        "elements": ["B", "Br", "C", "Cl", "F", "I", "N", "O", "P", "S"],
-        "formalCharges": [-1, 0, 1, 2],
-        "netMolecularCharges": [0, 1],
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1,
+          2
+        ],
+        "netMolecularCharges": [
+          0,
+          1
+        ],
         "embeddingDomainSelfDistanceP90": 0.565,
         "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_1a2.csv), heavy-atom graph (no explicit H). A molecule containing any element/formal-charge combination outside this set, OR a net molecular charge outside {0, +1} (charges of -4/-1/+2 each occurred only 1-2 times out of 2280 -- treated as one-off outliers, not real training support, per --min-net-charge-count), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
@@ -3254,9 +3388,27 @@
       },
       "applicabilityDomain": {
         "trainingSetSize": 4030,
-        "elements": ["B", "Br", "C", "Cl", "F", "H", "I", "N", "O", "P", "S"],
-        "formalCharges": [-1, 0, 1],
-        "netMolecularCharges": [0],
+        "elements": [
+          "B",
+          "Br",
+          "C",
+          "Cl",
+          "F",
+          "H",
+          "I",
+          "N",
+          "O",
+          "P",
+          "S"
+        ],
+        "formalCharges": [
+          -1,
+          0,
+          1
+        ],
+        "netMolecularCharges": [
+          0
+        ],
         "embeddingDomainSelfDistanceP90": 0.144,
         "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/solvation/solv_1-octanol.csv). Per-atom formalCharges [-1, 0, 1] alone would have UNDER-blocked here: it says charge -1 was 'seen', which would have let a bare anion like acetate/deprotonated-aspirin through. netMolecularCharges is what actually catches it -- exactly one training molecule (of 4030) has nonzero net charge ([N-]=[NH+][O-], a 3-atom curiosity, net -1) and it's discarded as a one-off outlier (below --min-net-charge-count), leaving {0} as the only genuinely-supported net charge. This confirms this entry's own existing notes field by direct computation rather than manual inspection: the ~53 individually-charged atoms are all zwitterionic amino acids (paired + and - atoms, net-neutral molecule) -- there is no standalone anion or cation with real training support. A bare charged species (e.g. a deprotonated carboxylate) is therefore hard-blocked by the app now, rather than silently producing the physically-backwards prediction this entry's notes already document being found on aspirin's carboxylate (verified directly: this fix blocks CC(=O)[O-] which the naive per-atom-only check did NOT catch). The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, see the sidecar file) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted (chemprop train's internal SCAFFOLD_BALANCED split isn't reproducible from what's on disk)."
       },
@@ -4140,6 +4292,85 @@
         "solubility",
         "cosmo-rs",
         "formulation"
+      ]
+    },
+    {
+      "id": "pka-microstate-freeenergy",
+      "categories": [
+        "medicinal"
+      ],
+      "displayName": "Aqueous pKa, physics + Chemprop (per ionizable site)",
+      "propertyKey": "pka-microstate-freeenergy",
+      "engine": "chemprop",
+      "taskType": "regression",
+      "outputLevel": "molecule",
+      "units": "pKa",
+      "description": "Predicts aqueous pKa at each ionizable site js/pka-microstates.js detects via a real thermodynamic-cycle combination (js/unipka-thermo.js: pKa = logsumexp(-g_protonated) - logsumexp(-g_deprotonated), divided by ln(10)) of per-microstate free energies -- NOT a single-shot atom-level regression the way this app's other `aqueous-pka` engine works. Delta learning AND real X_d feature fusion together now (an earlier version of this model was delta-learning only -- see registry history/notes): each microstate's free energy is `g = physical_scale*physical_baseline + physical_offset + chemprop_correction`, an explicit additive correction on top of a real physical baseline (js/pka-physical-baseline.js: NAGL-MBIS charges -> SMIRNOFF Sage geometry optimization run WITH implicit GB/SA solvent active throughout the search itself, not bolted on afterward as a single-point correction). `physical_scale`/`physical_offset` are learned `nn.Parameter`s (not assumed =1/0) because this app's own SMIRNOFF energy is arbitrary hand-tuned units, not real kcal/mol -- assuming scale=1 during an earlier training attempt produced a catastrophic MAE of 9.2. The Chemprop correction net (js/chemprop-model.js, hiddenSize=300, depth=3) ALSO takes 3 real X_d descriptors per microstate: that microstate's own NAGL-MBIS charge min/max (across its heavy atoms), and a logP prediction from this project's own logp-v1 model -- computed ONCE per site (not per microstate) from whichever of the pair is net-charge-0, then shared into both feature vectors, because logp-v1 has its own real applicability-domain gate that refuses net-charged molecules (see notes). For molecules with more than one detected site, js/pka-electrostatic-correction.js's Generalized-Born charge-charge coupling term (reused from the `aqueous-pka` engine) is applied across the site list afterward. This is a from-scratch replacement for an earlier from-scratch Uni-Mol transformer port of the real Uni-pKa method (Luo, Zhou et al., JACS Au 2024) -- removed as disproportionately heavy for what this integration actually needs; keeps the one genuinely valuable piece of that earlier work (the thermodynamic-cycle formula itself, js/unipka-thermo.js, unchanged).",
+      "files": {
+        "manifest": "pka-microstate-freeenergy/pka-microstate-freeenergy-manifest.json",
+        "weights": "pka-microstate-freeenergy/pka-microstate-freeenergy.bin"
+      },
+      "dataset": {
+        "name": "Three real experimental sources combined: (1) IUPAC digitized pKa dataset (Zenodo 10.5281/zenodo.7236452, CC BY-NC 4.0) + this app's existing Baltruschat & Czodrowski 2020 (DataWarrior + ChEMBL25) data, fidelity_weight=1.0; (2) i-BonD, via the curated extraction in Nevolianis et al. 2025's JACS release (Zenodo 10.5281/zenodo.15604045, CC BY 4.0), fidelity_weight=0.5; (3) pKahub (github.com/keserulab/pkahub, Sipos-Szabo/Bajusz/Balogh/Keseru, J. Chem. Inf. Model. 2026, no repo LICENSE file -- cite the paper), which itself aggregates IUPAC_digitized/Baltruschat_chembl_pka/Datawarrior/Hunt/OCHEM/QSARtoolbox/Manchester/Caine/Jensen/AvLiLuMoVe/OOAs_and_NBs/Settimo -- OCHEM/QSARtoolbox rows get fidelity_weight=0.5 (large automated aggregators), everything else 1.0, further scaled per-row by pKahub's own `assignment_error` signal (scripts/prepare_pkahub_data.py). Monoprotic transitions only. pKahub's own Novartis/SAMPL6/SAMPL7/SAMPL8/euroSAMPL1 rows are deliberately EXCLUDED from training and held out as a real external benchmark instead (see metrics below) -- these are the exact sets the original Uni-pKa paper and others report against.",
+        "citationKey": "iupac2026dissociation",
+        "size": "21,407 microstate pairs after: scripts/filter_zwitterion_pairs.py (drops any pair that ISN'T a clean single-site change -- exactly one structure with 0 formally-charged atoms, the other with exactly 1; catches zwitterion-referenced pairs, see notes) and NAGL-MBIS vocabulary filtering (the X_d features need real NAGL charges, so an element/degree NAGL can't handle now also drops that row, not just a graceful runtime degradation to zero -- I, B, Na, Si and a few other elements). Zwitterion filtering alone dropped ~4-24% of rows depending on source (4% original, 16% i-BonD, 24% pKahub) -- a real, quantified, previously-undetected data-quality issue, not a rounding error.",
+        "splitStrategy": "Scaffold-balanced 80/10/10 (seed=0, Murcko scaffold of each pair's protonated SMILES, via chemprop.data.splitting.make_split_indices) for the internal train/val/test split used during training itself -- but see metrics.primary below for why the pKahub-benchmark external comparison, not this internal split's own test MAE, is this checkpoint's real headline number.",
+        "sourceUrl": "https://doi.org/10.5281/zenodo.7236452"
+      },
+      "metrics": {
+        "testSetSize": 341,
+        "primary": {
+          "name": "External benchmark MAE (Novartis + SAMPL6/7/8 + euroSAMPL1, via pKahub, NOT trained on)",
+          "value": 0.8243,
+          "units": "pKa units"
+        },
+        "all": {
+          "externalBenchmarkMAE": 0.8243,
+          "externalBenchmarkRMSE": 1.0796,
+          "externalBenchmarkNovartisMAE": 0.8447,
+          "externalBenchmarkSAMPL6MAE": 1.0673,
+          "externalBenchmarkSAMPL7MAE": 0.5666,
+          "externalBenchmarkSAMPL8MAE": 0.7698,
+          "externalBenchmarkEuroSAMPL1MAE": 0.6624,
+          "internalScaffoldSplitTestMAE": 1.1534,
+          "internalScaffoldSplitTestRMSE": 1.5619,
+          "physicalOnlyRawTestMAE": 16.4366,
+          "physicalOnlyRecalibratedTestMAE": 6.7155
+        },
+        "note": "For the first time, a REAL external comparison: pKahub's own Novartis/SAMPL6/SAMPL7/SAMPL8/euroSAMPL1 rows were held out of training entirely (see dataset.name) specifically to get an honest, not-overfit-to-our-own-split number -- 0.8243 MAE across all 341, a 34% reduction from the prior checkpoint's own 1.2430 on this exact same held-out set (that prior checkpoint never saw these rows either, so this is a fair comparison). Per-benchmark breakdown is now roughly comparable to (though still behind) the original Uni-pKa paper's own published numbers on the same benchmark family (their Table 1: Novartis total MAE 0.62, SAMPL6 0.554, SAMPL7 0.570, SAMPL8 0.631 -- a much heavier Uni-Mol-backbone architecture with large-scale ChEMBL pretraining, not directly comparable model-for-model, but now at least a real apples-to-apples DATA comparison where before there was none). IMPORTANT, non-obvious: this checkpoint's own INTERNAL scaffold-split test MAE (1.1534) is WORSE than the prior checkpoint's (0.8234) despite being the objectively better model by the external measure above -- confirmed via a real diagnostic, not assumed: training on a much larger, more chemically diverse corpus (21,407 vs 7,006 rows, now spanning pKahub's own broader QSARtoolbox/OCHEM-sourced drug-like chemical space) produces a genuinely HARDER scaffold-split test set, and even the original-source rows score worse as part of that harder split. The internal number is kept here for training-diagnostics continuity but should NOT be read as 'this model got worse' -- the external benchmark above is the trustworthy one. Two real, previously-undetected bugs were found and fixed en route to this checkpoint (both disclosed in knownLimitations): a zwitterion-reference mismatch that silently cross-wired acid/base training pairs on ~4-24% of rows depending on source, and an offline/online inconsistency in how the logP X_d feature was computed for charged microstates. TRIED AND DID NOT HELP (superseded by this checkpoint, kept as a disclosed negative result): real transfer learning from QM data (scripts/pretrain_pka_qm.py, warm-starting on gas-phase acidities + COSMO-RS anion solvation free energies from Nevolianis et al. 2025) made test MAE worse and was dropped per explicit user direction -- not part of this checkpoint's own training."
+      },
+      "training": {
+        "chempropVersion": "2.x (real chemprop.models/chemprop.nn library components, custom training loop -- NOT the stock `chemprop train` CLI, since the paired-microstate thermodynamic-cycle loss needs two forward passes per training example, see scripts/train_pka_microstate_freeenergy.py)",
+        "hyperparameters": {
+          "hiddenSize": 300,
+          "depth": 3,
+          "epochs": "400 max, early-stopped at 177 (ReduceLROnPlateau patience=15, early-stop patience=60 on val loss)",
+          "batchSize": 50,
+          "lr": 0.0001,
+          "seed": 0,
+          "numExtraDescriptors": 3,
+          "fidelityWeightedLoss": true
+        },
+        "dateTrained": "2026-08-29"
+      },
+      "notes": "This model predicts a raw per-microstate free-energy scalar with NO direct standalone meaning -- it is only interpretable as a DIFFERENCE between a protonated/deprotonated microstate pair via js/unipka-thermo.js's CC.UniPKAThermo.microPKa (targetMean=0, targetStd=1). `g = physical_scale*physical_baseline + physical_offset + chemprop_correction`, where `chemprop_correction` now comes from a real X_d-feature-fused forward pass (NAGL charge min/max for THIS microstate + one shared logP value for the whole site, see description) -- js/pka-freeenergy-predict.js's `microstateFreeEnergy`/`sharedLogPFor` are the reference implementation, computing and auto-loading (`logp-v1`, if not already loaded) everything the runtime needs; `CC.GNN.getChempropModelInfo(id).numExtraDescriptors` is what tells a caller whether a given checkpoint needs this at all (0 for the plain delta-learning-only architecture some other models in this registry still use). Needs a runtime physical-baseline descriptor (js/pka-physical-baseline.js) the generic synchronous CC.GNN.predictMolecule() merge path cannot supply -- the real, intended caller is js/pka-freeenergy-predict.js's CC.PKAFreeEnergy.predictAllSites, wired into the Titration tab. Independent-site scope: exactly one microstate per side per detected site, every other site held at its reference protonation state -- the micro-pKa special case of the real thermodynamic-cycle formula. For multi-site molecules, js/pka-electrostatic-correction.js's Generalized-Born charge-charge coupling term is applied across the site list afterward; falls back to the uncorrected per-site values if that correction itself fails.\n\n--- Two real bugs found and fixed building this checkpoint ---\n\n(1) Zwitterion-reference contamination. The pKahub-sourced training rows were built by picking, per (molecule, charge state), the single lowest-free-energy microspecies -- correct in general, but for a molecule with BOTH an acid site and a base site (amino-acid-like), the lowest-energy charge-0 structure is often the ZWITTERION (e.g. ammonium+carboxylate) rather than the fully-neutral tautomer. When that happens, the acid-site row and the base-site row for the SAME molecule end up sharing that zwitterion as their reference point, so the acid row's own 'deprotonated' structure actually describes the ammonium losing its proton (a base-type change) rather than the carboxyl deprotonating -- silently teaching the network the wrong site for that row. Confirmed and quantified directly (not assumed): 24% of pKahub rows, 16% of i-BonD rows, 4% of the original IUPAC/Baltruschat rows. Fixed by scripts/filter_zwitterion_pairs.py, applied to every source uniformly: a training pair is only kept if exactly one of its two structures has zero formally-charged atoms and the other has exactly one.\n(2) logP offline/online inconsistency. `logp-v1` has its own real applicability-domain vocabulary gate (js/applicability-domain.js) that refuses net-charged molecules -- confirmed directly, it was trained on net charges {0, 1} only. The offline training-data harness (scripts/pka-physical-baseline-harness/) never loads that gate, so an earlier version of this pipeline computed logP separately per microstate and trained on values (for every anion/cation) the deployed browser could never reproduce -- a real offline/online mismatch that would have made this feature actively harmful at inference time, not just unhelpful. Fixed by computing logP ONCE per site, from whichever microstate is net-charge-0 (guaranteed to exist after fix (1) above), and sharing that single value into both microstates' own feature vectors -- both technically correct (always in-vocabulary) and more physically sensible than 'logP of a bare anion' in the first place.",
+      "knownLimitations": [
+        "Site detection reuses js/pka-microstates.js's existing SMARTS library, which has its own disclosed coverage gaps (no sulfonamide/amide-NH acidity, imidazole/guanidine/amidine collapsed to one site each, etc. -- see that file's own header). This engine inherits every one of those gaps.",
+        "The physical baseline alone (even correctly recalibrated) is a weak predictor on its own (recalibrated-only test MAE 6.72 vs. 0.82 external-benchmark MAE with the full model) -- the model's real accuracy comes overwhelmingly from the Chemprop correction term (now including the X_d features), not the classical-force-field physics.",
+        "QM-data transfer learning (real gas-phase acidities + COSMO-RS anion solvation free energies from Nevolianis et al. 2025) was tried in an earlier iteration and made results measurably worse -- dropped per explicit user direction, not part of this checkpoint. Included here so it isn't silently re-attempted the same way later.",
+        "This checkpoint's own INTERNAL scaffold-split test MAE (1.1534) reads worse than the prior checkpoint's (0.8234) -- see metrics.note for why this is a real, understood artifact of the split getting harder on a more diverse corpus, not evidence this model is worse; the external Novartis/SAMPL benchmark (0.8243, a 34% improvement) is the trustworthy comparison.",
+        "The i-BonD-only expansion (no pKahub, no zwitterion filter, no feature fusion) was tried as an intermediate step and made things worse at the time -- superseded once the zwitterion bug was found and fixed; kept in git history / project memory as a disclosed step in getting here, not as a live caveat about this checkpoint.",
+        "NAGL-MBIS's own trained element vocabulary (no I, B, Na, Si, and a few others) now gates BOTH the physical baseline (as before) AND, because the X_d features need real NAGL charges, the whole prediction -- a molecule containing one of those elements at an ionizable site can no longer even fall back to a physical-baseline-only estimate the way earlier delta-learning-only checkpoints could.",
+        "The electrostatic charge-charge correction for multi-site molecules has not been independently re-validated against this specific retrained checkpoint's own per-site predictions (it was validated against the earlier `aqueous-pka` engine's predictions)."
+      ],
+      "tags": [
+        "physicochemical",
+        "molecule-level",
+        "acid-base",
+        "pka",
+        "titration",
+        "chemprop",
+        "physics-informed"
       ]
     }
   ]

@@ -198,16 +198,35 @@ window.CC = window.CC || {};
       svg.appendChild(label);
     });
 
-    // Data polygon -- only drawn through axes that actually have data;
-    // an unavailable axis gets a small "no data" ring marker instead of
-    // being silently plotted at the center (0 looks like "worst value,"
-    // not "unknown," and those aren't the same thing).
-    const dataPts = radarData.map(function (d, i) { return pointAt(i, d.available ? d.t : 0); });
-    const polyPoints = dataPts.map(function (p) { return p.x + ',' + p.y; }).join(' ');
-    const dataPoly = document.createElementNS(SVG_NS, 'polygon');
-    dataPoly.setAttribute('points', polyPoints);
-    dataPoly.setAttribute('class', 'radar-data-polygon');
-    svg.appendChild(dataPoly);
+    // Data polygon -- connects ONLY axes that actually have data. A real
+    // bug this replaces: using t=0 (dead center) as a stand-in for
+    // "missing" made the shape's own OUTLINE dip to the center at that
+    // axis, which reads as "this property's value is at its worst/zero"
+    // to anyone looking at the shape -- indistinguishable from a real
+    // measurement, even though the individual point at that axis was
+    // separately styled as a hollow "no data" marker (see below). All or
+    // nothing per axis: an available point is a real vertex in the
+    // connected shape; a missing one is skipped entirely from the
+    // polygon's own path (the gap is bridged by a straight line between
+    // its two real neighbors) and only shown as its own separate marker.
+    // A missing axis's own marker is placed at a fixed, neutral radius on
+    // ITS OWN spoke (not at 0 = every missing axis's angle collapses to
+    // the exact same shared center point, so 2+ missing properties become
+    // one indistinguishable overlapping ring -- confirmed a real problem,
+    // not hypothetical, for any molecule missing more than one axis) --
+    // and not at a "real-looking" radius either, since the hollow/dashed
+    // style already marks it as not-a-value; this is just where to draw
+    // that marker, never fed into the polygon above.
+    const NO_DATA_MARKER_T = 0.5;
+    const availableIdx = radarData.map(function (d, i) { return i; }).filter(function (i) { return radarData[i].available; });
+    const dataPts = radarData.map(function (d, i) { return pointAt(i, d.available ? d.t : NO_DATA_MARKER_T); });
+    if (availableIdx.length >= 3) {
+      const polyPoints = availableIdx.map(function (i) { return dataPts[i].x + ',' + dataPts[i].y; }).join(' ');
+      const dataPoly = document.createElementNS(SVG_NS, 'polygon');
+      dataPoly.setAttribute('points', polyPoints);
+      dataPoly.setAttribute('class', 'radar-data-polygon');
+      svg.appendChild(dataPoly);
+    }
 
     radarData.forEach(function (d, i) {
       const p = dataPts[i];

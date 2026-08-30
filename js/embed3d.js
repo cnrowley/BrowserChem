@@ -566,6 +566,56 @@ window.CC = window.CC || {};
     return slope + curv * dr;
   }
 
+  // Coulomb's own floor, sharing ljFloorRadius's rFloor (see that
+  // function's own comment for why the two terms must agree on where the
+  // floor sits) but needing its OWN quadratic-continuation coefficients --
+  // ljShape's LJ_FLOOR_* constants are specific to the 12-6 shape's
+  // value/slope/curvature at the floor, whereas Coulomb's 1/r term has a
+  // different value/slope/curvature there. Same Taylor-match principle as
+  // ljShape though: match f(rFloor), f'(rFloor), f''(rFloor) of the true
+  // qq/r term exactly, then continue with that quadratic for r < rFloor,
+  // so the force stays smooth (C1, in fact C2) across the floor instead of
+  // the discontinuous kink a bare Math.max(r, rFloor) clip creates.
+  //
+  // That kink was a REAL, reproduced optimizer trap, not a cosmetic
+  // concern: openff-forcefield.js's Coulomb term previously used
+  // `qq / Math.max(r, rFloor)`, whose derivative is the smooth qq/r^2 term
+  // for r > rFloor but EXACTLY ZERO for r <= rFloor (energy is pinned flat
+  // there). An attractive pair (opposite-sign qi*qj) gets pulled inward by
+  // that smooth force right up to the floor, and the instant it crosses,
+  // the attractive force vanishes outright instead of tapering -- so nothing
+  // pulls the pair back out, but nothing pulls it further in either,
+  // freezing that one pair's contribution to the gradient at exactly zero.
+  // With 50+ nonbonded pairs per atom in a real drug-sized molecule, it only
+  // takes ONE such pair settling on its floor to silently remove enough of
+  // the true gradient that the OTHER unrelated terms (bond/angle strain
+  // elsewhere) can no longer be resolved through this atom's remaining
+  // degrees of freedom -- reproduced directly: an analytic-vs-finite-
+  // difference check at a "converged" (energy-plateau) SMIRNOFF geometry
+  // found one pair sitting at r - rFloor = -1.1e-7 (i.e. AT the floor to
+  // near machine precision) with a ~60% gradient-component mismatch at that
+  // atom, and BOTH this app's Cartesian L-BFGS and its internal-coordinate
+  // RFO optimizer -- otherwise unrelated algorithms -- independently
+  // plateaued at nearly the identical energy/geometry, exactly what you'd
+  // expect from a force-field artifact both are being trapped by equally,
+  // not an algorithm-specific weakness in either one.
+  function coulombShape(r, rFloor, qq) {
+    if (r >= rFloor) return qq / r;
+    const f0 = qq / rFloor;
+    const fp0 = -qq / (rFloor * rFloor);
+    const fpp0 = (2 * qq) / (rFloor * rFloor * rFloor);
+    const dr = r - rFloor;
+    return f0 + fp0 * dr + 0.5 * fpp0 * dr * dr;
+  }
+
+  function coulombShapeDerivative(r, rFloor, qq) {
+    if (r >= rFloor) return -qq / (r * r);
+    const fp0 = -qq / (rFloor * rFloor);
+    const fpp0 = (2 * qq) / (rFloor * rFloor * rFloor);
+    const dr = r - rFloor;
+    return fp0 + fpp0 * dr;
+  }
+
   // GB/SA implicit solvation (see implicit-solvent.js) added on top of
   // whichever force field's own vacuum energy computeEnergy/
   // computeEnergySMIRNOFF already computed -- a real, independent physics
@@ -730,6 +780,67 @@ window.CC = window.CC || {};
   // 'energy-plateau'/'step-too-small' exit counts as real convergence.
   const SETTLED_RMS_GATE = 0.5;
 
+  // Standard 4-criterion Gaussian/Berny convergence test (Gaussian's own
+  // default optimizer thresholds; PyBerny's Convergence class uses these
+  // exact same values as ITS defaults too, in gradientmax/gradientrms/
+  // stepmax/steprms -- see internal-coords.js's own PyBerny-attribution
+  // header). A real optimization only counts as converged when the
+  // gradient AND the step it's about to stop on are BOTH small in the
+  // max-component AND RMS sense -- four separate numbers, not one. This
+  // replaces relying on energy alone (this app's own prior "energy-
+  // plateau" exit): energy can go flat (dE < 1e-7) while the gradient
+  // is still substantial -- reproduced directly on a real SMIRNOFF
+  // geometry with explicit partial charges, which "energy-plateau"
+  // declared converged at a Cartesian gradient norm of ~3-4 kcal/mol/A
+  // (traced to a separate, now-fixed force-field bug, but the point
+  // stands: energy-only convergence is fundamentally unable to catch
+  // this class of failure, regardless of what causes it).
+  //
+  // Thresholds are Gaussian's own atomic-unit defaults (Hartree/Bohr for
+  // force, Bohr for displacement), converted to this app's kcal/mol +
+  // Angstrom units with the same constants internal-coords.js uses
+  // (1 Hartree = 627.509474 kcal/mol, 1 Bohr = 0.529177210903 Angstrom).
+  // Simplification vs. the real Gaussian/PyBerny algorithm (see internal-
+  // coords.js's own header for this project's honesty norm on such
+  // simplifications): Gaussian additionally allows a "converged" verdict
+  // when displacement is very small even if a force criterion is
+  // marginally missed (a flat-region special case); this only implements
+  // the straightforward all-four-must-pass form, which is what most
+  // non-Gaussian codes (and most descriptions of "Berny convergence")
+  // mean by the test.
+  const HARTREE_TO_KCAL_BERNY = 627.509474;
+  const BOHR_TO_ANGSTROM_BERNY = 0.529177210903;
+  const BERNY_MAX_FORCE = (0.00045 * HARTREE_TO_KCAL_BERNY) / BOHR_TO_ANGSTROM_BERNY;
+  const BERNY_RMS_FORCE = (0.0003 * HARTREE_TO_KCAL_BERNY) / BOHR_TO_ANGSTROM_BERNY;
+  const BERNY_MAX_DISP = 0.0018 * BOHR_TO_ANGSTROM_BERNY;
+  const BERNY_RMS_DISP = 0.0012 * BOHR_TO_ANGSTROM_BERNY;
+
+  // grad/step are flat Float64Arrays of the SAME length (3*numAtoms) --
+  // step is the Cartesian displacement just taken (trial - previous, or
+  // newAtoms - previousAtoms flattened, for an optimizer that steps in a
+  // different coordinate system but still wants a Cartesian-consistent
+  // Berny check -- see internal-coords.js's own caller for that case).
+  function bernyConvergence(grad, step) {
+    const n = grad.length;
+    let maxForce = 0, sumSqForce = 0;
+    for (let i = 0; i < n; i++) {
+      const a = Math.abs(grad[i]);
+      if (a > maxForce) maxForce = a;
+      sumSqForce += grad[i] * grad[i];
+    }
+    const rmsForce = Math.sqrt(sumSqForce / n);
+    let maxDisp = 0, sumSqDisp = 0;
+    for (let i = 0; i < step.length; i++) {
+      const a = Math.abs(step[i]);
+      if (a > maxDisp) maxDisp = a;
+      sumSqDisp += step[i] * step[i];
+    }
+    const rmsDisp = Math.sqrt(sumSqDisp / step.length);
+    const converged = maxForce < BERNY_MAX_FORCE && rmsForce < BERNY_RMS_FORCE &&
+      maxDisp < BERNY_MAX_DISP && rmsDisp < BERNY_RMS_DISP;
+    return { converged: converged, maxForce: maxForce, rmsForce: rmsForce, maxDisp: maxDisp, rmsDisp: rmsDisp };
+  }
+
   function maxAtomDisplacement(direction) {
     let maxSq = 0;
     for (let i = 0; i < direction.length; i += 3) {
@@ -781,6 +892,36 @@ window.CC = window.CC || {};
       for (let j = 0; j < q.length; j++) q[j] += (alpha[i] - beta) * sHistory[i][j];
     }
     return q;
+  }
+
+  // Generalization of lbfgsDirection (Nocedal & Wright Algorithm 7.4,
+  // "L-BFGS two-loop recursion with general H0"): identical two-loop
+  // structure, but the middle "initial Hessian" step calls an arbitrary
+  // applyH0(q) instead of the plain scalar gamma*q scaling -- letting a
+  // caller supply a non-isotropic initial curvature guess (see
+  // internal-coords.js's buildCartesianPreconditioner for the motivating
+  // use: a Cartesian-space preconditioner built from bond/angle/dihedral
+  // force constants, so plain L-BFGS in Cartesian coordinates doesn't
+  // have to spend its first several iterations discovering on its own
+  // that a bond stretch is ~300x stiffer than a torsion). When
+  // applyH0 is the identity scaled by gamma, this reduces to exactly
+  // lbfgsDirection above -- kept as a separate function rather than a
+  // parameter on the original so the hot, no-preconditioner path (used
+  // by every OTHER minimize() call in this app) stays branch-free.
+  function lbfgsDirectionWithH0(grad, sHistory, yHistory, rhoHistory, applyH0) {
+    const m = sHistory.length;
+    const q = grad.slice();
+    const alpha = new Array(m);
+    for (let i = m - 1; i >= 0; i--) {
+      alpha[i] = rhoHistory[i] * dot(sHistory[i], q);
+      for (let j = 0; j < q.length; j++) q[j] -= alpha[i] * yHistory[i][j];
+    }
+    let r = applyH0(q);
+    for (let i = 0; i < m; i++) {
+      const beta = rhoHistory[i] * dot(yHistory[i], r);
+      for (let j = 0; j < r.length; j++) r[j] += (alpha[i] - beta) * sHistory[i][j];
+    }
+    return r;
   }
 
   // Same standard atan2-dihedral-angle derivative this project already
@@ -1165,6 +1306,17 @@ window.CC = window.CC || {};
       grad = newGrad;
       gradNorm = Math.sqrt(dot(grad, grad));
       lastGradNorm = gradNorm;
+
+      // Standard 4-criterion Berny/Gaussian check (see bernyConvergence's
+      // own comment for why this replaces trusting energy alone) -- s is
+      // exactly the Cartesian displacement this step just took, paired
+      // with the gradient AT the point it landed on, which is what the
+      // test needs (checking a gradient against a DIFFERENT step, or vice
+      // versa, isn't a meaningful pairing). Checked before the plateau
+      // test below so a step that's BOTH flat AND genuinely converged
+      // reports the more informative, more trustworthy 'gradient-
+      // converged' rather than 'energy-plateau'.
+      if (bernyConvergence(grad, s).converged) { exitReason = 'gradient-converged'; break; }
 
       if (improvement < 1e-7) { exitReason = 'energy-plateau'; break; }
     }
@@ -1691,11 +1843,15 @@ window.CC = window.CC || {};
     sideAtoms: sideAtoms,
     dot: dot,
     lbfgsDirection: lbfgsDirection,
+    lbfgsDirectionWithH0: lbfgsDirectionWithH0,
     lbfgsHistorySize: LBFGS_HISTORY,
     maxAtomDisplacement: maxAtomDisplacement,
     lbfgsMaxStepAngstrom: MAX_STEP_ANGSTROM,
     ljShapeDerivative: ljShapeDerivative,
     ljFloorRadius: ljFloorRadius,
+    coulombShape: coulombShape,
+    coulombShapeDerivative: coulombShapeDerivative,
     settledRmsGate: SETTLED_RMS_GATE,
+    bernyConvergence: bernyConvergence,
   };
 })();
