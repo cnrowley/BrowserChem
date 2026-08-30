@@ -178,8 +178,10 @@ approximation, and validation results:
   architecture
 - `VALIDATION.md` — the structure-checking layer and per-model
   compatibility tiers
-- `PKA_INTEGRATION.md`, `NMR_INTEGRATION.md`, `BDE_INTEGRATION.md` —
-  the per-atom/per-bond prediction models
+- `PKA_INTEGRATION.md`, `PKA_MICROSTATE_FREEENERGY_INTEGRATION.md`,
+  `NMR_INTEGRATION.md`, `BDE_INTEGRATION.md` — the per-atom/per-bond
+  prediction models (the first two are two independent pKa predictors —
+  carbon-acid C-H vs. general physics+Chemprop microstate free energy)
 - `ANI2X_INTEGRATION.md`, `GEOMOL_INTEGRATION.md`,
   `OPENFF_INTEGRATION.md`, `CONFORMER_SEARCH.md` — the 3D structure
   generation methods
