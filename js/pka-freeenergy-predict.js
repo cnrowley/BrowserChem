@@ -66,6 +66,27 @@ CC.PKAFreeEnergy = window.CC.PKAFreeEnergy || {};
     return net;
   }
 
+  // Combines the two microstates' own independent applicability-domain
+  // confidence tiers (js/applicability-domain.js: each of
+  // CC.GNN.predictChemprop's two calls in microstateFreeEnergy below
+  // checks its OWN structure's embedding distance -- a site's acid form
+  // being comfortably in-domain says nothing about its base form) into
+  // ONE tier for the site, taking the WORSE of the two -- a site's pKa is
+  // only as trustworthy as its least-in-domain half. Missing/undefined
+  // (no applicability-domain.json for this checkpoint, or checkVocab
+  // already rejected one side before a tier could even be computed)
+  // isn't treated as "worse than any real tier" -- it just yields
+  // whichever side DOES have one, or undefined if neither does, so a
+  // model this file already runs the same way it always did for now
+  // (before pka-microstate-freeenergy shipped its own sidecar) keeps
+  // showing no badge at all rather than a fabricated one.
+  const TIER_RANK = { 'in-domain': 0, borderline: 1, 'out-of-domain': 2 };
+  function worseTier(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    return TIER_RANK[b.tier] > TIER_RANK[a.tier] ? b : a;
+  }
+
   /**
    * logp-v1 has its own real applicability-domain vocabulary gate (see
    * js/applicability-domain.js's CC.AD.checkVocab, enforced inside
@@ -134,7 +155,8 @@ CC.PKAFreeEnergy = window.CC.PKAFreeEnergy || {};
     // scripts/train_pka_microstate_freeenergy.py's own header).
     const scale = info.physicalScale != null ? info.physicalScale : 1;
     const offset = info.physicalOffset != null ? info.physicalOffset : 0;
-    return scale * physicalBaseline + offset + correction;
+    const meta = result.propertyMeta && result.propertyMeta[info.task];
+    return { value: scale * physicalBaseline + offset + correction, confidence: meta && meta.confidence };
   }
 
   // Same reference-protonation convention as js/pka-microstates.js's own
@@ -168,10 +190,10 @@ CC.PKAFreeEnergy = window.CC.PKAFreeEnergy || {};
     const sharedLogP = (info && info.numExtraDescriptors)
       ? await sharedLogPFor(macro.acidMolecule, macro.baseMolecule)
       : undefined;
-    const gA = await microstateFreeEnergy(chempropModelId, macro.acidMolecule, opts, sharedLogP);
-    const gB = await microstateFreeEnergy(chempropModelId, macro.baseMolecule, opts, sharedLogP);
-    const pKa = CC.UniPKAThermo.microPKa(gA, gB, 0, 1);
-    return { pKa: pKa, freeEnergyA: gA, freeEnergyB: gB };
+    const a = await microstateFreeEnergy(chempropModelId, macro.acidMolecule, opts, sharedLogP);
+    const b = await microstateFreeEnergy(chempropModelId, macro.baseMolecule, opts, sharedLogP);
+    const pKa = CC.UniPKAThermo.microPKa(a.value, b.value, 0, 1);
+    return { pKa: pKa, freeEnergyA: a.value, freeEnergyB: b.value, confidence: worseTier(a.confidence, b.confidence) };
   };
 
   /**
@@ -224,19 +246,26 @@ CC.PKAFreeEnergy = window.CC.PKAFreeEnergy || {};
     const heavyAtoms = Array.from(molecule.atoms.values());
     const atomIds = heavyAtoms.map(function (a) { return a.id; });
     const atomProperties = heavyAtoms.map(function () { return {}; });
+    // Parallel to atomProperties, same { [task]: {confidence} } shape as
+    // molecule-level propertyMeta (js/chemprop-model.js) -- so callers
+    // (js/app.js's setupTitrationPanel) can pass an entry straight into
+    // the shared appendConfidenceBadge(cell, meta) helper unchanged.
+    const atomPropertyMeta = heavyAtoms.map(function () { return {}; });
 
     if (heavyAtoms.length === 0) {
-      return { atomProperties: atomProperties, atomIds: atomIds, backend: 'pka-freeenergy', modelId: chempropModelId };
+      return { atomProperties: atomProperties, atomPropertyMeta: atomPropertyMeta, atomIds: atomIds, backend: 'pka-freeenergy', modelId: chempropModelId };
     }
 
     const sites = CC.PKAMicrostates.findIonizableSites(molecule);
     const scoredSites = [];
     const basePKa = [];
+    const siteConfidence = [];
     for (let i = 0; i < sites.length; i++) {
       try {
-        const pKa = (await CC.PKAFreeEnergy.computeSitePka(chempropModelId, molecule, sites, i, opts)).pKa;
+        const site = await CC.PKAFreeEnergy.computeSitePka(chempropModelId, molecule, sites, i, opts);
         scoredSites.push(sites[i]);
-        basePKa.push(pKa);
+        basePKa.push(site.pKa);
+        siteConfidence.push(site.confidence);
       } catch (err) {
         continue; // one unscoreable site (e.g. an element NAGL can't charge) doesn't sink the others
       }
@@ -254,9 +283,16 @@ CC.PKAFreeEnergy = window.CC.PKAFreeEnergy || {};
 
     scoredSites.forEach(function (site, i) {
       const atomIdx = heavyAtoms.findIndex(function (a) { return a.id === site.atomId; });
-      if (atomIdx >= 0) atomProperties[atomIdx]['pka-microstate-freeenergy'] = finalPKa[i];
+      if (atomIdx >= 0) {
+        atomProperties[atomIdx]['pka-microstate-freeenergy'] = finalPKa[i];
+        // The electrostatic correction above only shifts the pKa VALUE --
+        // it doesn't touch either microstate's own embedding, so the
+        // pre-correction per-site confidence tier still describes this
+        // corrected value just as well as the base one.
+        if (siteConfidence[i]) atomPropertyMeta[atomIdx]['pka-microstate-freeenergy'] = { confidence: siteConfidence[i] };
+      }
     });
 
-    return { atomProperties: atomProperties, atomIds: atomIds, backend: 'pka-freeenergy', modelId: chempropModelId };
+    return { atomProperties: atomProperties, atomPropertyMeta: atomPropertyMeta, atomIds: atomIds, backend: 'pka-freeenergy', modelId: chempropModelId };
   };
 })();

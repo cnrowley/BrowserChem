@@ -335,6 +335,29 @@ CC.GNN = window.CC.GNN || {};
     return { value: head, pooled: pooled };
   }
 
+  // Public entry point for offline applicability-domain tooling (see
+  // scripts/compute_applicability_domain.py's own header): the raw pooled
+  // D-MPNN embedding for a molecule, with NO X_d fusion and no FFN head
+  // applied -- the exact vector runOneMolecule computes as `pooled`
+  // before optionally concatenating extra descriptors, i.e. the same
+  // space CC.AD.tierForEmbedding already compares against at real
+  // prediction time (see confidenceMeta above). Exposed directly (rather
+  // than making every AD-computation script reimplement the D-MPNN
+  // forward pass a second time, the way the older pure-numpy
+  // compute_applicability_domain.py had to before this existed) so a
+  // model needing real extra descriptors to run its own FFN head (e.g.
+  // pka-microstate-freeenergy) can still get its embedding-domain data
+  // computed without needing those descriptors at all -- they never
+  // affect `pooled`, only what happens to it afterward.
+  CC.GNN.getPooledEmbedding = function (molecule, id) {
+    const model = models.get(id);
+    if (!model) throw new Error('No Chemprop model loaded under id "' + id + '"');
+    const graphs = buildGraphsForMolecule(molecule);
+    const graph = graphs.forGraphType('heavy');
+    const out = runDMPNNFor(model, graph);
+    return CC.GNN.poolSum(out.atomEmbeddings, model.dims.d_h).map(function (x) { return x / model.dims.aggNorm; });
+  };
+
   // Per-model (not just per-engine) training-vocabulary gate -- see
   // applicability-domain.js's header. Checked here, at actual prediction
   // time, not just at auto-load time (app.js's autoLoadApplicableModels):

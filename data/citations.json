@@ -2,6 +2,39 @@
   "_readme": "Bibliography backing js/citations.js. Keys are referenced from model/registry.json's dataset.citationKey field, js/citations.js's ENGINE_CITATIONS/CORE_CITATIONS/OTHER_METHOD_CITATIONS maps, or both. `type` drives BibTeX/RIS entry type (see js/citations.js's BIBTEX_TYPE/RIS_TYPE maps): 'article-journal' | 'thesis' | 'software' | 'dataset' | 'paper-conference' | 'preprint'. An entry with no `doi` has one deliberately left out rather than guessed -- see its own `note` field for why. Every doi/volume/pages value below was verified against a publisher page, PubMed, or another independent source via live web search on 2026-08-24 (see each entry's `note` for corroborating sources); do not add a new value here without the same kind of verification.",
   "entries": [
     {
+      "key": "iupac2026dissociation",
+      "type": "dataset",
+      "authors": ["Zheng, Jonathan", "Lafontant-Joseph, Olivier"],
+      "title": "IUPAC/Dissociation-Constants: v2.3e",
+      "publisher": "Zenodo",
+      "year": 2026,
+      "doi": "10.5281/zenodo.21533589",
+      "url": "https://doi.org/10.5281/zenodo.7236452",
+      "note": "Verified live against the Zenodo API (record 21533589, resolved from concept DOI 10.5281/zenodo.7236452, CC BY-NC 4.0). Source of the pka-microstate-freeenergy model's IUPAC-digitized training rows (iupac_high-confidence_v2_3.csv). The concept DOI (used as sourceUrl) always resolves to whatever the latest version is -- the versioned DOI here is what was actually used, per this app's own honesty norm about pinning what was really trained on."
+    },
+    {
+      "key": "nevolianis2025anionsolvation",
+      "type": "article-journal",
+      "authors": ["Nevolianis, Thomas", "Zheng, Jonathan W.", "Müller, Simon", "Baumann, Matthias", "Tshepelevitsh, Sofja", "Kaljurand, Ivari", "Leito, Ivo", "Smirnova, Irina", "Green, William H.", "Leonhard, Kai"],
+      "title": "Solvation Free Energies of Anions: From Curated Reference Data to Predictive Models",
+      "journal": "Journal of the American Chemical Society",
+      "year": 2025,
+      "doi": "10.1021/jacs.5c02578",
+      "note": "Verified via a live CrossRef lookup (published 2025-08-14; the ChemRxiv preprint this superseded, 10.26434/chemrxiv-2025-8bj2t, is not used here since the peer-reviewed DOI exists). Source of the pka-microstate-freeenergy model's i-BonD-derived training rows (via the paper's own Zenodo data release, 10.5281/zenodo.15604045, CC BY 4.0) -- QM gas-phase-acidity/COSMO-RS transfer-learning pretraining from this same release was also tried and did not help (see that model's own registry notes)."
+    },
+    {
+      "key": "siposszabo2026pkahub",
+      "type": "article-journal",
+      "authors": ["Sipos-Szabó, Levente", "Bajusz, Dávid", "Balogh, György T.", "Keserű, György M."],
+      "title": "Benchmarking pKa Prediction Algorithms against an Extensive, Public Data Set",
+      "journal": "Journal of Chemical Information and Modeling",
+      "year": 2026,
+      "volume": "66",
+      "pages": "4607-4619",
+      "doi": "10.1021/acs.jcim.6c00107",
+      "note": "Verified via a live CrossRef lookup (published 2026-04-06). Source of the pka-microstate-freeenergy model's pKaHub-aggregated training rows and its external Novartis/SAMPL6/7/8/euroSAMPL1 benchmark (github.com/keserulab/pkahub -- no repo LICENSE file, so cite the paper itself, not the code)."
+    },
+    {
       "key": "canogil2024proteinreactive",
       "type": "article-journal",
       "authors": ["Cano Gil, Victor H.", "Rowley, Christopher N."],

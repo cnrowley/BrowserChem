@@ -118,9 +118,17 @@ CC.Citations = {};
 
   CC.Citations.forRegistryEntry = function (entry) {
     const keys = [];
-    if (entry && entry.dataset && entry.dataset.citationKey && looksLikeShortKey(entry.dataset.citationKey)) {
-      keys.push(entry.dataset.citationKey);
-    }
+    // dataset.citationKey is usually one short key, but a model whose
+    // training data is a real, comparably-weighted combination of
+    // multiple sources (e.g. pka-microstate-freeenergy: IUPAC +
+    // Baltruschat & Czodrowski + Nevolianis et al. + pKaHub, all with
+    // their own real fidelity_weight in that model's own training CSV,
+    // not one dominant source with the others as an afterthought) can
+    // give an array instead, so every source it actually learned from is
+    // individually citable/exportable rather than only the first pick.
+    const ck = entry && entry.dataset && entry.dataset.citationKey;
+    const ckList = Array.isArray(ck) ? ck : (ck ? [ck] : []);
+    ckList.filter(looksLikeShortKey).forEach(function (k) { keys.push(k); });
     const engine = (entry && entry.engine) || 'chemprop';
     (ENGINE_CITATIONS[engine] || []).forEach(function (k) { keys.push(k); });
     return keys;

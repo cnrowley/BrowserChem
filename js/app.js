@@ -971,6 +971,18 @@
       return p;
     }
 
+    function listBlock(items) {
+      if (!items || !items.length) return null;
+      const ul = document.createElement('ul');
+      ul.className = 'property-info-limitations';
+      items.forEach(function (item) {
+        const li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+      return ul;
+    }
+
     function defList(pairs) {
       const rows = pairs.filter(function (p) { return p[1] !== null && p[1] !== undefined && p[1] !== ''; });
       if (rows.length === 0) return null;
@@ -998,14 +1010,20 @@
 
     // 2. Dataset
     const ds = entry.dataset || {};
-    const citeEntry = window.CC && CC.Citations && ds.citationKey ? CC.Citations.get(ds.citationKey) : null;
+    // ds.citationKey is usually one short key; a model trained on a real
+    // combination of comparably-weighted sources (see js/citations.js's
+    // forRegistryEntry) can give an array instead -- render one "Cite as"
+    // line per source rather than only the first.
+    const citationKeys = Array.isArray(ds.citationKey) ? ds.citationKey : (ds.citationKey ? [ds.citationKey] : []);
+    const citeLines = window.CC && CC.Citations
+      ? citationKeys.filter(function (k) { return CC.Citations.get(k); }).map(function (k) { return CC.Citations.formatLine(k); })
+      : [];
     section('Dataset', defList([
       ['Name', ds.name],
       ['Size', ds.size ? ds.size + ' molecules' : null],
       ['Split strategy', ds.splitStrategy],
       ['Source', ds.sourceUrl, 'link'],
-      ['Cite as', citeEntry ? CC.Citations.formatLine(ds.citationKey) : null],
-    ]));
+    ].concat(citeLines.map(function (line) { return ['Cite as', line]; }))));
 
     // 3. Domain of applicability
     const ad = entry.applicabilityDomain;
@@ -1083,7 +1101,8 @@
       ])],
       ['', m && textBlock(m.note)],
       ['', ad && textBlock(ad.notes)],
-      ['Notes, known limitations & training history', textBlock(entry.notes)],
+      ['Known limitations', listBlock(entry.knownLimitations)],
+      ['Notes & training history', textBlock(entry.notes)],
     ].forEach(function (pair) {
       if (!pair[1]) return;
       if (pair[0]) {
@@ -1175,6 +1194,54 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && modal.style.display !== 'none') close();
     });
+  }
+
+  // Embedding-domain confidence tier badge (see applicability-domain.js)
+  // -- distance from a molecule's D-MPNN embedding to a model's own
+  // training-set distribution, computed for free during prediction. Top-
+  // level (not nested in setupPropertiesPanel) so both the Properties
+  // panel's results table AND the Titration tab's per-site pKa rows can
+  // build the same badge, same pattern buildPropertyInfoBox already uses
+  // for the "[?]" popup. A model with no applicability-domain data (most
+  // of the registry, still an incrementally-rolled-out pipeline) shows no
+  // badge at all rather than a fabricated "unknown" one for every row.
+  const CONFIDENCE_TIER_LABEL = { 'in-domain': 'In-domain', 'borderline': 'Borderline', 'out-of-domain': 'Out-of-domain' };
+  function appendConfidenceBadge(valueCell, meta) {
+    const confidence = meta && meta.confidence;
+    if (!confidence || !CONFIDENCE_TIER_LABEL[confidence.tier]) return;
+    const badge = document.createElement('span');
+    badge.className = 'confidence-badge confidence-' + confidence.tier;
+    badge.textContent = CONFIDENCE_TIER_LABEL[confidence.tier];
+    badge.title = 'Applicability-domain confidence: this molecule’s distance from the model’s training-set ' +
+      'embedding distribution is ' + confidence.distance.toFixed(2) + ' (in-domain ≤ ' + confidence.thresholds.inDomain.toFixed(2) +
+      ', borderline ≤ ' + confidence.thresholds.borderline.toFixed(2) + '). A heuristic signal, not a calibrated error bound -- ' +
+      'see this property’s [?] info panel.';
+    valueCell.appendChild(badge);
+  }
+
+  // Loaded NAGL-MBIS model id, loading one on first use if none is
+  // loaded yet -- top-level (not nested in setup3DPanel, where this
+  // originally lived) so setupTitrationPanel's own pka-microstate-
+  // freeenergy branch can reuse it too, same "one shared helper, not a
+  // second copy" pattern as appendConfidenceBadge/buildPropertyInfoBox
+  // above. A missing/failed load is NOT fatal to any caller: each just
+  // omits the charge-dependent term(s) it needed this for (same honest
+  // fallback OPENFF_INTEGRATION.md documents for the 3D panel's own
+  // callers), so this returns undefined rather than throwing.
+  async function ensureNaglModelLoaded(progressNoteEl) {
+    let naglModelId = CC.NAGL.getLoadedModelIds()[0];
+    if (naglModelId) return naglModelId;
+    const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.engine === 'nagl'; });
+    if (!entry) return undefined;
+    if (progressNoteEl) progressNoteEl.textContent = 'Loading NAGL-MBIS charge model…';
+    try {
+      await CC.GNN.loadRegistryModel(entry.id);
+      refreshRegistryList();
+      return CC.NAGL.getLoadedModelIds()[0];
+    } catch (err) {
+      console.error('[ChemCanvas] NAGL model load failed — continuing without electrostatics/solvent', err);
+      return undefined;
+    }
   }
 
   // Aqueous pKa / titration curve panel -- its own tab (per the user's
@@ -1339,6 +1406,7 @@
 
       try {
         let pkaByAtomId = {};
+        let pkaConfidenceByAtomId = {};
         if (pkaSource === 'pka-microstate-freeenergy') {
           // js/pka-freeenergy-predict.js: a real Chemprop D-MPNN scoring
           // one microstate pair per detected site (independent-site
@@ -1357,11 +1425,21 @@
             await CC.GNN.loadRegistryModel(entry.id);
             refreshRegistryList();
           }
+          // Real X_d feature fusion (see js/pka-freeenergy-predict.js's own
+          // header) needs a loaded NAGL-MBIS model for both the physical
+          // baseline's electrostatics AND the per-microstate NAGL-charge
+          // X_d descriptors themselves -- pka-microstate-freeenergy's own
+          // numExtraDescriptors>0 makes this NOT optional the way it is
+          // for the 3D panel's plain SMIRNOFF calls (extraDescriptorsFor
+          // throws outright without one, rather than just omitting a term).
+          const naglModelId = await ensureNaglModelLoaded(status);
           status.textContent = 'Predicting pKa values (physics + Chemprop, this can take a while)…';
-          const result = await CC.PKAFreeEnergy.predictAllSites('pka-microstate-freeenergy', controller.molecule);
+          const result = await CC.PKAFreeEnergy.predictAllSites('pka-microstate-freeenergy', controller.molecule, { naglModelId: naglModelId });
           result.atomIds.forEach(function (atomId, i) {
             const props = result.atomProperties[i];
             if (props && typeof props['pka-microstate-freeenergy'] === 'number') pkaByAtomId[atomId] = props['pka-microstate-freeenergy'];
+            const meta = result.atomPropertyMeta && result.atomPropertyMeta[i] && result.atomPropertyMeta[i]['pka-microstate-freeenergy'];
+            if (meta) pkaConfidenceByAtomId[atomId] = meta;
           });
         } else {
           if (!CC.GNN.hasChempropModel('aqueous-pka')) {
@@ -1447,6 +1525,7 @@
           const pkaCell = document.createElement('td');
           const pkaValue = pkaByAtomId[site.atomId];
           pkaCell.textContent = typeof pkaValue === 'number' ? pkaValue.toFixed(1) : '—';
+          appendConfidenceBadge(pkaCell, pkaConfidenceByAtomId[site.atomId]);
           const correctedCell = document.createElement('td');
           if (correctedPKa) {
             const idx = validSites.indexOf(site);
@@ -2366,30 +2445,6 @@
       CC.Logger.info('Saved structure.xyz');
     });
 
-    // Shared by the conformer-search and optimize-only handlers below --
-    // both need a loaded NAGL-MBIS model id whenever SMIRNOFF
-    // electrostatics or implicit solvent are in play, loading it on
-    // first use rather than requiring a separate trip to the Properties
-    // panel first. A missing/failed load is NOT fatal to either caller:
-    // both just omit the charge-dependent term(s) (same honest fallback
-    // OPENFF_INTEGRATION.md documents), so this returns undefined rather
-    // than throwing.
-    async function ensureNaglModelLoaded(progressNoteEl) {
-      let naglModelId = CC.NAGL.getLoadedModelIds()[0];
-      if (naglModelId) return naglModelId;
-      const entry = CC.GNN.getRegistryEntries().find(function (e) { return e.engine === 'nagl'; });
-      if (!entry) return undefined;
-      if (progressNoteEl) progressNoteEl.textContent = 'Loading NAGL-MBIS charge model…';
-      try {
-        await CC.GNN.loadRegistryModel(entry.id);
-        refreshRegistryList();
-        return CC.NAGL.getLoadedModelIds()[0];
-      } catch (err) {
-        console.error('[ChemCanvas] NAGL model load failed — continuing without electrostatics/solvent', err);
-        return undefined;
-      }
-    }
-
     // Optimize-only's ANI-2x branch -- same load-on-click pattern as
     // ensureNaglModelLoaded above / the GeoMol quick-preview path below
     // (a model's weights only fetch the first time something actually
@@ -3269,28 +3324,6 @@
         row.appendChild(labelCell);
         row.appendChild(valueCell);
         return { row: row, registryEntry: registryEntry };
-      }
-
-      // Embedding-domain confidence tier (see applicability-domain.js) --
-      // distance from this molecule's D-MPNN embedding to the model's own
-      // training-set distribution, computed for free during prediction.
-      // Only rendered when real data exists for this checkpoint (most of
-      // the registry doesn't have it yet -- an incrementally-rolled-out
-      // pipeline, see model/registry.json's per-model 'applicabilityDomain'
-      // notes); a model with no such data shows no badge at all rather
-      // than a fabricated "unknown" one for every single row.
-      const CONFIDENCE_TIER_LABEL = { 'in-domain': 'In-domain', 'borderline': 'Borderline', 'out-of-domain': 'Out-of-domain' };
-      function appendConfidenceBadge(valueCell, meta) {
-        const confidence = meta && meta.confidence;
-        if (!confidence || !CONFIDENCE_TIER_LABEL[confidence.tier]) return;
-        const badge = document.createElement('span');
-        badge.className = 'confidence-badge confidence-' + confidence.tier;
-        badge.textContent = CONFIDENCE_TIER_LABEL[confidence.tier];
-        badge.title = 'Applicability-domain confidence: this molecule’s distance from the model’s training-set ' +
-          'embedding distribution is ' + confidence.distance.toFixed(2) + ' (in-domain ≤ ' + confidence.thresholds.inDomain.toFixed(2) +
-          ', borderline ≤ ' + confidence.thresholds.borderline.toFixed(2) + '). A heuristic signal, not a calibrated error bound -- ' +
-          'see this property’s [?] info panel.';
-        valueCell.appendChild(badge);
       }
 
       // Solvation (21 COSMO-RS solvent models, propertyKey "solv...") and

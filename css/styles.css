@@ -1422,6 +1422,17 @@ div.properties-section-title {
   margin-top: 4px;
 }
 
+.property-info-limitations {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-light);
+}
+
+.property-info-limitations li {
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
 .model-registry-list {
   display: flex;
   flex-direction: column;
