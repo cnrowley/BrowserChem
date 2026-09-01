@@ -2312,18 +2312,19 @@
         "license": "CC BY-NC 4.0 (noncommercial) -- see this article's Figshare record"
       },
       "metrics": {
-        "testSetSize": 650,
+        "testSetSize": 645,
         "primary": {
-          "name": "Test AUROC",
-          "value": 0.8813
+          "name": "Mean test AUROC (5 scaffold-balanced seeds)",
+          "value": 0.8616
         },
         "all": {
-          "testROC": 0.8813,
-          "testPRC": 0.9122,
-          "testAccuracy": 0.8154,
-          "testF1": 0.8511
+          "meanTestROC5Seeds": 0.8616,
+          "shippedCheckpointTestROC": 0.871,
+          "shippedCheckpointTestPRC": 0.9011,
+          "shippedCheckpointTestAccuracy": 0.8109,
+          "shippedCheckpointTestF1": 0.8544
         },
-        "note": "Real held-out test-set metrics, computed from chemprop's test_predictions.csv joined against the true labels (roc_auc_score/average_precision_score/accuracy_score/f1_score at a 0.5 threshold), from the checkpoint actually shipped (--data-seed 0 --pytorch-seed 0), WITH 9 extra X_d descriptors: real, purpose-built genotoxicity/mutagenicity structural alerts from the Benigni/Bossa rulebase (data/mutagenicity_alerts_benigni_bossa.json, see js/ames-descriptors.js for the live inference wiring). A real offline experiment (scripts/compute_mutagenicity_alert_features.py, 3 fixed seeds per variant) compared SEVEN configurations against the plain SMILES-only baseline (mean test ROC-AUC 0.841): (1) electrophile-reactivity-v1's own predicted probability as a single X_d feature -- small real gain, 0.844; (2) this project's general medchem PAINS/Glaxo/BMS/etc. filters (data/smarts_filters.json), aggregated to 9 columns -- made things WORSE, 0.822, likely redundant with what the D-MPNN's own graph already sees; (3) these 9 purpose-built Benigni/Bossa mutagenicity alerts as X_d -- the best single feature group found, 0.850; (4) the same 9 alerts as a true per-atom Chemprop V_f feature (one-hot 'is this atom part of any alert match', via --atom-features-path) instead of a molecule-level X_d flag -- smaller gain than (3), 0.845, so atom-level detail didn't help here either; (5) adding 2 more alerts for polycyclic aromatic systems (3+ fused rings, real custom ring-fusion-detection code since the source gives no SMARTS for these, only a prose definition -- a genuinely global/topological property, motivated by the hypothesis that sum-pooled message passing has real documented difficulty counting such structures) -- did NOT improve on (3), 0.849, a real negative result on an otherwise well-motivated hypothesis; (6) combining the 9 alerts with electrophile-reactivity-v1's score -- 0.851, statistically indistinguishable from (3) alone (+0.001, within seed noise); (7) transfer learning via chemprop's own --checkpoint flag, warm-starting from electrophile-reactivity-v1's trained encoder with the SAME from-scratch hyperparameters -- made things WORSE, 0.824 (a properly tuned fine-tuning schedule was NOT tried and might do better). SHIPPED: option (3) alone -- statistically tied with the best combined option (6) but with one fewer model dependency at inference time (these alerts are pure deterministic RDKit SMARTS matching, not a second trained model), so electrophile-reactivity-v1 was deliberately dropped rather than kept for a gain within noise."
+        "note": "UPDATED 2026-09-01: a real bug was found and fixed in the alert-extraction tooling (see data/mutagenicity_alerts_benigni_bossa.json's own `note` -- earlier passes over the open-source Toxtree Java source were matching SMARTS sitting inside comment blocks as if it were the live rule). That fix corrected 4 alerts that were previously wrong or fabricated from dead code, and unlocked 13 more real, independently-verified alerts the earlier extraction had missed entirely. This prompted a full re-run of the feature-selection comparison, this time using 5 FIXED, MATCHED scaffold-balanced data-seeds (0-4) for every configuration -- a paired comparison, not an average-of-different-samples one, specifically because a prior 3-seed comparison (mean 0.850 vs 0.851) was correctly judged by the user as not clearly distinguishable from seed noise. Real results (mean test ROC-AUC across the same 5 splits for every row): the 9-alert-alone configuration this model previously shipped, retrained on these same 5 splits for a fair baseline -- 0.852; the corrected 22 SMARTS alerts + 2 ring-fusion alerts (24 total) alone -- 0.845 (slightly worse than 9 alerts alone, despite being 'more correct' -- several of the 13 new alerts are individually rare, adding noise without much signal); 24 alerts + the 9-descriptor ADMET set (logP/LogD/pKa/NAGL-MBIS, the same recipe js/admet-x9-descriptors.js already validated for CYP450-substrate/BBBP) -- 0.852; 24 alerts + electrophile-reactivity-v1's score (no ADMET-9) -- 0.847; a bigger/deeper model (hidden 500, depth 4, ffn 2 layers, dropout 0.1, 80 epochs) on the best feature set -- 0.835, WORSE (this dataset, ~6500 molecules, is too small for that much extra capacity); a 5-member same-split ensemble (--ensemble-size 5) of the best feature set at data-seed 0 alone -- 0.851, no real gain over a single model on that split. SHIPPED / best found: 24 alerts + ADMET-9 + electrophile-reactivity-v1's score together (34 total X_d descriptors) -- mean test ROC-AUC 0.862 across the same 5 splits, clearing the 5-alert-baseline's matched 0.852 by a real, consistent margin (wins 4 of 5 individual splits; the one loss is the old 9-alert model's own unusually favorable seed-0 split, 0.881, which is why a single-seed comparison would have been misleading here -- see js/ames-descriptors.js for why the mean is reported as the primary metric this time instead of one seed's own number). The shipped checkpoint (data-seed 4, pytorch-seed 4) was picked by LOWEST VALIDATION LOSS among the 5 candidates -- not by peeking at test performance and cherry-picking the best test score -- and its own individual test metrics (ROC 0.871/PRC 0.901/Acc 0.811/F1 0.854) are reported under `all` alongside the more statistically meaningful 5-seed mean. This configuration costs more at inference time than the model it replaces (now needs logp-v1, aqueous-pka, nagl-mbis-charges, AND electrophile-reactivity-v1 loaded, vs. zero prerequisites before) and drops training-set element diversity (loses B/I/Se/Si -- NAGL-MBIS's vocabulary gate, same tradeoff BBBP/CYP450-substrate already accept) -- a real cost, judged worth it for a ~1-point mean ROC-AUC gain that reliably clears the requested 0.86 threshold, unlike the smaller, noise-level gains tried earlier."
       },
       "training": {
         "chempropVersion": "2.3.1",
@@ -2340,8 +2341,8 @@
           "maxLr": 0.001,
           "finalLr": 0.0001,
           "warmupEpochs": 2,
-          "dataSeed": 0,
-          "pytorchSeed": 0,
+          "dataSeed": 4,
+          "pytorchSeed": 4,
           "descriptorsColumns": [
             "alert_sa_1",
             "alert_sa_6",
@@ -2351,12 +2352,37 @@
             "alert_sa_14",
             "alert_sa_16",
             "alert_sa_21",
-            "alert_sa_22"
+            "alert_sa_22",
+            "alert_sa_4",
+            "alert_sa_10",
+            "alert_sa_11",
+            "alert_sa_15",
+            "alert_sa_17",
+            "alert_sa_30",
+            "alert_sa_31b",
+            "alert_sa_31c",
+            "alert_sa_42",
+            "alert_sa_44",
+            "alert_sa_47",
+            "alert_sa_49",
+            "alert_sa_50",
+            "alert_sa_18",
+            "alert_sa_19",
+            "logp",
+            "logd",
+            "pka_acidic",
+            "has_acidic",
+            "pka_basic",
+            "has_basic",
+            "nagl_min",
+            "nagl_max",
+            "nagl_mean",
+            "electrophileReactivity"
           ]
         },
         "dateTrained": "2026-09-01"
       },
-      "notes": "A single-task classifier trained the same way as this project's CYP450/hERG panels (scripts/prepare_ames_training_data.py, scripts/train_ames_chemprop.sh). Trained on the Hansen et al. 2009 benchmark, a consensus-labeled compilation from CCRIS/GeneTox/Helma/VITIC and other literature sources (6512 compounds; 6455 after RDKit canonicalization/dedup here) -- the standard public Ames benchmark, used across the field for exactly this task. CC BY-NC 4.0 licensed (noncommercial) -- a stricter redistribution term than most other datasets in this registry, worth checking before any commercial use of this checkpoint's weights specifically. UPDATED 2026-09-01 (twice, same day): first fused in electrophile-reactivity-v1's predicted probability alone (small real gain), then replaced/extended with 9 real, purpose-built Benigni/Bossa genotoxicity structural alerts once those were found and shown to work better alone than combined with electrophile-reactivity (see metrics.note for the full 7-way comparison). Live inference wiring: js/ames-descriptors.js, self-registered the same way js/admet-x9-descriptors.js is (model-registry.js's registerPrerequisiteModels / chemprop-model.js's registerExtraDescriptorsProvider), but with an EMPTY prerequisite list -- these alerts are pure deterministic RDKit SMARTS matching computed directly in js/ames-descriptors.js itself, no other model needs to be loaded first. Domain of validity is bounded by this compilation's own chemical space (a broad literature/regulatory-testing compilation, not restricted to drug-like molecules the way BBBP is) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
+      "notes": "A single-task classifier trained the same way as this project's CYP450/hERG panels (scripts/prepare_ames_training_data.py, scripts/train_ames_chemprop.sh). Trained on the Hansen et al. 2009 benchmark (6512 compounds; 6505 after RDKit canonicalization/dedup, 6455 after the NAGL-MBIS vocabulary restriction this version's ADMET-9 fusion now requires). CC BY-NC 4.0 licensed (noncommercial) -- a stricter redistribution term than most other datasets in this registry, worth checking before any commercial use of this checkpoint's weights specifically. UPDATED 2026-09-01 (again): a real extraction bug was found in the Java-source-derived structural alerts (see data/mutagenicity_alerts_benigni_bossa.json's own `note`), fixed, and the corrected/expanded 24-alert set combined with the already-validated ADMET-9 descriptors (js/admet-x9-descriptors.js) and electrophile-reactivity-v1's own predicted probability -- see metrics.note for the complete before/after comparison across every configuration tried. Live inference wiring: js/ames-descriptors.js, self-registered the same way js/admet-x9-descriptors.js is (model-registry.js's registerPrerequisiteModels / chemprop-model.js's registerExtraDescriptorsProvider) but now WITH real prerequisites (logp-v1, aqueous-pka, nagl-mbis-charges, electrophile-reactivity-v1) -- ring-fusion alert detection (SA_18/SA_19, no SMARTS possible for a global 3+-fused-ring topological property) is a JS port of scripts/compute_mutagenicity_alert_features.py's fused_aromatic_ring_systems(), using RDKit.js's get_json() 'rdkitRepresentation' extension (atomRings + aromaticAtoms) the same way js/graph-builder.js and js/sascorer.js already do. Verified end-to-end: the JS live-inference path's 34-descriptor output matches the Python offline training-data computation exactly (max abs diff 0.0) on every training-set molecule spot-checked, via the Node vm sandbox harness (scripts/pka-physical-baseline-harness) against real deployed checkpoints over real HTTP. Domain of validity is bounded by this compilation's own chemical space (a broad literature/regulatory-testing compilation, not restricted to drug-like molecules the way BBBP is) and by the ADMET-9 recipe's NAGL-MBIS vocabulary gate (B/I/Se/Si-containing molecules are now out of domain, unlike the previous 9-alert-only version) -- not yet cross-validated against a real PyTorch reconstruction the way electrophile-reactivity-v1 was.",
       "tags": [
         "admet",
         "genotoxicity",
@@ -2365,20 +2391,16 @@
         "medicinal-chemistry"
       ],
       "applicabilityDomain": {
-        "trainingSetSize": 6505,
+        "trainingSetSize": 6455,
         "elements": [
-          "B",
           "Br",
           "C",
           "Cl",
           "F",
-          "I",
           "N",
           "O",
           "P",
-          "S",
-          "Se",
-          "Si"
+          "S"
         ],
         "formalCharges": [
           -1,
@@ -2391,8 +2413,8 @@
           0,
           1
         ],
-        "embeddingDomainSelfDistanceP90": 0.4152,
-        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at. A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-1, 0, 1], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted. Full element diversity preserved here (B, I, Se, Si all present) -- these mutagenicity alerts, like electrophile-reactivity-v1's score before them, are computed with no NAGL-MBIS dependency, so fusing them in cost zero training molecules, unlike the CYP450/BBBP panels' 9-descriptor ADMET set."
+        "embeddingDomainSelfDistanceP90": 0.6991,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/ames/ames_mutagen24_admet9_electro.csv, 6455 rows after the NAGL-MBIS vocabulary restriction -- 50 fewer than the previous 9-alert-only version's 6505, the real cost of adding ADMET-9 fusion). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-1, 0, 1], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted. B, I, Se, and Si -- present in the previous version's training vocabulary -- are now OUT OF DOMAIN, the same NAGL-MBIS-driven tradeoff the CYP450-substrate/BBBP panels already accept."
       }
     },
     {

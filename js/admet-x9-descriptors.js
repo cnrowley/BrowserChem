@@ -13,16 +13,23 @@
  * scripts/join_admet_x9_descriptors.py, 3 fixed seeds per variant)
  * showed a real, consistent test-set win -- see each model's own
  * `metrics.note` in model/registry.json for the exact before/after
- * numbers. Two endpoints this same experiment was ALSO tried on did NOT
+ * numbers. One endpoint this same experiment was ALSO tried on did NOT
  * get retrained with it, because the numbers said no: CYP450 INHIBITION
  * (cyp{isoform}-inhibition-v1 -- its real gain needed 3D SASA instead,
- * judged not worth the cost) and Ames mutagenicity (ames-mutagenicity-v1
- * -- these descriptors made it slightly WORSE, since mutagenicity is
- * driven by specific reactive substructures the D-MPNN's own graph
- * already sees, not by bulk physicochemical properties). That negative-
- * result asymmetry is deliberate, not an oversight -- don't add a model
- * to MODEL_IDS below without the same kind of real before/after evidence
- * backing it.
+ * judged not worth the cost). Ames mutagenicity (ames-mutagenicity-v1)
+ * was ALSO tried and initially rejected on this basis (these 9
+ * descriptors alone made it slightly worse than its own mutagenicity-
+ * alert features) -- but it does now use this same recipe, fused
+ * alongside its alert features rather than in place of them; it is
+ * deliberately NOT in MODEL_IDS below because it needs a combined
+ * 34-descriptor vector (22 alert flags + 2 ring-fusion flags + these 9
+ * ADMET descriptors + electrophile-reactivity-v1's score) that this
+ * generic per-model recipe can't express -- see js/ames-descriptors.js,
+ * which calls CC.ADMETDescriptors.compute() directly as one ingredient
+ * of its own single registered provider instead. That negative-result
+ * asymmetry (SASA needed instead, not in addition) is deliberate, not an
+ * oversight -- don't add a model to MODEL_IDS below without the same
+ * kind of real before/after evidence backing it.
  *
  * This is the browser-runtime SIBLING of compute_admet_x9_descriptors.js's
  * offline data-prep logic -- same formulas, same real deployed models
