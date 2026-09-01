@@ -74,12 +74,17 @@ CC.ADMETDescriptors = window.CC.ADMETDescriptors || {};
   // for one-off special-cased inference paths (js/pka-freeenergy-
   // predict.js's own LOGP_MODEL_ID constant, js/app.js's Titration tab
   // checking `pkaSource === 'pka-microstate-freeenergy'` by literal id).
+  // cyp2e1-substrate-v1 is deliberately NOT here as of the 2026-09-01
+  // rework -- it moved to a SMILES-only checkpoint fine-tuned from a
+  // multitask-pretrained encoder instead (see js/app.js/model/registry.json's
+  // cyp2e1-substrate-v1 entry); this recipe's own real ablation showed
+  // ADMET-9 helping CYP2C9 substrate the most of any isoform but never
+  // helped CYP2E1 as much as multitask representation transfer did.
   CC.ADMETDescriptors.MODEL_IDS = [
     'cyp1a2-substrate-v1',
     'cyp2c9-substrate-v1',
     'cyp2c19-substrate-v1',
     'cyp2d6-substrate-v1',
-    'cyp2e1-substrate-v1',
     'cyp3a4-substrate-v1',
     'bbbp-v1',
   ];
