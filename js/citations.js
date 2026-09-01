@@ -213,6 +213,7 @@ CC.Citations = {};
     dataset: 'misc',
     'paper-conference': 'inproceedings',
     preprint: 'unpublished',
+    report: 'techreport',
   };
 
   function bibtexField(name, value) {
@@ -255,6 +256,7 @@ CC.Citations = {};
     dataset: 'DATA',
     'paper-conference': 'CPAPER',
     preprint: 'UNPB',
+    report: 'RPRT',
   };
 
   CC.Citations.toRIS = function (keys) {

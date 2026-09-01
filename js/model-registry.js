@@ -116,7 +116,7 @@ CC.GNN = window.CC.GNN || {};
   let registryBaseUrl = ''; // directory registry.json was fetched from, for resolving relative file paths
   const loadedIds = new Set(); // which registry entries have had their weights loaded (mirrors chemprop-model.js's state, tracked here too so the UI doesn't need to poll it)
 
-  // Registered by a specific engine's own JS (e.g. js/cyp-descriptors.js)
+  // Registered by a specific engine's own JS (e.g. js/admet-x9-descriptors.js)
   // when a registry entry needs OTHER registry model(s) loaded alongside
   // it to actually produce correct predictions -- e.g. a checkpoint with
   // X_d feature fusion whose descriptors are computed from other loaded

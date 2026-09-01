@@ -109,7 +109,7 @@ CC.GNN = window.CC.GNN || {};
 (function () {
   const models = new Map(); // id -> { dims, task, taskType, Wi, WiBias, Wh, WhBias, Wo, WoBias, ffn0, ffn0Bias, ffn1, ffn1Bias, outMean, outScale }
 
-  // Registered by a specific model's own JS (e.g. js/cyp-descriptors.js)
+  // Registered by a specific model's own JS (e.g. js/admet-x9-descriptors.js)
   // to supply the extra runtime descriptors a numExtraDescriptors>0
   // checkpoint needs -- the generic per-molecule loop below has no way
   // to know how to compute them itself. fn(model, molecule) -> a plain

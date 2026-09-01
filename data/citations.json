@@ -4,7 +4,10 @@
     {
       "key": "iupac2026dissociation",
       "type": "dataset",
-      "authors": ["Zheng, Jonathan", "Lafontant-Joseph, Olivier"],
+      "authors": [
+        "Zheng, Jonathan",
+        "Lafontant-Joseph, Olivier"
+      ],
       "title": "IUPAC/Dissociation-Constants: v2.3e",
       "publisher": "Zenodo",
       "year": 2026,
@@ -15,7 +18,18 @@
     {
       "key": "nevolianis2025anionsolvation",
       "type": "article-journal",
-      "authors": ["Nevolianis, Thomas", "Zheng, Jonathan W.", "Müller, Simon", "Baumann, Matthias", "Tshepelevitsh, Sofja", "Kaljurand, Ivari", "Leito, Ivo", "Smirnova, Irina", "Green, William H.", "Leonhard, Kai"],
+      "authors": [
+        "Nevolianis, Thomas",
+        "Zheng, Jonathan W.",
+        "M\u00fcller, Simon",
+        "Baumann, Matthias",
+        "Tshepelevitsh, Sofja",
+        "Kaljurand, Ivari",
+        "Leito, Ivo",
+        "Smirnova, Irina",
+        "Green, William H.",
+        "Leonhard, Kai"
+      ],
       "title": "Solvation Free Energies of Anions: From Curated Reference Data to Predictive Models",
       "journal": "Journal of the American Chemical Society",
       "year": 2025,
@@ -25,7 +39,12 @@
     {
       "key": "siposszabo2026pkahub",
       "type": "article-journal",
-      "authors": ["Sipos-Szabó, Levente", "Bajusz, Dávid", "Balogh, György T.", "Keserű, György M."],
+      "authors": [
+        "Sipos-Szab\u00f3, Levente",
+        "Bajusz, D\u00e1vid",
+        "Balogh, Gy\u00f6rgy T.",
+        "Keser\u0171, Gy\u00f6rgy M."
+      ],
       "title": "Benchmarking pKa Prediction Algorithms against an Extensive, Public Data Set",
       "journal": "Journal of Chemical Information and Modeling",
       "year": 2026,
@@ -37,7 +56,10 @@
     {
       "key": "canogil2024proteinreactive",
       "type": "article-journal",
-      "authors": ["Cano Gil, Victor H.", "Rowley, Christopher N."],
+      "authors": [
+        "Cano Gil, Victor H.",
+        "Rowley, Christopher N."
+      ],
       "title": "Graph neural networks for identifying protein reactive electrophiles",
       "journal": "Digital Discovery",
       "year": 2024,
@@ -48,30 +70,44 @@
     },
     {
       "key": "ree2024pkalculator",
-      "type": "preprint",
-      "authors": ["Ree, Nicolai", "et al."],
+      "type": "article-journal",
+      "authors": [
+        "Borup, Rasmus M.",
+        "Ree, Nicolai",
+        "Jensen, Jan H."
+      ],
       "title": "pKalculator: A pKa predictor for C-H bonds",
-      "journal": "ChemRxiv",
+      "journal": "Beilstein Journal of Organic Chemistry",
       "year": 2024,
-      "doi": "10.26434/chemrxiv-2024-56h5h",
-      "note": "ChemRxiv preprint, not yet confirmed as journal-published; author list beyond Ree not yet verified. Source of both the pka-ch-nagl model's method and its training data (jensengroup/pKalculator) -- verified directly from PKA_INTEGRATION.md"
+      "volume": "20",
+      "pages": "1614-1622",
+      "doi": "10.3762/bjoc.20.144",
+      "note": "Verified live via a web search (Beilstein-hosted, beilstein-journals.org/bjoc/articles/20/144) -- published 2024-07-16, superseding the earlier ChemRxiv preprint (10.26434/chemrxiv-2024-56h5h) this entry previously cited as 'not yet confirmed as journal-published'; full author list now confirmed. Source of both the pka-ch-nagl model's method and its training data (jensengroup/pKalculator) -- verified directly from PKA_INTEGRATION.md"
     },
     {
       "key": "Cao2024dSASA",
       "type": "article-journal",
-      "authors": ["Cao, Xin", "Hummel, Michelle H.", "Wang, Yuzhang", "Simmerling, Carlos", "Coutsias, Evangelos A."],
+      "authors": [
+        "Cao, Xin",
+        "Hummel, Michelle H.",
+        "Wang, Yuzhang",
+        "Simmerling, Carlos",
+        "Coutsias, Evangelos A."
+      ],
       "title": "Exact Analytical Algorithm for the Solvent-Accessible Surface Area and Derivatives in Implicit Solvent Molecular Simulations on GPUs",
       "journal": "Journal of Chemical Theory and Computation",
       "year": 2024,
       "volume": "20",
-      "pages": "4456–4468",
+      "pages": "4456\u20134468",
       "doi": "10.1021/acs.jctc.3c01366",
       "note": "Confirmed directly from the local PDF (ct3c01366.pdf) header. Basis for js/dsasa.js's analytical SASA/gradient construction"
     },
     {
       "key": "Hummel2015Thesis",
       "type": "thesis",
-      "authors": ["Hummel, Michelle Hatch"],
+      "authors": [
+        "Hummel, Michelle Hatch"
+      ],
       "title": "Delaunay-Laguerre Geometry For Macromolecular Modeling And Implicit Solvation",
       "school": "University of New Mexico",
       "year": 2015,
@@ -81,7 +117,10 @@
     {
       "key": "RDKitSoftware",
       "type": "software",
-      "authors": ["Landrum, Greg", "et al."],
+      "authors": [
+        "Landrum, Greg",
+        "et al."
+      ],
       "title": "RDKit: Open-source cheminformatics",
       "publisher": "Zenodo",
       "url": "https://www.rdkit.org",
@@ -91,7 +130,9 @@
     {
       "key": "nmrexp2025",
       "type": "dataset",
-      "authors": ["et al."],
+      "authors": [
+        "et al."
+      ],
       "title": "NMRexp",
       "publisher": "Zenodo",
       "year": 2025,
@@ -101,7 +142,12 @@
     {
       "key": "Mansouri2018OPERA",
       "type": "article-journal",
-      "authors": ["Mansouri, Kamel", "Grulke, Christopher M.", "Judson, Richard S.", "Williams, Antony J."],
+      "authors": [
+        "Mansouri, Kamel",
+        "Grulke, Christopher M.",
+        "Judson, Richard S.",
+        "Williams, Antony J."
+      ],
       "title": "OPERA models for predicting physicochemical properties and environmental fate endpoints",
       "journal": "Journal of Cheminformatics",
       "year": 2018,
@@ -113,19 +159,30 @@
     {
       "key": "zang2017vaporpressure",
       "type": "article-journal",
-      "authors": ["Zang, Qingda", "Mansouri, Kamel", "Williams, Antony J.", "Judson, Richard S.", "Allen, David G.", "Casey, Warren M.", "Kleinstreuer, Nicole C."],
+      "authors": [
+        "Zang, Qingda",
+        "Mansouri, Kamel",
+        "Williams, Antony J.",
+        "Judson, Richard S.",
+        "Allen, David G.",
+        "Casey, Warren M.",
+        "Kleinstreuer, Nicole C."
+      ],
       "title": "In Silico Prediction of Physicochemical Properties of Environmental Chemicals Using Molecular Fingerprints and Machine Learning",
       "journal": "Journal of Chemical Information and Modeling",
       "year": 2017,
       "volume": "57",
-      "pages": "36–49",
+      "pages": "36\u201349",
       "doi": "10.1021/acs.jcim.6b00625",
       "note": "Verified via PubMed (PMID 28006899) and the ACS Publications page (pubs.acs.org/doi/10.1021/acs.jcim.6b00625). This is the OPERA vapor-pressure endpoint's source paper -- vapor-pressure-v1 trains on a derived CSV (gkxiao/vapor-pressure), not this paper's own data files directly"
     },
     {
       "key": "Baltruschat2020",
       "type": "article-journal",
-      "authors": ["Baltruschat, Marcel", "Czodrowski, Paul"],
+      "authors": [
+        "Baltruschat, Marcel",
+        "Czodrowski, Paul"
+      ],
       "title": "Machine learning meets pKa",
       "journal": "F1000Research",
       "year": 2020,
@@ -137,7 +194,11 @@
     {
       "key": "Sorkun2019AqSolDB",
       "type": "article-journal",
-      "authors": ["Sorkun, Murat Cihan", "Khetan, Abhishek", "Er, Süleyman"],
+      "authors": [
+        "Sorkun, Murat Cihan",
+        "Khetan, Abhishek",
+        "Er, S\u00fcleyman"
+      ],
       "title": "AqSolDB, a curated reference set of aqueous solubility and 2D descriptors for a diverse set of compounds",
       "journal": "Scientific Data",
       "year": 2019,
@@ -149,31 +210,54 @@
     {
       "key": "Veith2009",
       "type": "article-journal",
-      "authors": ["Veith, Henrike", "Southall, Noel", "Huang, Ruili", "James, Tim", "Fayne, Darren", "Artemenko, Natalia", "Shen, Min", "Inglese, James", "Austin, Christopher P.", "Lloyd, David G.", "Auld, Douglas S."],
+      "authors": [
+        "Veith, Henrike",
+        "Southall, Noel",
+        "Huang, Ruili",
+        "James, Tim",
+        "Fayne, Darren",
+        "Artemenko, Natalia",
+        "Shen, Min",
+        "Inglese, James",
+        "Austin, Christopher P.",
+        "Lloyd, David G.",
+        "Auld, Douglas S."
+      ],
       "title": "Comprehensive characterization of cytochrome P450 isozyme selectivity across chemical libraries",
       "journal": "Nature Biotechnology",
       "year": 2009,
       "volume": "27",
-      "pages": "1050–1055",
+      "pages": "1050\u20131055",
       "doi": "10.1038/nbt.1581",
       "note": "Verified via nature.com and PMC (PMC2783980). Source of PubChem BioAssay AID 1851, the training data for the cyp{1a2,2c9,2c19,2d6,3a4}-inhibition-v1 models"
     },
     {
       "key": "Sowndarya2023",
       "type": "article-journal",
-      "authors": ["Sowndarya S. V., Shree", "Kim, Yeonjoon", "Kim, Seonah", "St. John, Peter C.", "Paton, Robert S."],
+      "authors": [
+        "Sowndarya S. V., Shree",
+        "Kim, Yeonjoon",
+        "Kim, Seonah",
+        "St. John, Peter C.",
+        "Paton, Robert S."
+      ],
       "title": "Expansion of bond dissociation prediction with machine learning to medicinally and environmentally relevant chemical space",
       "journal": "Digital Discovery",
       "year": 2023,
       "volume": "2",
-      "pages": "1900–1910",
+      "pages": "1900\u20131910",
       "doi": "10.1039/D3DD00169E",
       "note": "Verified via pubs.rsc.org and OSTI.GOV (osti.gov/pages/biblio/2203761). Source of BDE-db2 (patonlab/BDE-db2), the bde-chemprop-v1 training data"
     },
     {
       "key": "Ramakrishnan2014",
       "type": "article-journal",
-      "authors": ["Ramakrishnan, Raghunathan", "Dral, Pavlo O.", "Rupp, Matthias", "von Lilienfeld, O. Anatole"],
+      "authors": [
+        "Ramakrishnan, Raghunathan",
+        "Dral, Pavlo O.",
+        "Rupp, Matthias",
+        "von Lilienfeld, O. Anatole"
+      ],
       "title": "Quantum chemistry structures and properties of 134 kilo molecules",
       "journal": "Scientific Data",
       "year": 2014,
@@ -185,7 +269,11 @@
     {
       "key": "bradley2014meltingpoint",
       "type": "dataset",
-      "authors": ["Bradley, Jean-Claude", "Lang, Andrew", "Williams, Antony"],
+      "authors": [
+        "Bradley, Jean-Claude",
+        "Lang, Andrew",
+        "Williams, Antony"
+      ],
       "title": "Jean-Claude Bradley Double Plus Good (Highly Curated and Validated) Melting Point Dataset",
       "publisher": "figshare",
       "year": 2014,
@@ -195,7 +283,12 @@
     {
       "key": "Xu2025",
       "type": "article-journal",
-      "authors": ["Ni, Yu-Hao", "Su, Yu-Wei", "Yang, Shu-Chi", "et al."],
+      "authors": [
+        "Ni, Yu-Hao",
+        "Su, Yu-Wei",
+        "Yang, Shu-Chi",
+        "et al."
+      ],
       "title": "Curated CYP450 Interaction Dataset: Covering the Majority of Phase I Drug Metabolism",
       "journal": "Scientific Data",
       "year": 2025,
@@ -207,31 +300,60 @@
     {
       "key": "Heid2024Chemprop",
       "type": "article-journal",
-      "authors": ["Heid, Esther", "Greenman, Kevin P.", "Chung, Yunsie", "Li, Shih-Cheng", "Graff, David E.", "Vermeire, Florence H.", "Wu, Haoyang", "Green, William H.", "McGill, Charles J."],
+      "authors": [
+        "Heid, Esther",
+        "Greenman, Kevin P.",
+        "Chung, Yunsie",
+        "Li, Shih-Cheng",
+        "Graff, David E.",
+        "Vermeire, Florence H.",
+        "Wu, Haoyang",
+        "Green, William H.",
+        "McGill, Charles J."
+      ],
       "title": "Chemprop: A Machine Learning Package for Chemical Property Prediction",
       "journal": "Journal of Chemical Information and Modeling",
       "year": 2024,
       "volume": "64",
-      "pages": "9–17",
+      "pages": "9\u201317",
       "doi": "10.1021/acs.jcim.3c01250",
       "note": "Verified via ACS Publications and PubMed (PMID 38147829). The Chemprop v2 package every chemprop-engine model in this app (registry.json's 'engine': 'chemprop') is built on"
     },
     {
       "key": "Yang2019DMPNN",
       "type": "article-journal",
-      "authors": ["Yang, Kevin", "Swanson, Kyle", "Jin, Wengong", "Coley, Connor", "Eiden, Philipp", "Gao, Hua", "Guzman-Perez, Angel", "Hopper, Timothy", "Kelley, Brian", "Mathea, Miriam", "Palmer, Andrew", "Settels, Volker", "Jaakkola, Tommi", "Jensen, Klavs", "Barzilay, Regina"],
+      "authors": [
+        "Yang, Kevin",
+        "Swanson, Kyle",
+        "Jin, Wengong",
+        "Coley, Connor",
+        "Eiden, Philipp",
+        "Gao, Hua",
+        "Guzman-Perez, Angel",
+        "Hopper, Timothy",
+        "Kelley, Brian",
+        "Mathea, Miriam",
+        "Palmer, Andrew",
+        "Settels, Volker",
+        "Jaakkola, Tommi",
+        "Jensen, Klavs",
+        "Barzilay, Regina"
+      ],
       "title": "Analyzing Learned Molecular Representations for Property Prediction",
       "journal": "Journal of Chemical Information and Modeling",
       "year": 2019,
       "volume": "59",
-      "pages": "3370–3388",
+      "pages": "3370\u20133388",
       "doi": "10.1021/acs.jcim.9b00237",
       "note": "Verified via ACS Publications and PubMed (PMID 31361484). The original D-MPNN (bond-centered message passing) architecture js/dmpnn.js reimplements"
     },
     {
       "key": "Vermeire2021",
       "type": "article-journal",
-      "authors": ["Vermeire, Florence H.", "Green, William H."],
+      "authors": [
+        "Vermeire, Florence H.",
+        "Green, William H."
+      ],
       "title": "Transfer learning for solvation free energies: From quantum chemistry to experiments",
       "journal": "Chemical Engineering Journal",
       "year": 2021,
@@ -243,7 +365,11 @@
     {
       "key": "NCGC-AID588834",
       "type": "dataset",
-      "authors": ["NIH Chemical Genomics Center", "NIEHS", "National Toxicology Program"],
+      "authors": [
+        "NIH Chemical Genomics Center",
+        "NIEHS",
+        "National Toxicology Program"
+      ],
       "title": "qHTS assay for small molecule inhibitors of the human ether-a-go-go related gene (hERG) channel, confirmatory",
       "publisher": "PubChem BioAssay",
       "year": 2010,
@@ -253,7 +379,15 @@
     {
       "key": "nagl-mbis-software",
       "type": "article-journal",
-      "authors": ["Adams, Charlie", "Horton, Joshua T.", "Wang, Lily", "Boothroyd, Simon", "Mobley, David L.", "Wright, David W.", "Cole, Daniel J."],
+      "authors": [
+        "Adams, Charlie",
+        "Horton, Joshua T.",
+        "Wang, Lily",
+        "Boothroyd, Simon",
+        "Mobley, David L.",
+        "Wright, David W.",
+        "Cole, Daniel J."
+      ],
       "title": "A Graph Neural Network Charge Model Targeting Accurate Electrostatic Properties of Organic Molecules",
       "journal": "Journal of Chemical Theory and Computation",
       "year": 2025,
@@ -263,19 +397,30 @@
     {
       "key": "Devereux2020ANI2x",
       "type": "article-journal",
-      "authors": ["Devereux, Christian", "et al."],
+      "authors": [
+        "Devereux, Christian",
+        "et al."
+      ],
       "title": "Extending the Applicability of the ANI Deep Learning Molecular Potential to Sulfur and Halogens",
       "journal": "Journal of Chemical Theory and Computation",
       "year": 2020,
       "volume": "16",
-      "pages": "4192–4202",
+      "pages": "4192\u20134202",
       "doi": "10.1021/acs.jctc.0c00121",
       "note": "Verified via ACS Publications and PubMed (PMID 32543858); full author list beyond Devereux not yet verified (paper is known to include Smith, Barros, Zubatyuk, Isayev, Roitberg among others -- confirm before formal citation). The ANI-2x potential ani2x-model.js runs (via the torchani-trained weights)"
     },
     {
       "key": "Ganea2021GeoMol",
       "type": "paper-conference",
-      "authors": ["Ganea, Octavian-Eugen", "Pattanaik, Lagnajit", "Coley, Connor W.", "Barzilay, Regina", "Jensen, Klavs F.", "Green, William H.", "Jaakkola, Tommi S."],
+      "authors": [
+        "Ganea, Octavian-Eugen",
+        "Pattanaik, Lagnajit",
+        "Coley, Connor W.",
+        "Barzilay, Regina",
+        "Jensen, Klavs F.",
+        "Green, William H.",
+        "Jaakkola, Tommi S."
+      ],
       "title": "GeoMol: Torsional Geometric Generation of Molecular 3D Conformer Ensembles",
       "booktitle": "Advances in Neural Information Processing Systems 34 (NeurIPS 2021)",
       "year": 2021,
@@ -285,67 +430,89 @@
     {
       "key": "Pracht2020CREST",
       "type": "article-journal",
-      "authors": ["Pracht, Philipp", "Bohle, Fabian", "Grimme, Stefan"],
+      "authors": [
+        "Pracht, Philipp",
+        "Bohle, Fabian",
+        "Grimme, Stefan"
+      ],
       "title": "Automated exploration of the low-energy chemical space with fast quantum chemical methods",
       "journal": "Physical Chemistry Chemical Physics",
       "year": 2020,
       "volume": "22",
-      "pages": "7169–7192",
+      "pages": "7169\u20137192",
       "doi": "10.1039/C9CP06869D",
       "note": "Verified via pubs.rsc.org and ADS. The real CREST/CREGEN algorithm js/conformer-search.js's conformer search is inspired by (see CONFORMER_SEARCH.md for what's a literal port vs. reimplemented)"
     },
     {
       "key": "Baell2010PAINS",
       "type": "article-journal",
-      "authors": ["Baell, Jonathan B.", "Holloway, Georgina A."],
+      "authors": [
+        "Baell, Jonathan B.",
+        "Holloway, Georgina A."
+      ],
       "title": "New Substructure Filters for Removal of Pan Assay Interference Compounds (PAINS) from Screening Libraries and for Their Exclusion in Bioassays",
       "journal": "Journal of Medicinal Chemistry",
       "year": 2010,
       "volume": "53",
-      "pages": "2719–2740",
+      "pages": "2719\u20132740",
       "doi": "10.1021/jm901137j",
       "note": "Verified via ACS Publications. The original PAINS filter set among the ~1250 SMARTS filters in data/smarts_filters.json (via github.com/PatWalters/rd_filters, see THIRD_PARTY_NOTICES.md)"
     },
     {
       "key": "Boothroyd2023Sage",
       "type": "article-journal",
-      "authors": ["Boothroyd, Simon", "et al."],
+      "authors": [
+        "Boothroyd, Simon",
+        "et al."
+      ],
       "title": "Development and Benchmarking of Open Force Field 2.0.0: The Sage Small Molecule Force Field",
       "journal": "Journal of Chemical Theory and Computation",
       "year": 2023,
       "volume": "19",
-      "pages": "3251–3275",
+      "pages": "3251\u20133275",
       "doi": "10.1021/acs.jctc.3c00039",
       "note": "Verified via ACS Publications and PubMed (PMID 37167319); full author list beyond Boothroyd not yet verified (known to include Behara, Madin, and others -- confirm before formal citation). The Sage 2.1.0 force field js/openff-forcefield.js applies"
     },
     {
       "key": "Rego2015ThreeDmol",
       "type": "article-journal",
-      "authors": ["Rego, Nicholas", "Koes, David"],
+      "authors": [
+        "Rego, Nicholas",
+        "Koes, David"
+      ],
       "title": "3Dmol.js: molecular visualization with WebGL",
       "journal": "Bioinformatics",
       "year": 2015,
       "volume": "31",
-      "pages": "1322–1324",
+      "pages": "1322\u20131324",
       "doi": "10.1093/bioinformatics/btu829",
       "note": "Verified via academic.oup.com. The library js/viewer3d.js wraps for the 3D view tab"
     },
     {
       "key": "Bickerton2012QED",
       "type": "article-journal",
-      "authors": ["Bickerton, G. Richard", "Paolini, Gaia V.", "Besnard, Jérémy", "Muresan, Sorel", "Hopkins, Andrew L."],
+      "authors": [
+        "Bickerton, G. Richard",
+        "Paolini, Gaia V.",
+        "Besnard, J\u00e9r\u00e9my",
+        "Muresan, Sorel",
+        "Hopkins, Andrew L."
+      ],
       "title": "Quantifying the chemical beauty of drugs",
       "journal": "Nature Chemistry",
       "year": 2012,
       "volume": "4",
-      "pages": "90–98",
+      "pages": "90\u201398",
       "doi": "10.1038/nchem.1243",
       "note": "Verified via nature.com. js/qed.js is a from-scratch, bit-exact port of RDKit's own QED implementation of this paper's method"
     },
     {
       "key": "Ertl2009SAScore",
       "type": "article-journal",
-      "authors": ["Ertl, Peter", "Schuffenhauer, Ansgar"],
+      "authors": [
+        "Ertl, Peter",
+        "Schuffenhauer, Ansgar"
+      ],
       "title": "Estimation of synthetic accessibility score of drug-like molecules based on molecular complexity and fragment contributions",
       "journal": "Journal of Cheminformatics",
       "year": 2009,
@@ -357,24 +524,121 @@
     {
       "key": "OCSRGlyphSoftware",
       "type": "preprint",
-      "authors": ["Andonian, Alex", "Rodriques, Samuel G.", "White, Andrew D.", "Narayanan, Siddharth M."],
+      "authors": [
+        "Andonian, Alex",
+        "Rodriques, Samuel G.",
+        "White, Andrew D.",
+        "Narayanan, Siddharth M."
+      ],
       "title": "MarkushGlyph and OCSRGlyph: Improved Chemical Structure Recognition",
       "journal": "arXiv",
       "year": 2026,
       "url": "https://arxiv.org/abs/2607.28532",
-      "note": "Verified via arxiv.org (2607.28532). The published paper behind OCSRGlyph, the model js/ocsrglyph-model.js runs for the Image → Structure tab (github.com/EdisonScientific/glyph)"
+      "note": "Verified via arxiv.org (2607.28532). The published paper behind OCSRGlyph, the model js/ocsrglyph-model.js runs for the Image \u2192 Structure tab (github.com/EdisonScientific/glyph)"
     },
     {
       "key": "nmrshiftdb2",
       "type": "article-journal",
-      "authors": ["Steinbeck, Christoph", "Kuhn, Stefan"],
+      "authors": [
+        "Steinbeck, Christoph",
+        "Kuhn, Stefan"
+      ],
       "title": "NMRShiftDB - compound identification and structure elucidation support through a free community-built web database",
       "journal": "Phytochemistry",
       "year": 2004,
       "volume": "65",
-      "pages": "2711–2717",
+      "pages": "2711\u20132717",
       "doi": "10.1016/j.phytochem.2004.08.027",
       "note": "IMPERFECT MATCH, flagged honestly: this is the original NMRShiftDB paper (2004); no single canonical paper specifically for its 'nmrshiftdb2' successor (the version this app's nmr-{13c,1h,19f} models actually source data from, per NMR_INTEGRATION.md) was confidently identified -- the closest candidate found was a 2012 J. Cheminform. conference-supplement poster abstract (DOI 10.1186/1758-2946-4-S1-P52), not a full paper. Verify before citing formally"
+    },
+    {
+      "key": "Hansen2009Ames",
+      "type": "article-journal",
+      "authors": [
+        "Hansen, Katja",
+        "Mika, Sebastian",
+        "Schroeter, Timon",
+        "Sutter, Andreas",
+        "ter Laak, Antonius",
+        "Steger-Hartmann, Thomas",
+        "Heinrich, Nikolaus",
+        "Muller, Klaus-Robert"
+      ],
+      "title": "Benchmark Data Set for in Silico Prediction of Ames Mutagenicity",
+      "journal": "Journal of Chemical Information and Modeling",
+      "year": 2009,
+      "volume": "49",
+      "issue": "9",
+      "pages": "2077-2081",
+      "doi": "10.1021/ci900161g",
+      "note": "Verified via live CrossRef lookup (api.crossref.org/works/10.1021/ci900161g) 2026-09-01. Data (6512 compounds, SMILES + Ames mutagenicity outcome) fetched from this paper's own ACS Figshare supporting-information archive (figshare article 2825590, download https://ndownloader.figshare.com/files/4523278), CC BY-NC 4.0 licensed -- noncommercial use only, see model/registry.json's ames-mutagenicity-v1 entry."
+    },
+    {
+      "key": "Martins2012BBBP",
+      "type": "article-journal",
+      "authors": [
+        "Martins, Ines Filipa",
+        "Teixeira, Ana L.",
+        "Pinheiro, Luis",
+        "Falcao, Andre O."
+      ],
+      "title": "A Bayesian Approach to in Silico Blood-Brain Barrier Penetration Modeling",
+      "journal": "Journal of Chemical Information and Modeling",
+      "year": 2012,
+      "volume": "52",
+      "issue": "6",
+      "pages": "1686-1697",
+      "doi": "10.1021/ci300124c",
+      "note": "Verified via live CrossRef lookup (api.crossref.org/works/10.1021/ci300124c) 2026-09-01. Data (~2050 compounds, binary BBB-penetration label) fetched here via DeepChem's public MoleculeNet mirror (https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/BBBP.csv, the standard redistribution point for this MoleculeNet dataset -- see Wu, Z. et al. 'MoleculeNet: A Benchmark for Molecular Machine Learning.' Chem. Sci. 2018, 9, 513-530, DOI 10.1039/C7SC02664A), not directly from the original paper's own supporting information."
+    },
+    {
+      "key": "Meng2021B3DB",
+      "type": "article-journal",
+      "authors": [
+        "Meng, Fanwang",
+        "Xi, Yang",
+        "Huang, Jinfeng",
+        "Ayers, Paul W."
+      ],
+      "title": "A curated diverse molecular database of blood-brain barrier permeability with chemical descriptors",
+      "journal": "Scientific Data",
+      "year": 2021,
+      "volume": "8",
+      "pages": "289",
+      "doi": "10.1038/s41597-021-01069-5",
+      "note": "Verified via live CrossRef lookup (api.crossref.org/works/10.1038/s41597-021-01069-5) 2026-09-01. Data (7809 compounds, binary BBB+/BBB- label) fetched directly from the paper's own GitHub data repository (github.com/theochem/B3DB, B3DB_classification.tsv), the authoritative distribution point for this dataset."
+    },
+    {
+      "key": "Ferrari2010Mutagenicity",
+      "type": "article-journal",
+      "authors": [
+        "Ferrari, Thomas",
+        "Gini, Giuseppina"
+      ],
+      "title": "An open source multistep model to predict mutagenicity from statistical analysis and relevant structural alerts",
+      "journal": "Chemistry Central Journal",
+      "year": 2010,
+      "volume": "4",
+      "issue": "Suppl 1",
+      "pages": "S2",
+      "doi": "10.1186/1752-153X-4-S1-S2",
+      "note": "Verified via live CrossRef lookup (api.crossref.org/works/10.1186/1752-153X-4-S1-S2) 2026-09-01. Open access (this journal later rebranded as BMC Chemistry). The 9 SMARTS strings in data/mutagenicity_alerts_benigni_bossa.json are reproduced from this paper's own Additional File 4 (13065_2010_260_MOESM4_ESM.pdf), fetched directly from Springer's static-content server, not a third-party transcription."
+    },
+    {
+      "key": "BenigniBossa2008Rulebase",
+      "type": "report",
+      "authors": [
+        "Benigni, Romualdo",
+        "Bossa, Cecilia",
+        "Jeliazkova, Nina G.",
+        "Netzeva, Tatiana I.",
+        "Worth, Andrew P."
+      ],
+      "title": "The Benigni/Bossa rulebase for mutagenicity and carcinogenicity - a module of Toxtree",
+      "year": 2008,
+      "note": "The original rulebase (implemented as the open-source Toxtree tool, github.com/ideaconsult/toxtree-mirror, LGPL 2.1) that data/mutagenicity_alerts_benigni_bossa.json's 9 alerts are a documented subset of -- cited by Ferrari2010Mutagenicity (the paper this project's own SMARTS strings were directly sourced from). No DOI found for this technical report; not independently re-verified beyond the citation Ferrari & Gini give for it.",
+      "institution": "European Commission - Joint Research Centre",
+      "number": "EUR 23241 EN"
     }
   ]
 }

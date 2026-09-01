@@ -3,9 +3,10 @@
 ## What this is
 
 A from-scratch, client-side port of [jensengroup/pKalculator](https://github.com/jensengroup/pKalculator)
-(Ree et al., "pKalculator: A pKa predictor for C-H bonds", ChemRxiv 2024,
-[10.26434/chemrxiv-2024-56h5h](https://chemrxiv.org/doi/10.26434/chemrxiv-2024-56h5h),
-MIT-licensed) — predicts the pKa of individual C-H bonds (deprotonation to
+(Borup, Ree & Jensen, "pKalculator: A pKa predictor for C-H bonds",
+*Beilstein J. Org. Chem.* 2024, 20, 1614-1622,
+[10.3762/bjoc.20.144](https://doi.org/10.3762/bjoc.20.144), MIT-licensed)
+— predicts the pKa of individual C-H bonds (deprotonation to
 a stabilized carbanion), per candidate carbon site, entirely in the
 browser. Scoped to carbon acids only; a general titratable-group (O-H,
 N-H, etc.) pKa predictor is a separate, not-yet-built feature.
@@ -93,6 +94,86 @@ About 13-16% worse than the original — the real, expected cost of
 swapping a semiempirical-QM-derived charge for a GNN-predicted
 approximation of one. Test site count differs slightly because 16
 molecules (Se/Si/I) can't be scored by NAGL at all.
+
+Against the rest of the published C-H-acidity-specific ML literature
+(not general aqueous pKa, a much easier problem most other pKa models
+target -- see below), checked against the real papers, not abstracts,
+2026-08-30:
+
+| | Charge descriptor | MAE | RMSE |
+|---|---|---|---|
+| Grzybowski/Roszak GCNN (*J. Am. Chem. Soc.* 2019, 141, 17142-17149, 10.1021/jacs.9b05895) | Gasteiger (empirical equilibration, no QM) | 2.1 | -- |
+| An/Liu/Cai/Shao EEGpKa (*J. Chem. Inf. Model.* 2024, 64, 2383-2392, 10.1021/acs.jcim.3c00958), DMSO set | Gasteiger partial charge (one of several plain atom features) | 2.03 | 2.81 |
+| **This app (NAGL-MBIS charges)** | NAGL-MBIS (GNN-predicted approximation of real ab initio MBIS charges) | **1.40** | **2.49** |
+| pKalculator (this app's own source model) | real CM5 (GFN1-xTB semiempirical QM, via an actual `xtb` run) | 1.24 | 2.15 |
+
+Solidly mid-pack against dedicated published methods for this specific,
+harder-than-average subproblem. The other direction worth being honest
+about: none of the general-purpose aqueous pKa models in the broader
+literature (e.g. GraFpKa, or this app's own `pka-microstate-freeenergy`
+and its Uni-pKa-lineage peers -- see
+`PKA_MICROSTATE_FREEENERGY_INTEGRATION.md`) are a fair comparison here at
+all, MAE 0.4-0.6 and all -- general O-H/N-H pKa is a substantially easier
+target (smaller dynamic range, far more experimental training data,
+usually measured directly in water) than DMSO-scale carbanion acidity.
+
+## Could this be improved further?
+
+Checked against the real papers (not secondhand summaries) on
+2026-08-30 -- one of the two ideas floated earlier turned out not to
+hold up, which is itself worth recording rather than quietly dropping.
+
+**Data augmentation does NOT look promising here, on closer reading.**
+An/Liu et al.'s EEGpKa isn't literally synthesizing new (structure, pKa)
+training examples -- it's a self-supervised PRETRAINING step: H atoms on
+CH3/CH2/CH groups get replaced with 30 real substituents spanning
+known +I/-I/+C/-C electronic effects (their own Table 2), and the
+message-passing unit is pretrained to predict four auxiliary targets
+(substituent-to-ionization-site distance, which of the 30 substituents,
+whether it strengthens/weakens acidity, and I- vs. C-type effect) before
+being fine-tuned on the real pKa task. It DOES measurably help in a
+low-data regime -- their own ablation (Figure 9) shows a real accuracy
+gain over the same architecture without pretraining at 20%/33% of
+their training set. But their absolute numbers on the DMSO benchmark
+this app's own model targets are MAE 2.03 / RMSE 2.81 (their own
+dataset1, 671 iBonD compounds -- not pKalculator's dataset, no direct
+train/test overlap with this app's own split either) -- worse than what
+`pka-ch-nagl` already gets (1.40), and only marginally better than
+Grzybowski's original 2019 GCNN it was implicitly benchmarked against.
+Layering this pretraining step onto the existing LightGBM + NAGL-MBIS
+pipeline is not obviously going to help when the technique's own
+published ceiling is already behind this app's current number.
+
+**Charge-descriptor quality is the better-supported lever, now with a
+real three-point trend instead of a two-point coincidence.** All three
+papers checked in full report which atomic-charge descriptor they used,
+and the ranking tracks charge quality exactly:
+
+- Gasteiger (crude, empirical, no QM at all) → MAE 2.03-2.1
+- NAGL-MBIS (this app; a GNN's learned approximation of real ab initio MBIS charges) → MAE 1.40
+- CM5 (real semiempirical-QM charges, an actual GFN1-xTB calculation) → MAE 1.24
+
+Roszak et al.'s own ablation makes this causal, not just correlational,
+within a single fixed architecture: removing their Gasteiger-charge
+feature (keeping everything else the same) costs them 0.4 pKa units of
+MAE on its own. The concrete, scoped next step this points to:
+**recalibrate/fine-tune NAGL-MBIS's own weights specifically against
+real CM5 charges on this dataset's 3910 real C-H sites**, rather than
+trusting NAGL's existing generic MBIS-charge training (fit on a broader,
+unrelated molecule population) to transfer well to this specific
+downstream task untouched. This keeps the deployed model exactly as
+browser-compatible as today (NAGL-MBIS still runs client-side at
+inference time -- only its training weights would change, the same way
+`pka-microstate-freeenergy`'s own checkpoint gets retrained without
+touching runtime code) while directly targeting the one variable that
+now has real, converging evidence behind it. Not yet attempted, and not
+free: it needs a real `xtb` install (not present on this dev machine
+as of this check -- would need `conda install -c conda-forge xtb` or
+equivalent) to generate the real CM5 reference charges to fine-tune
+against, then an actual retraining pass with its own real risk of not
+paying off (see this app's own `metrics.note` fields elsewhere in
+`model/registry.json` for two disclosed examples, on this project's
+OTHER pKa model, of a principled-looking fix making things worse).
 
 ## JS runtime pieces
 
