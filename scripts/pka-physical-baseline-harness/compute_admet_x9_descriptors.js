@@ -1,25 +1,34 @@
 /**
- * compute_cyp_descriptors.js
+ * compute_admet_x9_descriptors.js
  *
- * Computes real, model-derived ADMET descriptors (logP, LogD at pH 7,
- * most-acidic/most-basic site pKa, NAGL-MBIS partial-charge summary
- * stats) for every unique molecule across this project's CYP450
- * inhibition (data/cyp/*.csv) and substrate/metabolism
- * (data/cyp_substrate/*.csv) training sets -- offline data prep for the
- * "does adding these as extra Chemprop descriptors improve the CYP
- * classifiers" experiment (see scripts/join_cyp_descriptors.py for the
- * next step).
+ * Computes the real, model-derived 9-descriptor X_d feature-fusion set
+ * (logP, LogD at pH 7, most-acidic/most-basic site pKa + has-site flags,
+ * NAGL-MBIS partial-charge min/max/mean) for every unique molecule
+ * across whichever training CSV directories are passed in -- offline
+ * data prep for "does adding these as extra Chemprop descriptors
+ * improve this classifier" experiments (see scripts/join_admet_x9_descriptors.py
+ * for the next step). Originally written for the CYP450 panel (renamed
+ * from compute_admet_x9_descriptors.js once the same recipe proved worth
+ * reusing for Ames mutagenicity and BBBP -- the descriptor formulas
+ * themselves were never CYP-specific, only the directory list was).
+ *
+ * Also computed BDE (weakest C-H bond) as a 10th/11th/12th column in an
+ * earlier version -- dropped here after a real experiment (see
+ * model/registry.json's cyp{isoform}-substrate-v1 entries) showed it
+ * added nothing on top of these 9, in every representation tried
+ * (molecule-level X_d summary, alongside SASA, and as a true per-atom
+ * Chemprop V_f feature via scripts/build_ch_bde_npz.py). Not worth the
+ * extra compute time (the bond-level model needs an explicit-H graph,
+ * the slowest part of the original script) for a feature that's closed.
  *
  * Deliberately uses `aqueous-pka` (fast, single-shot atom-level Chemprop
  * regression -- js/chemprop-model.js's generic path) instead of
  * `pka-microstate-freeenergy` for the pKa signal: the latter's
  * CC.PKAFreeEnergy.predictAllSites runs a real SMIRNOFF+GB/SA geometry
  * optimization per microstate (js/pka-physical-baseline.js), several
- * seconds PER SITE (see that file's own header, and js/app.js's own
- * "this can take a while" status text) -- completely impractical over
- * the ~15-20k unique molecules here. aqueous-pka is one D-MPNN forward
- * pass, the same order of cost as scripts/pka-physical-baseline-
- * harness/compute_pka_embeddings.js's own ~68s/8000-microstate rate.
+ * seconds PER SITE -- completely impractical over the tens of thousands
+ * of unique molecules here. aqueous-pka is one D-MPNN forward pass, the
+ * same order of cost as compute_pka_embeddings.js's own rate.
  *
  * Every descriptor here reuses this app's own REAL, already-deployed
  * inference code, unmodified, loaded via harness.js's `vm` sandbox --
@@ -31,22 +40,22 @@
  *     logD = logP + log10(fractionNeutral) -- literally js/app.js's own
  *     renderLogD formula.
  *   - NAGL-MBIS charges: CC.NAGL.predict, reduced to min/max/mean over
- *     heavy atoms (molecule-wide version of the site-local min/max
- *     scripts/train_pka_microstate_freeenergy.py already uses as X_d).
+ *     heavy atoms.
  *
  * Usage:
- *   CC_BASE_URL=http://localhost:8000/ node compute_cyp_descriptors.js \
- *     <out.csv> [--limit N]
+ *   CC_BASE_URL=http://localhost:8000/ node compute_admet_x9_descriptors.js \
+ *     <out.csv> [--dirs data/cyp,data/cyp_substrate,data/ames,data/bbbp] [--limit N]
  *
- * Writes data/cyp/descriptors.csv (or wherever <out.csv> points) keyed
- * by RDKit-canonical SMILES: smiles,logp,logd,pka_acidic,has_acidic,
- * pka_basic,has_basic,nagl_min,nagl_max,nagl_mean
+ * Writes <out.csv> keyed by RDKit-canonical SMILES: smiles,logp,logd,
+ * pka_acidic,has_acidic,pka_basic,has_basic,nagl_min,nagl_max,nagl_mean
  */
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { buildSandbox, loadChempropModel, moleculeFromSmiles, REPO_ROOT, BASE_URL } = require('./harness.js');
 
-const EXTRA_JS_FILES = ['js/pka-microstates.js', 'js/pka-titration.js', 'js/chemprop-features-explicit-h.js'];
+const EXTRA_JS_FILES = ['js/pka-microstates.js', 'js/pka-titration.js'];
+const DEFAULT_DIRS = ['data/cyp', 'data/cyp_substrate', 'data/ames', 'data/bbbp'];
 
 function parseCsv(text) {
   const lines = text.trim().split(/\r\n|\n/);
@@ -59,14 +68,13 @@ function parseCsv(text) {
   });
 }
 
-function collectUniqueSmiles() {
-  const dirs = ['data/cyp', 'data/cyp_substrate'];
+function collectUniqueSmiles(dirs) {
   const seen = new Set();
   for (const dir of dirs) {
     const full = path.join(REPO_ROOT, dir);
     if (!fs.existsSync(full)) continue;
     for (const file of fs.readdirSync(full)) {
-      if (!file.endsWith('.csv') || file === 'descriptors.csv') continue;
+      if (!file.endsWith('.csv') || file.includes('descriptors') || file.includes('with_descriptors')) continue;
       const rows = parseCsv(fs.readFileSync(path.join(full, file), 'utf8'));
       rows.forEach((r) => { if (r.smiles) seen.add(r.smiles); });
     }
@@ -76,9 +84,10 @@ function collectUniqueSmiles() {
 
 function parseArgs(argv) {
   const positional = [];
-  const opts = { limit: null };
+  const opts = { limit: null, dirs: DEFAULT_DIRS };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--limit') opts.limit = parseInt(argv[++i], 10);
+    else if (argv[i] === '--dirs') opts.dirs = argv[++i].split(',');
     else positional.push(argv[i]);
   }
   return { positional, opts };
@@ -88,18 +97,18 @@ async function main() {
   const { positional, opts } = parseArgs(process.argv.slice(2));
   const [outPath] = positional;
   if (!outPath) {
-    console.error('usage: node compute_cyp_descriptors.js <out.csv> [--limit N]');
+    console.error('usage: node compute_admet_x9_descriptors.js <out.csv> [--dirs d1,d2,...] [--limit N]');
     process.exit(1);
   }
 
-  let smilesList = collectUniqueSmiles();
-  console.error(`found ${smilesList.length} unique SMILES across data/cyp + data/cyp_substrate`);
+  let smilesList = collectUniqueSmiles(opts.dirs);
+  console.error(`found ${smilesList.length} unique SMILES across ${opts.dirs.join(', ')}`);
   if (opts.limit) smilesList = smilesList.slice(0, opts.limit);
 
   const sandbox = await buildSandbox();
   for (const rel of EXTRA_JS_FILES) {
     const src = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
-    require('vm').runInContext(src, sandbox, { filename: rel });
+    vm.runInContext(src, sandbox, { filename: rel });
   }
 
   await sandbox.CC.NAGL.loadModel(
@@ -109,11 +118,10 @@ async function main() {
   );
   await loadChempropModel(sandbox, 'logp-v1', 'model/logp/manifest.json', 'model/logp/weights.bin');
   await loadChempropModel(sandbox, 'aqueous-pka', 'model/aqueous-pka/pka-manifest.json', 'model/aqueous-pka/pka.bin');
-  await loadChempropModel(sandbox, 'bde-chemprop-v1', 'model/bde-chemprop/bde-manifest.json', 'model/bde-chemprop/bde.bin');
   console.error('all engines loaded');
 
   const out = fs.createWriteStream(outPath, { flags: 'w' });
-  out.write('smiles,logp,logd,pka_acidic,has_acidic,pka_basic,has_basic,nagl_min,nagl_max,nagl_mean,bde_min_ch,has_ch,bde_min_any\n');
+  out.write('smiles,logp,logd,pka_acidic,has_acidic,pka_basic,has_basic,nagl_min,nagl_max,nagl_mean\n');
 
   let ok = 0, failed = 0;
   const t0 = Date.now();
@@ -161,26 +169,7 @@ async function main() {
       const naglMax = Math.max.apply(null, charges);
       const naglMean = charges.reduce((a, b) => a + b, 0) / charges.length;
 
-      // BDE-XH: weakest-attached-H BDE per heavy atom (js/chemprop-model.js's
-      // weakestHKey aggregate -- min over that atom's own attached H's, not
-      // per-bond). CYP450 oxidation mostly proceeds via Compound I hydrogen-
-      // atom abstraction (radical rebound mechanism), so the molecule's
-      // weakest C-H bond is a real, mechanistically-relevant reactivity
-      // descriptor for metabolic liability -- bde_min_any also kept (any
-      // heavy atom's weakest attached H, not just carbon) since a few CYP
-      // reactions (e.g. some N-oxidations) don't go through C-H abstraction.
-      const bdeHeavyAtoms = Array.from(mol.atoms.values());
-      const bdeResult = sandbox.CC.GNN.predictChemprop(mol, 'bde-chemprop-v1');
-      let bdeMinCh = 999, hasCh = 0, bdeMinAny = 999;
-      bdeResult.atomIds.forEach((atomId, idx) => {
-        const props = bdeResult.atomProperties[idx];
-        const v = props && Object.values(props)[0];
-        if (typeof v !== 'number') return;
-        if (v < bdeMinAny) bdeMinAny = v;
-        if (bdeHeavyAtoms[idx] && bdeHeavyAtoms[idx].element === 'C' && v < bdeMinCh) { bdeMinCh = v; hasCh = 1; }
-      });
-
-      out.write([canonicalSmiles, logP, logD, pkaAcidic, hasAcidic, pkaBasic, hasBasic, naglMin, naglMax, naglMean, bdeMinCh, hasCh, bdeMinAny].join(',') + '\n');
+      out.write([canonicalSmiles, logP, logD, pkaAcidic, hasAcidic, pkaBasic, hasBasic, naglMin, naglMax, naglMean].join(',') + '\n');
       ok++;
     } catch (err) {
       failed++;

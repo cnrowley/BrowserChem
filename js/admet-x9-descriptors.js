@@ -1,26 +1,30 @@
 /**
- * cyp-descriptors.js
+ * admet-x9-descriptors.js
  *
  * Real X_d feature-fusion descriptors ([logP, LogD(pH7), most-acidic
  * site pKa, has-acidic-site flag, most-basic site pKa, has-basic-site
- * flag, NAGL-MBIS charge min/max/mean]) for this app's CYP450
- * substrate/metabolism checkpoints (cyp{isoform}-substrate-v1 in
- * model/registry.json) -- retrained with these fused in as extra
- * Chemprop descriptors after a real offline experiment
- * (scripts/pka-physical-baseline-harness/compute_cyp_descriptors.js +
- * scripts/join_cyp_descriptors.py) showed a consistent test-set
- * ROC-AUC/F1 improvement over the SMILES-only checkpoints on CYP3A4
- * substrate liability (3-seed mean ROC-AUC 0.805 -> 0.823, F1 0.698 ->
- * 0.731) -- see model/registry.json's own `notes` for the full
- * before/after numbers. The CYP450 inhibition panel (cyp{isoform}-
- * inhibition-v1) was NOT retrained with this: the same experiment's
- * gain there was smaller and only really showed up once real 3D SASA
- * was added too (a binding-affinity/steric-fit endpoint, unlike
- * substrate liability's closer-to-turnover-chemistry signal) -- 3D
- * features were judged not worth their computation cost, so inhibition
- * stays on its original SMILES-only checkpoints.
+ * flag, NAGL-MBIS charge min/max/mean]) shared by every checkpoint in
+ * MODEL_IDS below -- originally built for the CYP450 substrate/
+ * metabolism panel (renamed from cyp-descriptors.js once the same
+ * recipe proved worth reusing), now also used by bbbp-v1 (blood-brain
+ * barrier penetration). Each consumer was retrained with these fused in
+ * only after a real offline experiment
+ * (scripts/pka-physical-baseline-harness/compute_admet_x9_descriptors.js +
+ * scripts/join_admet_x9_descriptors.py, 3 fixed seeds per variant)
+ * showed a real, consistent test-set win -- see each model's own
+ * `metrics.note` in model/registry.json for the exact before/after
+ * numbers. Two endpoints this same experiment was ALSO tried on did NOT
+ * get retrained with it, because the numbers said no: CYP450 INHIBITION
+ * (cyp{isoform}-inhibition-v1 -- its real gain needed 3D SASA instead,
+ * judged not worth the cost) and Ames mutagenicity (ames-mutagenicity-v1
+ * -- these descriptors made it slightly WORSE, since mutagenicity is
+ * driven by specific reactive substructures the D-MPNN's own graph
+ * already sees, not by bulk physicochemical properties). That negative-
+ * result asymmetry is deliberate, not an oversight -- don't add a model
+ * to MODEL_IDS below without the same kind of real before/after evidence
+ * backing it.
  *
- * This is the browser-runtime SIBLING of compute_cyp_descriptors.js's
+ * This is the browser-runtime SIBLING of compute_admet_x9_descriptors.js's
  * offline data-prep logic -- same formulas, same real deployed models
  * (logp-v1, aqueous-pka, a loaded NAGL-MBIS charge model), same fixed
  * column order the training CSVs used (--descriptors-columns logp logd
@@ -45,32 +49,32 @@
  * automatically for ANY caller, not just one that specifically knows to
  * call CC.GNN.predictChemprop(molecule, id, extraDescriptors) directly
  * the way js/pka-freeenergy-predict.js does for pka-microstate-
- * freeenergy). This file is the ONLY place that needs to know these 6
- * checkpoints exist and what they need -- js/app.js has no CYP-specific
- * glue at all.
+ * freeenergy). This file is the ONLY place that needs to know these
+ * checkpoints exist and what they need -- js/app.js has no
+ * descriptor-fusion-specific glue at all.
  */
 window.CC = window.CC || {};
-CC.CYPDescriptors = window.CC.CYPDescriptors || {};
+CC.ADMETDescriptors = window.CC.ADMETDescriptors || {};
 
 (function () {
   var LOGP_MODEL_ID = 'logp-v1';
   var PKA_MODEL_ID = 'aqueous-pka';
   var NAGL_MODEL_ID = 'nagl-mbis-charges';
 
-  // The 6 CYP450 substrate/metabolism checkpoints retrained with this
-  // feature set -- kept as an explicit list (not inferred from registry
-  // metadata) matching this project's existing convention of hardcoding
-  // a small, specific model-id list for one-off special-cased inference
-  // paths (js/pka-freeenergy-predict.js's own LOGP_MODEL_ID constant,
-  // js/app.js's Titration tab checking `pkaSource ===
-  // 'pka-microstate-freeenergy'` by literal id).
-  CC.CYPDescriptors.MODEL_IDS = [
+  // Checkpoints retrained with this feature set -- kept as an explicit
+  // list (not inferred from registry metadata) matching this project's
+  // existing convention of hardcoding a small, specific model-id list
+  // for one-off special-cased inference paths (js/pka-freeenergy-
+  // predict.js's own LOGP_MODEL_ID constant, js/app.js's Titration tab
+  // checking `pkaSource === 'pka-microstate-freeenergy'` by literal id).
+  CC.ADMETDescriptors.MODEL_IDS = [
     'cyp1a2-substrate-v1',
     'cyp2c9-substrate-v1',
     'cyp2c19-substrate-v1',
     'cyp2d6-substrate-v1',
     'cyp2e1-substrate-v1',
     'cyp3a4-substrate-v1',
+    'bbbp-v1',
   ];
 
   /**
@@ -81,10 +85,10 @@ CC.CYPDescriptors = window.CC.CYPDescriptors || {};
    * (loading models is the caller's job, same convention as every other
    * engine in this project -- see js/pka-model.js's CC.PKA.predict).
    */
-  CC.CYPDescriptors.compute = function (molecule, naglModelId) {
-    if (!CC.GNN.hasChempropModel(LOGP_MODEL_ID)) throw new Error('CYP descriptor features need "' + LOGP_MODEL_ID + '" loaded');
-    if (!CC.GNN.hasChempropModel(PKA_MODEL_ID)) throw new Error('CYP descriptor features need "' + PKA_MODEL_ID + '" loaded');
-    if (!naglModelId || !CC.NAGL.hasModel(naglModelId)) throw new Error('CYP descriptor features need a NAGL-MBIS charge model loaded');
+  CC.ADMETDescriptors.compute = function (molecule, naglModelId) {
+    if (!CC.GNN.hasChempropModel(LOGP_MODEL_ID)) throw new Error('ADMET descriptor features need "' + LOGP_MODEL_ID + '" loaded');
+    if (!CC.GNN.hasChempropModel(PKA_MODEL_ID)) throw new Error('ADMET descriptor features need "' + PKA_MODEL_ID + '" loaded');
+    if (!naglModelId || !CC.NAGL.hasModel(naglModelId)) throw new Error('ADMET descriptor features need a NAGL-MBIS charge model loaded');
 
     const logpResult = CC.GNN.predictChemprop(molecule, LOGP_MODEL_ID);
     const logP = logpResult.molecularProperties.logP;
@@ -132,7 +136,7 @@ CC.CYPDescriptors = window.CC.CYPDescriptors || {};
   // registering here guarantees any of MODEL_IDS getting loaded --
   // however that happens -- pulls its prerequisites in alongside it.
   CC.GNN.registerPrerequisiteModels(function (entry) {
-    if (CC.CYPDescriptors.MODEL_IDS.indexOf(entry.id) === -1) return [];
+    if (CC.ADMETDescriptors.MODEL_IDS.indexOf(entry.id) === -1) return [];
     return [LOGP_MODEL_ID, PKA_MODEL_ID, NAGL_MODEL_ID];
   });
 
@@ -146,7 +150,7 @@ CC.CYPDescriptors = window.CC.CYPDescriptors || {};
   // catches it and tries the next provider / falls through to the
   // generic skip -- same graceful degradation as before, not a crash.
   CC.GNN.registerExtraDescriptorsProvider(function (model, molecule) {
-    if (CC.CYPDescriptors.MODEL_IDS.indexOf(model.id) === -1) return undefined;
-    return CC.CYPDescriptors.compute(molecule, NAGL_MODEL_ID);
+    if (CC.ADMETDescriptors.MODEL_IDS.indexOf(model.id) === -1) return undefined;
+    return CC.ADMETDescriptors.compute(molecule, NAGL_MODEL_ID);
   });
 })();
