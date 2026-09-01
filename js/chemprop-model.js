@@ -109,6 +109,43 @@ CC.GNN = window.CC.GNN || {};
 (function () {
   const models = new Map(); // id -> { dims, task, taskType, Wi, WiBias, Wh, WhBias, Wo, WoBias, ffn0, ffn0Bias, ffn1, ffn1Bias, outMean, outScale }
 
+  // Registered by a specific model's own JS (e.g. js/cyp-descriptors.js)
+  // to supply the extra runtime descriptors a numExtraDescriptors>0
+  // checkpoint needs -- the generic per-molecule loop below has no way
+  // to know how to compute them itself. fn(model, molecule) -> a plain
+  // array of numbers (exact length model.numExtraDescriptors, positional
+  // order matching how the checkpoint was trained) if this provider
+  // knows how to handle `model`, or undefined/throw otherwise (tried in
+  // registration order, first usable result wins). Same "register, don't
+  // special-case" pattern as CC.GNN.registerPrerequisiteModels
+  // (model-registry.js) -- this is the OTHER half of the same problem:
+  // that one makes sure the prerequisite models are LOADED, this one
+  // makes sure their outputs actually get USED at predict time, so
+  // predictAllChempropModels/predictMolecule work correctly for ANY
+  // caller, not just ones that know to call CC.GNN.predictChemprop(...,
+  // extraDescriptors) directly the way js/pka-freeenergy-predict.js does
+  // for pka-microstate-freeenergy (that model needs an async physical-
+  // baseline computation per microstate pair, which can't fit this
+  // synchronous per-molecule loop at all -- registering a provider here
+  // is only for models whose extra descriptors can be computed
+  // synchronously from already-loaded models, e.g. the CYP450 substrate
+  // panel's logP/LogD/pKa/NAGL-charge X_d fusion).
+  const extraDescriptorsProviders = [];
+  CC.GNN.registerExtraDescriptorsProvider = function (fn) { extraDescriptorsProviders.push(fn); };
+
+  function computeExtraDescriptors(model, molecule) {
+    for (let i = 0; i < extraDescriptorsProviders.length; i++) {
+      let result;
+      try {
+        result = extraDescriptorsProviders[i](model, molecule);
+      } catch (err) {
+        continue; // this provider doesn't apply / couldn't compute them -- try the next
+      }
+      if (result) return result;
+    }
+    return undefined;
+  }
+
   // Slice a flat Float32Array into an array of row views (Float32Array
   // subarrays) — the shape dmpnn.js's matVecBias expects for a weight
   // matrix, and cheap since subarray() doesn't copy.
@@ -625,22 +662,33 @@ CC.GNN = window.CC.GNN || {};
     let bondIds = [];
 
     models.forEach(function (model) {
-      // A model needing extra runtime descriptors (e.g. a physical
-      // baseline energy the caller computed separately) has no way to get
-      // them through this generic per-molecule merge loop -- skip it here
-      // with a clear reason rather than letting runOneMolecule's own
-      // length-mismatch throw surface as a confusing generic error. A
-      // direct CC.GNN.predictChemprop(molecule, id, extraDescriptors) call
-      // (this function's single-model sibling above) is the real call path
-      // for such a model, and is unaffected by this check.
-      if (model.numExtraDescriptors) {
-        warnings.push('"' + model.id + '" skipped: requires extra runtime descriptors not available ' +
-          'through the generic prediction path -- call CC.GNN.predictChemprop(molecule, id, extraDescriptors) directly');
-        return;
-      }
       const blocked = blockedReason(model, molecule);
       if (blocked) {
         warnings.push('"' + model.id + '" skipped: ' + blocked);
+        return;
+      }
+      // A model needing extra runtime descriptors (e.g. a physical
+      // baseline energy, or the CYP450 substrate panel's logP/LogD/pKa/
+      // NAGL-charge X_d fusion) has no built-in way to get them through
+      // this generic per-molecule merge loop -- try any registered
+      // provider (registerExtraDescriptorsProvider above) first; only
+      // skip with a clear reason if none of them can produce a usable
+      // array (e.g. a model needing an async computation no synchronous
+      // provider can supply, like pka-microstate-freeenergy's physical
+      // baseline -- js/pka-freeenergy-predict.js calls CC.GNN.
+      // predictChemprop(molecule, id, extraDescriptors) directly for
+      // that one instead, unaffected by this check).
+      if (model.numExtraDescriptors) {
+        const extraDescriptors = computeExtraDescriptors(model, molecule);
+        if (!extraDescriptors || extraDescriptors.length !== model.numExtraDescriptors) {
+          warnings.push('"' + model.id + '" skipped: requires extra runtime descriptors not available ' +
+            'through the generic prediction path -- call CC.GNN.predictChemprop(molecule, id, extraDescriptors) directly');
+          return;
+        }
+        const graph = graphs.forGraphType('heavy');
+        const out = runOneMolecule(model, graph, extraDescriptors);
+        molecularProperties[model.task] = out.value;
+        propertyMeta[model.task] = { taskType: model.taskType, modelId: model.id, confidence: confidenceMeta(model, out.pooled), uncertainty: out.uncertainty };
         return;
       }
       if (model.outputLevel === 'bond') {

@@ -116,6 +116,23 @@ CC.GNN = window.CC.GNN || {};
   let registryBaseUrl = ''; // directory registry.json was fetched from, for resolving relative file paths
   const loadedIds = new Set(); // which registry entries have had their weights loaded (mirrors chemprop-model.js's state, tracked here too so the UI doesn't need to poll it)
 
+  // Registered by a specific engine's own JS (e.g. js/cyp-descriptors.js)
+  // when a registry entry needs OTHER registry model(s) loaded alongside
+  // it to actually produce correct predictions -- e.g. a checkpoint with
+  // X_d feature fusion whose descriptors are computed from other loaded
+  // models at inference time. fn(entry) -> array of registry ids to also
+  // ensure loaded, or [] if this entry needs nothing extra. Kept generic
+  // (a list of provider functions, same "register, don't special-case"
+  // pattern CC.ModelAdapters already uses) so loadRegistryModel -- the
+  // ONE real choke point every load path in this app goes through
+  // (autoLoadApplicableModels, per-model UI load buttons, category
+  // activation) -- stays engine-agnostic while still guaranteeing any
+  // caller who loads such a model gets its prerequisites for free,
+  // rather than requiring every caller to know and remember to load them
+  // separately.
+  const prerequisiteProviders = [];
+  CC.GNN.registerPrerequisiteModels = function (fn) { prerequisiteProviders.push(fn); };
+
   function resolveUrl(base, relative) {
     try {
       return new URL(relative, base).href;
@@ -206,9 +223,26 @@ CC.GNN = window.CC.GNN || {};
     const adapter = CC.ModelAdapters.get(engine);
     if (!adapter) return Promise.reject(new Error('No model adapter registered for engine "' + engine + '"'));
 
-    return adapter.load(id, manifestUrl, weightsUrl).then(function (info) {
-      loadedIds.add(id);
-      return info;
+    // Prerequisite ids (see registerPrerequisiteModels above) load in
+    // parallel with this entry's own weights, not before -- a
+    // prerequisite that's ALSO independently mid-load from a concurrent
+    // autoLoadApplicableModels batch just resolves its own already-
+    // in-flight fetch a second time (loadRegistryModel isn't guarded
+    // against a duplicate call for the same id); harmless, same
+    // tolerance autoLoadApplicableModels's own Promise.allSettled batch
+    // already has for other duplicate-load races.
+    const prereqIds = prerequisiteProviders.reduce(function (acc, fn) {
+      return acc.concat(fn(entry) || []);
+    }, []);
+    const prereqLoads = prereqIds
+      .filter(function (pid) { return pid !== id && !loadedIds.has(pid); })
+      .map(function (pid) { return CC.GNN.loadRegistryModel(pid); });
+
+    return Promise.all(prereqLoads).then(function () {
+      return adapter.load(id, manifestUrl, weightsUrl).then(function (info) {
+        loadedIds.add(id);
+        return info;
+      });
     });
   };
 

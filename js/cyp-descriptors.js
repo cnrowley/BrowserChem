@@ -1,0 +1,152 @@
+/**
+ * cyp-descriptors.js
+ *
+ * Real X_d feature-fusion descriptors ([logP, LogD(pH7), most-acidic
+ * site pKa, has-acidic-site flag, most-basic site pKa, has-basic-site
+ * flag, NAGL-MBIS charge min/max/mean]) for this app's CYP450
+ * substrate/metabolism checkpoints (cyp{isoform}-substrate-v1 in
+ * model/registry.json) -- retrained with these fused in as extra
+ * Chemprop descriptors after a real offline experiment
+ * (scripts/pka-physical-baseline-harness/compute_cyp_descriptors.js +
+ * scripts/join_cyp_descriptors.py) showed a consistent test-set
+ * ROC-AUC/F1 improvement over the SMILES-only checkpoints on CYP3A4
+ * substrate liability (3-seed mean ROC-AUC 0.805 -> 0.823, F1 0.698 ->
+ * 0.731) -- see model/registry.json's own `notes` for the full
+ * before/after numbers. The CYP450 inhibition panel (cyp{isoform}-
+ * inhibition-v1) was NOT retrained with this: the same experiment's
+ * gain there was smaller and only really showed up once real 3D SASA
+ * was added too (a binding-affinity/steric-fit endpoint, unlike
+ * substrate liability's closer-to-turnover-chemistry signal) -- 3D
+ * features were judged not worth their computation cost, so inhibition
+ * stays on its original SMILES-only checkpoints.
+ *
+ * This is the browser-runtime SIBLING of compute_cyp_descriptors.js's
+ * offline data-prep logic -- same formulas, same real deployed models
+ * (logp-v1, aqueous-pka, a loaded NAGL-MBIS charge model), same fixed
+ * column order the training CSVs used (--descriptors-columns logp logd
+ * pka_acidic has_acidic pka_basic has_basic nagl_min nagl_max
+ * nagl_mean). Not literally the same code (that script runs offline in
+ * Node against a static-server fetch, this runs synchronously inside
+ * the live app against already-loaded in-memory models), but every
+ * individual step reuses this app's own real inference code unmodified:
+ * CC.GNN.predictChemprop, CC.PKAMicrostates.findIonizableSites,
+ * CC.PKATitration.fractionNeutral, CC.NAGL.predict -- the exact same
+ * calls js/app.js's own LogD panel (renderLogD) and Titration tab
+ * already make, not a parallel reimplementation of any of THEIR logic.
+ *
+ * Wired into the generic prediction path itself, not called directly by
+ * any specific UI panel: registers with model-registry.js's
+ * CC.GNN.registerPrerequisiteModels (so loading any of MODEL_IDS also
+ * transparently loads logp-v1/aqueous-pka/nagl-mbis-charges alongside
+ * it, from ANY load path -- autoLoadApplicableModels, a per-model UI
+ * load button, category activation) and chemprop-model.js's
+ * CC.GNN.registerExtraDescriptorsProvider (so CC.GNN.predictMolecule /
+ * predictAllChempropModels compute and fuse these descriptors
+ * automatically for ANY caller, not just one that specifically knows to
+ * call CC.GNN.predictChemprop(molecule, id, extraDescriptors) directly
+ * the way js/pka-freeenergy-predict.js does for pka-microstate-
+ * freeenergy). This file is the ONLY place that needs to know these 6
+ * checkpoints exist and what they need -- js/app.js has no CYP-specific
+ * glue at all.
+ */
+window.CC = window.CC || {};
+CC.CYPDescriptors = window.CC.CYPDescriptors || {};
+
+(function () {
+  var LOGP_MODEL_ID = 'logp-v1';
+  var PKA_MODEL_ID = 'aqueous-pka';
+  var NAGL_MODEL_ID = 'nagl-mbis-charges';
+
+  // The 6 CYP450 substrate/metabolism checkpoints retrained with this
+  // feature set -- kept as an explicit list (not inferred from registry
+  // metadata) matching this project's existing convention of hardcoding
+  // a small, specific model-id list for one-off special-cased inference
+  // paths (js/pka-freeenergy-predict.js's own LOGP_MODEL_ID constant,
+  // js/app.js's Titration tab checking `pkaSource ===
+  // 'pka-microstate-freeenergy'` by literal id).
+  CC.CYPDescriptors.MODEL_IDS = [
+    'cyp1a2-substrate-v1',
+    'cyp2c9-substrate-v1',
+    'cyp2c19-substrate-v1',
+    'cyp2d6-substrate-v1',
+    'cyp2e1-substrate-v1',
+    'cyp3a4-substrate-v1',
+  ];
+
+  /**
+   * Computes the fixed-order 9-element X_d descriptor array for
+   * `molecule`. Requires logp-v1, aqueous-pka, and `naglModelId` (a
+   * NAGL-MBIS charge model) already loaded -- throws a clear error
+   * naming whichever is missing rather than silently auto-loading
+   * (loading models is the caller's job, same convention as every other
+   * engine in this project -- see js/pka-model.js's CC.PKA.predict).
+   */
+  CC.CYPDescriptors.compute = function (molecule, naglModelId) {
+    if (!CC.GNN.hasChempropModel(LOGP_MODEL_ID)) throw new Error('CYP descriptor features need "' + LOGP_MODEL_ID + '" loaded');
+    if (!CC.GNN.hasChempropModel(PKA_MODEL_ID)) throw new Error('CYP descriptor features need "' + PKA_MODEL_ID + '" loaded');
+    if (!naglModelId || !CC.NAGL.hasModel(naglModelId)) throw new Error('CYP descriptor features need a NAGL-MBIS charge model loaded');
+
+    const logpResult = CC.GNN.predictChemprop(molecule, LOGP_MODEL_ID);
+    const logP = logpResult.molecularProperties.logP;
+    if (typeof logP !== 'number') throw new Error('logp-v1 produced no usable prediction for this molecule');
+
+    const sites = CC.PKAMicrostates.findIonizableSites(molecule);
+    let pkaAcidic = 7, hasAcidic = 0, pkaBasic = 7, hasBasic = 0, fractionNeutral = 1;
+    if (sites.length > 0) {
+      const pkaResult = CC.GNN.predictChemprop(molecule, PKA_MODEL_ID);
+      const pkaByAtomId = {};
+      pkaResult.atomIds.forEach(function (atomId, idx) {
+        const props = pkaResult.atomProperties[idx];
+        if (props && typeof props.pka === 'number') pkaByAtomId[atomId] = props.pka;
+      });
+      const validSites = [], validPKa = [];
+      sites.forEach(function (site) {
+        if (typeof pkaByAtomId[site.atomId] === 'number') {
+          validSites.push(site);
+          validPKa.push(pkaByAtomId[site.atomId]);
+        }
+      });
+      const acidPkas = [], basePkas = [];
+      validSites.forEach(function (s, idx) {
+        (s.cls === 'acid' ? acidPkas : basePkas).push(validPKa[idx]);
+      });
+      if (acidPkas.length) { pkaAcidic = Math.min.apply(null, acidPkas); hasAcidic = 1; }
+      if (basePkas.length) { pkaBasic = Math.max.apply(null, basePkas); hasBasic = 1; }
+      if (validSites.length) fractionNeutral = CC.PKATitration.fractionNeutral(validSites, validPKa, 7.0);
+    }
+    const logD = logP + Math.log10(fractionNeutral);
+
+    const naglResult = CC.NAGL.predict(molecule, naglModelId);
+    const charges = naglResult.atomProperties.map(function (p) { return Object.values(p)[0]; }).filter(function (v) { return typeof v === 'number'; });
+    if (!charges.length) throw new Error('no NAGL charges available for this molecule');
+    const naglMin = Math.min.apply(null, charges);
+    const naglMax = Math.max.apply(null, charges);
+    const naglMean = charges.reduce(function (a, b) { return a + b; }, 0) / charges.length;
+
+    return [logP, logD, pkaAcidic, hasAcidic, pkaBasic, hasBasic, naglMin, naglMax, naglMean];
+  };
+
+  // See model-registry.js's CC.GNN.registerPrerequisiteModels header for
+  // why this lives here instead of in js/app.js: loadRegistryModel is
+  // the one real choke point every load path in the app goes through, so
+  // registering here guarantees any of MODEL_IDS getting loaded --
+  // however that happens -- pulls its prerequisites in alongside it.
+  CC.GNN.registerPrerequisiteModels(function (entry) {
+    if (CC.CYPDescriptors.MODEL_IDS.indexOf(entry.id) === -1) return [];
+    return [LOGP_MODEL_ID, PKA_MODEL_ID, NAGL_MODEL_ID];
+  });
+
+  // See chemprop-model.js's CC.GNN.registerExtraDescriptorsProvider
+  // header. Only claims models in MODEL_IDS -- returning undefined (not
+  // throwing) for anything else lets other registered providers, or the
+  // generic "skip with a clear reason" fallback, still apply normally.
+  // If the prerequisites above somehow aren't loaded yet (a caller that
+  // bypassed loadRegistryModel entirely), compute() throws and this
+  // provider's caller (computeExtraDescriptors in chemprop-model.js)
+  // catches it and tries the next provider / falls through to the
+  // generic skip -- same graceful degradation as before, not a crash.
+  CC.GNN.registerExtraDescriptorsProvider(function (model, molecule) {
+    if (CC.CYPDescriptors.MODEL_IDS.indexOf(model.id) === -1) return undefined;
+    return CC.CYPDescriptors.compute(molecule, NAGL_MODEL_ID);
+  });
+})();

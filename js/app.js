@@ -3103,6 +3103,12 @@
         });
         runDemoBtn.textContent = 'Running predictions…';
 
+        // The CYP450 substrate panel's X_d feature fusion (logP/LogD/pKa/
+        // NAGL charges) -- prerequisite loading (js/cyp-descriptors.js's
+        // registerPrerequisiteModels) and descriptor computation
+        // (registerExtraDescriptorsProvider) are both wired into the
+        // generic loadRegistryModel/predictMolecule path itself now, so
+        // this is a plain call, same as any other model.
         const result = await CC.GNN.predictMolecule(controller.molecule);
         renderGNNOutput(result);
         const nMol = Object.keys(result.molecularProperties || {}).length;
