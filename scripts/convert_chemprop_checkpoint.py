@@ -176,8 +176,11 @@ def main():
     if args.graph_type == "explicit-h" and output_level == "molecule":
         sys.exit("--graph-type explicit-h only makes sense for an atom-level or bond-level checkpoint.")
     if output_level == "molecule":
-        if agg_hp is None or agg_hp["cls"].__name__ != "NormAggregation":
-            sys.exit("Unsupported aggregation -- expected NormAggregation for a molecule-level model.")
+        agg_cls_name = agg_hp["cls"].__name__ if agg_hp else None
+        if agg_cls_name not in ("NormAggregation", "MeanAggregation"):
+            sys.exit(f"Unsupported aggregation {agg_cls_name!r} -- expected NormAggregation or "
+                      "MeanAggregation (js/pooling.js's poolSum/aggNorm and poolMean respectively) "
+                      "for a molecule-level model.")
 
     pred_cls_name = pred_hp["cls"].__name__
     if pred_cls_name == "RegressionFFN":
@@ -306,7 +309,13 @@ def main():
             "d_e": mp_hp["d_e"],
             "d_h": mp_hp["d_h"],
             "depth": mp_hp["depth"],
-            "aggNorm": (agg_hp["norm"] if agg_hp else None),
+            # "norm" (sum of atom embeddings / a fixed constant, chemprop's
+            # NormAggregation) or "mean" (chemprop's MeanAggregation, i.e.
+            # sum / actual atom count) -- omitted/absent means "norm" for
+            # every manifest converted before this field existed, so
+            # js/chemprop-model.js must default missing to "norm", not error.
+            "aggregationType": "mean" if agg_hp and agg_hp["cls"].__name__ == "MeanAggregation" else "norm",
+            "aggNorm": (agg_hp["norm"] if agg_hp and "norm" in agg_hp else None),
         },
         "ffnHiddenDim": ffn_hidden_dim,
         "numExtraDescriptors": num_extra_descriptors,

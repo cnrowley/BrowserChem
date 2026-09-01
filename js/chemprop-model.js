@@ -79,9 +79,17 @@
  *                    "explicit-h" model this also selects which heavy
  *                    atoms' attached-H predictions get aggregated and
  *                    surfaced (see runOneAtomLevelExplicitH()).
- *   manifest.dims = { d_v: 72, d_e: 14, d_h, depth, aggNorm }
- *                    — aggNorm is null/unused for an atom-level model,
- *                      since there's no pooling step to normalize.
+ *   manifest.dims = { d_v: 72, d_e: 14, d_h, depth, aggregationType, aggNorm }
+ *                    — aggregationType is "norm" (chemprop's
+ *                      NormAggregation: sum of atom embeddings / aggNorm,
+ *                      a fixed constant) or "mean" (chemprop's
+ *                      MeanAggregation, e.g. the CHEMELEON foundation
+ *                      model: sum / actual atom count, aggNorm is null)
+ *                      — absent/undefined on any manifest converted
+ *                      before this field existed, which must be treated
+ *                      as "norm" for backward compatibility. Both are
+ *                      unused for an atom-level model, since there's no
+ *                      pooling step to normalize.
  *   manifest.tensors.{W_i, W_h, W_o_weight, W_o_bias,
  *                      ffn0_weight, ffn0_bias, ffn1_weight, ffn1_bias} = { shape, offset, length }
  *   manifest.tensors.{W_eo_weight, W_eo_bias} = { shape, offset, length }
@@ -339,16 +347,25 @@ CC.GNN = window.CC.GNN || {};
     return CC.GNN.runDMPNN(graph, dmpnnWeights, { depth: model.dims.depth });
   }
 
-  // Molecule-level: NormAggregation (sum of atom embeddings / aggNorm),
-  // then one FFN application on the pooled vector. Returns the pooled
-  // embedding alongside the value -- it's the same 300-dim vector
-  // CC.AD.tierForEmbedding compares against a model's training-set
-  // centroids (see applicability-domain.js), already computed for free
-  // here, not a second forward pass.
+  // Dispatches to the aggregation this specific checkpoint was trained
+  // with -- "mean" (e.g. the CHEMELEON foundation model) or "norm"
+  // (every other checkpoint in this registry, and the default for any
+  // manifest converted before dims.aggregationType existed).
+  function poolMolecule(atomEmbeddings, dims) {
+    if (dims.aggregationType === 'mean') return CC.GNN.poolMean(atomEmbeddings, dims.d_h);
+    return CC.GNN.poolSum(atomEmbeddings, dims.d_h).map(function (x) { return x / dims.aggNorm; });
+  }
+
+  // Molecule-level: aggregate atom embeddings per this checkpoint's own
+  // dims.aggregationType (see poolMolecule above), then one FFN
+  // application on the pooled vector. Returns the pooled embedding
+  // alongside the value -- it's the same vector CC.AD.tierForEmbedding
+  // compares against a model's training-set centroids (see
+  // applicability-domain.js), already computed for free here, not a
+  // second forward pass.
   function runOneMolecule(model, graph, extraDescriptors) {
     const out = runDMPNNFor(model, graph);
-    const pooled = CC.GNN.poolSum(out.atomEmbeddings, model.dims.d_h)
-      .map(function (x) { return x / model.dims.aggNorm; });
+    const pooled = poolMolecule(out.atomEmbeddings, model.dims);
     let fingerprint = pooled;
     if (model.numExtraDescriptors) {
       if (!extraDescriptors || extraDescriptors.length !== model.numExtraDescriptors) {
@@ -392,7 +409,7 @@ CC.GNN = window.CC.GNN || {};
     const graphs = buildGraphsForMolecule(molecule);
     const graph = graphs.forGraphType('heavy');
     const out = runDMPNNFor(model, graph);
-    return CC.GNN.poolSum(out.atomEmbeddings, model.dims.d_h).map(function (x) { return x / model.dims.aggNorm; });
+    return poolMolecule(out.atomEmbeddings, model.dims);
   };
 
   // Per-model (not just per-engine) training-vocabulary gate -- see

@@ -106,7 +106,8 @@ class ChempropDMPNNModel:
 
 def pooled_embedding(mol, model, featurizer):
     """Mirrors compute_property_distributions.py's run_chemprop_molecule
-    up through NormAggregation pooling, stopping before the FFN head."""
+    up through pooling (NormAggregation or MeanAggregation, per this
+    model's own dims.aggregationType), stopping before the FFN head."""
     mg = featurizer(mol)
     num_atoms = mg.V.shape[0]
     hidden_size = model.dims["d_h"]
@@ -142,6 +143,8 @@ def pooled_embedding(mol, model, featurizer):
             message = h[incoming].sum(axis=0) if incoming else np.zeros(hidden_size)
             embeddings.append(np.maximum(model.Wo @ np.concatenate([mg.V[v], message]) + model.Wo_bias, 0))
 
+    if model.dims.get("aggregationType") == "mean":
+        return np.mean(embeddings, axis=0)
     agg_norm = model.dims.get("aggNorm") or 1.0
     return np.sum(embeddings, axis=0) / agg_norm
 
@@ -196,6 +199,15 @@ def main():
                               "(e.g. a common organic anion) that has no real representation in training")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output", default=None, help="default: model/<dir>/applicability-domain.json")
+    parser.add_argument("--embeddings-csv", default=None,
+                         help="skip this script's own pure-numpy D-MPNN forward pass (impractically slow "
+                              "for a large encoder, e.g. the CHEMELEON foundation model's d_h=2048/depth=6 -- "
+                              "39+ minutes and still not done on a 2500-molecule set, confirmed) and instead "
+                              "read precomputed embeddings from this CSV (smiles,e0,e1,...,e{d_h-1}), keyed "
+                              "by RDKit-canonical SMILES -- see fast_embeddings.py, which computes the exact "
+                              "same math (model.fingerprint()) via chemprop's own batched GPU tensor ops in "
+                              "seconds instead of minutes. Every training molecule's embedding is used (no "
+                              "--max-embedding-molecules subsampling) since computing them all is already cheap.")
     args = parser.parse_args()
 
     from rdkit import Chem
@@ -222,6 +234,7 @@ def main():
     charges = set()
     net_charge_counts = {}
     valid_mols = []
+    valid_smiles = []
     n_total = 0
     n_failed = 0
 
@@ -261,6 +274,7 @@ def main():
             # query molecule -- see --min-net-charge-count above.
             net_charge_counts[mol_net_charge] = net_charge_counts.get(mol_net_charge, 0) + 1
             valid_mols.append(mol)
+            valid_smiles.append(Chem.MolToSmiles(mol))
 
     if n_failed:
         warnings.warn(f"{n_failed}/{n_total} training SMILES failed to parse -- excluded from vocab/embeddings")
@@ -282,16 +296,54 @@ def main():
     # CSV or the CYP inhibition panel's 12k-molecule PubChem qHTS pull
     # tractable. The vocabulary above is NOT affected by this -- it
     # already used every molecule.
-    rng = np.random.default_rng(args.seed)
-    sample_mols = valid_mols
-    if len(valid_mols) > args.max_embedding_molecules:
-        idx = rng.choice(len(valid_mols), size=args.max_embedding_molecules, replace=False)
-        sample_mols = [valid_mols[i] for i in idx]
-        print(f"subsampled {len(sample_mols)}/{len(valid_mols)} molecules for embedding-domain computation "
-              f"(--max-embedding-molecules={args.max_embedding_molecules})", file=sys.stderr)
-
-    embeddings = [pooled_embedding(mol, model, featurizer) for mol in sample_mols]
-    X = np.array(embeddings)
+    if args.embeddings_csv:
+        # Fast path -- read precomputed embeddings (fast_embeddings.py,
+        # real chemprop batched GPU tensor ops) instead of this script's
+        # own pure-numpy per-molecule loop. Uses every training molecule
+        # (no subsampling) since computing them all this way is already
+        # cheap regardless of dataset size.
+        with open(args.embeddings_csv, newline="") as f:
+            reader = csv.DictReader(f)
+            emb_by_smiles = {}
+            for row in reader:
+                key = row["smiles"]
+                emb_by_smiles[key] = [float(row[c]) for c in reader.fieldnames if c != "smiles"]
+        sample_mols, X_rows = [], []
+        n_missing = 0
+        for mol, smi in zip(valid_mols, valid_smiles):
+            vec = emb_by_smiles.get(smi)
+            if vec is None:
+                n_missing += 1
+                continue
+            sample_mols.append(mol)
+            X_rows.append(vec)
+        if n_missing:
+            warnings.warn(f"{n_missing}/{len(valid_mols)} training molecules had no matching row in "
+                           f"{args.embeddings_csv} (canonical-SMILES mismatch?) -- excluded from embedding domain")
+        print(f"loaded {len(X_rows)} precomputed embeddings from {args.embeddings_csv}", file=sys.stderr)
+        X = np.array(X_rows)
+    else:
+        # Slow path: the actual chemprop D-MPNN forward pass, which IS
+        # expensive (a real message-passing graph forward pass per
+        # molecule, in pure Python) -- only run on a random subsample
+        # when the training set is large. A few thousand molecules is
+        # already plenty to place 40 k-means centroids well; this is what
+        # keeps e.g. QM9's 130k-molecule CSV or the CYP inhibition
+        # panel's 12k-molecule PubChem qHTS pull tractable. The
+        # vocabulary above is NOT affected by this -- it already used
+        # every molecule. For a large encoder (e.g. a foundation-model-
+        # pretrained checkpoint with d_h in the thousands), this loop is
+        # impractically slow regardless of subsampling -- use
+        # fast_embeddings.py + --embeddings-csv instead.
+        rng = np.random.default_rng(args.seed)
+        sample_mols = valid_mols
+        if len(valid_mols) > args.max_embedding_molecules:
+            idx = rng.choice(len(valid_mols), size=args.max_embedding_molecules, replace=False)
+            sample_mols = [valid_mols[i] for i in idx]
+            print(f"subsampled {len(sample_mols)}/{len(valid_mols)} molecules for embedding-domain computation "
+                  f"(--max-embedding-molecules={args.max_embedding_molecules})", file=sys.stderr)
+        embeddings = [pooled_embedding(mol, model, featurizer) for mol in sample_mols]
+        X = np.array(embeddings)
     centroids, inertia = kmeans(X, args.n_centroids, seed=args.seed)
     print(f"k-means: {len(centroids)} centroids, inertia={inertia:.1f}", file=sys.stderr)
 

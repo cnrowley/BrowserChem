@@ -8,9 +8,10 @@
   "dims": {
     "d_v": 72,
     "d_e": 14,
-    "d_h": 300,
-    "depth": 3,
-    "aggNorm": 100
+    "d_h": 2048,
+    "depth": 6,
+    "aggregationType": "mean",
+    "aggNorm": null
   },
   "ffnHiddenDim": 300,
   "numExtraDescriptors": 0,
@@ -20,48 +21,48 @@
   "tensors": {
     "W_i": {
       "shape": [
-        300,
+        2048,
         86
       ],
       "offset": 0,
-      "length": 25800
+      "length": 176128
     },
     "W_h": {
       "shape": [
-        300,
-        300
+        2048,
+        2048
       ],
-      "offset": 25800,
-      "length": 90000
+      "offset": 176128,
+      "length": 4194304
     },
     "W_o_weight": {
       "shape": [
-        300,
-        372
+        2048,
+        2120
       ],
-      "offset": 115800,
-      "length": 111600
+      "offset": 4370432,
+      "length": 4341760
     },
     "W_o_bias": {
       "shape": [
-        300
+        2048
       ],
-      "offset": 227400,
-      "length": 300
+      "offset": 8712192,
+      "length": 2048
     },
     "ffn0_weight": {
       "shape": [
         300,
-        300
+        2048
       ],
-      "offset": 227700,
-      "length": 90000
+      "offset": 8714240,
+      "length": 614400
     },
     "ffn0_bias": {
       "shape": [
         300
       ],
-      "offset": 317700,
+      "offset": 9328640,
       "length": 300
     },
     "ffn1_weight": {
@@ -69,17 +70,17 @@
         1,
         300
       ],
-      "offset": 318000,
+      "offset": 9328940,
       "length": 300
     },
     "ffn1_bias": {
       "shape": [
         1
       ],
-      "offset": 318300,
+      "offset": 9329240,
       "length": 1
     }
   },
-  "byteLength": 1273204,
+  "byteLength": 37316964,
   "dtype": "float32"
 }

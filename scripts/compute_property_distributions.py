@@ -442,8 +442,9 @@ def run_chemprop_molecule(mol, model, featurizer):
     bias); h_0 = ReLU(h0raw); depth-1 message/update rounds add back the
     UNACTIVATED h0raw at each step (not its ReLU); final atom embedding is
     ReLU(W_o.[atomFeat(v), sum of incoming h] + bias); molecule embedding
-    is NormAggregation (sum of atom embeddings / aggNorm); then
-    ffn0->ReLU->ffn1->task head."""
+    is NormAggregation (sum of atom embeddings / aggNorm) or MeanAggregation
+    (mean of atom embeddings), per this model's own dims.aggregationType;
+    then ffn0->ReLU->ffn1->task head."""
     mg = featurizer(mol)
     num_atoms = mg.V.shape[0]
     hidden_size = model.dims["d_h"]
@@ -481,8 +482,11 @@ def run_chemprop_molecule(mol, model, featurizer):
             message = h[incoming].sum(axis=0) if incoming else np.zeros(hidden_size)
             embeddings.append(np.maximum(model.Wo @ np.concatenate([mg.V[v], message]) + model.Wo_bias, 0))
 
-    agg_norm = model.dims.get("aggNorm") or 1.0
-    pooled = np.sum(embeddings, axis=0) / agg_norm
+    if model.dims.get("aggregationType") == "mean":
+        pooled = np.mean(embeddings, axis=0)
+    else:
+        agg_norm = model.dims.get("aggNorm") or 1.0
+        pooled = np.sum(embeddings, axis=0) / agg_norm
     return model.apply_head(pooled)
 
 
