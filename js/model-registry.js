@@ -47,16 +47,32 @@
  *                                   checkpoint's own manifest.task, but
  *                                   not force-checked at load time --
  *                                   validate_registry.py checks it offline)
- *         "engine": "chemprop" | "nagl" | "ani2x" | "geomol" | "pka",  optional,
+ *         "engine": "chemprop" | "nagl" | "ani2x" | "geomol" | "pka" | "onnx-multitask",  optional,
  *                                   defaults to "chemprop" for backward
  *                                   compatibility. Decides which loader/
  *                                   predictor (chemprop-model.js /
  *                                   nagl-model.js / ani2x-model.js /
- *                                   geomol-model.js / pka-model.js)
+ *                                   geomol-model.js / pka-model.js /
+ *                                   onnx-multitask-model.js)
  *                                   this entry's files get handed to --
  *                                   each is a genuinely different
  *                                   architecture/manifest shape, not
- *                                   just different weights. "pka" models
+ *                                   just different weights. "onnx-multitask"
+ *                                   is for a genuinely shared-encoder
+ *                                   multi-task checkpoint (can never be
+ *                                   converted to the manifest.json/
+ *                                   weights.bin format -- see
+ *                                   convert_chemprop_checkpoint.py's
+ *                                   n_tasks==1 refusal): multiple registry
+ *                                   ids share the SAME "files.weights" (one
+ *                                   physical .onnx file, deduplicated by
+ *                                   URL so it's only fetched once), each
+ *                                   with its OWN small "files.manifest"
+ *                                   naming which output column it reads
+ *                                   ("onnxTargetTask" out of
+ *                                   "onnxTaskNames") -- see
+ *                                   model/cyp-herg-chemeleon-multitask/*.json
+ *                                   for the real shipped example. "pka" models
  *                                   additionally require their
  *                                   descriptor.chargeSource NAGL model
  *                                   (baked into their own manifest.json,
@@ -152,8 +168,9 @@ CC.GNN = window.CC.GNN || {};
       if (!raw.displayName) problems.push('missing "displayName"');
       if (!raw.propertyKey) problems.push('missing "propertyKey"');
       const engine = raw.engine || 'chemprop';
-      if (engine !== 'chemprop' && engine !== 'nagl' && engine !== 'ani2x' && engine !== 'geomol' && engine !== 'pka') {
-        problems.push('"engine" must be "chemprop", "nagl", "ani2x", "geomol", or "pka", got ' + JSON.stringify(raw.engine));
+      const validEngines = ['chemprop', 'nagl', 'ani2x', 'geomol', 'pka', 'onnx-multitask'];
+      if (validEngines.indexOf(engine) === -1) {
+        problems.push('"engine" must be one of ' + JSON.stringify(validEngines) + ', got ' + JSON.stringify(raw.engine));
       }
       if (engine === 'chemprop' && raw.taskType !== 'regression' && raw.taskType !== 'classification' && raw.taskType !== 'regression-mve') {
         problems.push('"taskType" must be "regression", "classification", or "regression-mve", got ' + JSON.stringify(raw.taskType));

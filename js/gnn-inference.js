@@ -171,53 +171,72 @@ CC.GNN = window.CC.GNN || {};
     if (hasChemprop || otherPropertyEngines.length > 0) {
       const merged = { molecularProperties: {}, propertyMeta: {}, atomProperties: [], atomIds: [], bondProperties: [], bondIds: [], backend: 'chemprop', warnings: [] };
 
+      // A sequential promise chain, not Promise.all -- most property
+      // adapters (chemprop, nagl, pka) run synchronous JS math and
+      // resolve immediately, but the onnx-multitask adapter's predict()
+      // is genuinely async (ONNX Runtime Web's WASM session.run()).
+      // Chaining with .then() preserves the exact same merge ORDER a
+      // synchronous forEach always had -- whichever engine runs first
+      // sets merged.atomProperties' base array, every later engine
+      // index-merges into it (same atom ordering every engine produces,
+      // molecule.atoms.values() with no reordering) -- which a bare
+      // Promise.all wouldn't guarantee once one adapter can resolve on a
+      // later microtask/macrotask than the others.
+      let chain = Promise.resolve();
+
       if (hasChemprop) {
-        try {
-          const cpResult = chempropAdapter.predict(molecule);
-          Object.assign(merged.molecularProperties, cpResult.molecularProperties);
-          Object.assign(merged.propertyMeta, cpResult.propertyMeta);
-          if (cpResult.atomIds.length > 0) merged.atomIds = cpResult.atomIds;
-          if (cpResult.atomProperties.length > 0) {
-            merged.atomProperties = cpResult.atomProperties.map(function (p) { return Object.assign({}, p); });
-          }
-          if (cpResult.bondIds && cpResult.bondIds.length > 0) merged.bondIds = cpResult.bondIds;
-          if (cpResult.bondProperties && cpResult.bondProperties.length > 0) {
-            merged.bondProperties = cpResult.bondProperties.map(function (p) { return Object.assign({}, p); });
-          }
-          if (cpResult.warnings && cpResult.warnings.length > 0) {
-            merged.warnings = merged.warnings.concat(cpResult.warnings);
-          }
-        } catch (err) {
-          merged.warnings.push('Chemprop models: ' + err.message);
-        }
+        chain = chain.then(function () {
+          return Promise.resolve().then(function () { return chempropAdapter.predict(molecule); }).then(function (cpResult) {
+            Object.assign(merged.molecularProperties, cpResult.molecularProperties);
+            Object.assign(merged.propertyMeta, cpResult.propertyMeta);
+            if (cpResult.atomIds.length > 0) merged.atomIds = cpResult.atomIds;
+            if (cpResult.atomProperties.length > 0) {
+              merged.atomProperties = cpResult.atomProperties.map(function (p) { return Object.assign({}, p); });
+            }
+            if (cpResult.bondIds && cpResult.bondIds.length > 0) merged.bondIds = cpResult.bondIds;
+            if (cpResult.bondProperties && cpResult.bondProperties.length > 0) {
+              merged.bondProperties = cpResult.bondProperties.map(function (p) { return Object.assign({}, p); });
+            }
+            if (cpResult.warnings && cpResult.warnings.length > 0) {
+              merged.warnings = merged.warnings.concat(cpResult.warnings);
+            }
+          }).catch(function (err) {
+            merged.warnings.push('Chemprop models: ' + err.message);
+          });
+        });
       }
 
       otherPropertyEngines.forEach(function (engineName) {
         const adapter = CC.ModelAdapters.get(engineName);
         adapter.getLoadedModelIds().forEach(function (id) {
-          try {
-            const result = adapter.predict(molecule, id);
-            if (merged.atomIds.length === 0) merged.atomIds = result.atomIds;
-            if (merged.atomProperties.length === 0) {
-              merged.atomProperties = result.atomProperties.map(function (p) { return Object.assign({}, p); });
-            } else {
-              // Same atom ordering every engine produces (all iterate
-              // molecule.atoms.values() directly, no reordering), so
-              // this merges index-by-index rather than needing to
-              // re-match by atom id.
-              result.atomProperties.forEach(function (p, i) { Object.assign(merged.atomProperties[i], p); });
-            }
-          } catch (err) {
-            // One incompatible/misconfigured model (e.g. an element
-            // outside NAGL's vocabulary, or a pKa model missing its
-            // required NAGL charge model) shouldn't sink predictions
-            // from everything else that's loaded.
-            merged.warnings.push(engineName + ' model "' + id + '": ' + err.message);
-          }
+          chain = chain.then(function () {
+            return Promise.resolve().then(function () { return adapter.predict(molecule, id); }).then(function (result) {
+              Object.assign(merged.molecularProperties, result.molecularProperties);
+              Object.assign(merged.propertyMeta, result.propertyMeta);
+              if (result.atomProperties && result.atomProperties.length > 0) {
+                if (merged.atomIds.length === 0) merged.atomIds = result.atomIds;
+                if (merged.atomProperties.length === 0) {
+                  merged.atomProperties = result.atomProperties.map(function (p) { return Object.assign({}, p); });
+                } else {
+                  // Same atom ordering every engine produces (all iterate
+                  // molecule.atoms.values() directly, no reordering), so
+                  // this merges index-by-index rather than needing to
+                  // re-match by atom id.
+                  result.atomProperties.forEach(function (p, i) { Object.assign(merged.atomProperties[i], p); });
+                }
+              }
+            }).catch(function (err) {
+              // One incompatible/misconfigured model (e.g. an element
+              // outside NAGL's vocabulary, or a pKa model missing its
+              // required NAGL charge model) shouldn't sink predictions
+              // from everything else that's loaded.
+              merged.warnings.push(engineName + ' model "' + id + '": ' + err.message);
+            });
+          });
         });
       });
 
-      return Promise.resolve(merged);
+      return chain.then(function () { return merged; });
     }
 
     if (onnxSession) return predictOnnx(molecule);

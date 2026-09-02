@@ -13,7 +13,13 @@ versa. "nagl"-engine entries (convert_nagl_checkpoint.py output),
 "ani2x"-engine entries (convert_ani2x_checkpoint.py output),
 "geomol"-engine entries (convert_geomol_checkpoint.py output), and
 "pka"-engine entries (convert_pka_lightgbm.py output) each get their
-own, differently-shaped manifest cross-check instead.
+own, differently-shaped manifest cross-check instead. "onnx-multitask"-
+engine entries (scripts/export_onnx_from_checkpoint.py output) are a
+genuinely shared-encoder multi-task checkpoint that can never be
+converted to the manifest.json/weights.bin format at all (that converter
+explicitly refuses multi-task checkpoints) -- multiple registry ids point
+at the SAME physical .onnx file, each with its own tiny manifest naming
+which output column it reads.
 
 Usage:
     python3 validate_registry.py model/registry.json
@@ -26,7 +32,7 @@ from pathlib import Path
 
 REQUIRED_FIELDS = ["id", "displayName", "propertyKey", "files"]
 VALID_TASK_TYPES = {"regression", "classification", "regression-mve"}
-VALID_ENGINES = {"chemprop", "nagl", "ani2x", "geomol", "pka"}
+VALID_ENGINES = {"chemprop", "nagl", "ani2x", "geomol", "pka", "onnx-multitask"}
 VALID_CATEGORIES = {"general", "environmental-analytical", "medicinal", "structure-tools", "characterization"}
 
 
@@ -289,6 +295,28 @@ def main():
                             f"registry entry id seen so far -- if it's defined later in registry.json "
                             f"this warning is a false positive, but double check the id is right."
                         )
+                    tech_task = tech_manifest.get("task")
+                elif engine == "onnx-multitask":
+                    # onnx-multitask-model.js needs onnxTaskNames (every
+                    # output column the shared .onnx model produces) and
+                    # onnxTargetTask (which ONE of those THIS registry id
+                    # reads) in this id's own small manifest.json --
+                    # multiple registry ids intentionally point at the
+                    # SAME files.weights (one physical .onnx file,
+                    # deduplicated by URL in js/onnx-multitask-model.js so
+                    # it's only fetched/parsed once), each with its own
+                    # manifest naming a different column.
+                    onnx_task_names = tech_manifest.get("onnxTaskNames") or []
+                    onnx_target_task = tech_manifest.get("onnxTargetTask")
+                    if not onnx_target_task:
+                        errors.append(f"[{label}] manifest is missing 'onnxTargetTask'")
+                    elif onnx_target_task not in onnx_task_names:
+                        errors.append(
+                            f"[{label}] manifest onnxTargetTask={onnx_target_task!r} not present in "
+                            f"its own onnxTaskNames={onnx_task_names!r}"
+                        )
+                    if not tech_manifest.get("dims"):
+                        errors.append(f"[{label}] manifest is missing 'dims'")
                     tech_task = tech_manifest.get("task")
 
                 registry_property_key = entry.get("propertyKey")

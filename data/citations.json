@@ -639,6 +639,24 @@
       "note": "The original rulebase (implemented as the open-source Toxtree tool, github.com/ideaconsult/toxtree-mirror, LGPL 2.1) that data/mutagenicity_alerts_benigni_bossa.json's 9 alerts are a documented subset of -- cited by Ferrari2010Mutagenicity (the paper this project's own SMARTS strings were directly sourced from). No DOI found for this technical report; not independently re-verified beyond the citation Ferrari & Gini give for it.",
       "institution": "European Commission - Joint Research Centre",
       "number": "EUR 23241 EN"
+    },
+    {
+      "key": "Burns2025Chemeleon",
+      "type": "preprint",
+      "authors": [
+        "Burns, Jackson W.",
+        "Zalte, Akshat Shirish",
+        "Abreu, Charlles R. A.",
+        "Sieg, Jochen",
+        "Feldmann, Christian",
+        "Mathea, Miriam",
+        "Green, William H."
+      ],
+      "title": "Deep Learning Foundation Models from Classical Molecular Descriptors",
+      "journal": "arXiv",
+      "year": 2025,
+      "doi": "10.48550/arXiv.2506.15792",
+      "note": "Verified via arxiv.org (2506.15792, submitted 2026-06-18) and cross-checked against chemprop 2.2.3's own --from-foundation CHEMELEON download message, which explicitly requests this exact DOI be cited. CheMeleon is the ~9.3M-parameter D-MPNN foundation model (BondMessagePassing, d_h=2048/depth=6, MeanAggregation) this project fine-tunes for several checkpoints -- see each model's own notes for how it was adapted (encoder weights transferred via chemprop's --from-foundation flag, which builds a fresh task-specific prediction head on top and fine-tunes the whole thing end-to-end; no architecture changes of our own). Auto-downloaded from Zenodo record 15460715 to ~/.chemprop/ on first use, not redistributed by this repo."
     }
   ]
 }

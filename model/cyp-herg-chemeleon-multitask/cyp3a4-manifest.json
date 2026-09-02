@@ -1,0 +1,21 @@
+{
+  "task": "cyp3a4",
+  "taskType": "classification",
+  "onnxTaskNames": [
+    "herg_inhibition",
+    "cyp1a2_inhibition",
+    "cyp2c9_inhibition",
+    "cyp2c19_inhibition",
+    "cyp2d6_inhibition",
+    "cyp3a4_inhibition"
+  ],
+  "onnxTargetTask": "cyp3a4_inhibition",
+  "dims": {
+    "d_h": 2048,
+    "depth": 6,
+    "aggregationType": "mean",
+    "aggNorm": null,
+    "d_v": 72,
+    "d_e": 14
+  }
+}

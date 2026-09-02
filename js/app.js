@@ -3004,7 +3004,16 @@
       // melting-point) used to compare undefined against the string
       // literals below and silently never auto-load.
       const engine = entry.engine || 'chemprop';
-      if (engine !== 'chemprop' && engine !== 'nagl' && engine !== 'pka') return false;
+      // Any 'property'-kind adapter is auto-loadable here (ani2x/geomol
+      // are 'geometry'-kind, loaded through the 3D panel instead, not
+      // this batch) -- checked generically via CC.ModelAdapters rather
+      // than a hardcoded per-engine-name list, which is exactly the kind
+      // of list model-adapters.js's own header warns drifts out of sync
+      // (this one already had: no 'onnx-multitask' branch when that
+      // engine was added, silently skipping it here while every other
+      // registry/predict path already handled it generically).
+      const adapter = CC.ModelAdapters.get(engine);
+      if (!adapter || adapter.kind !== 'property') return false;
       if (categorySet) {
         const cats = (entry.categories && entry.categories.length) ? entry.categories : ['general'];
         if (!cats.some(function (c) { return categorySet.has(c); })) return false;
@@ -3341,19 +3350,43 @@
       // where available, falling back to the raw result key for an
       // ad-hoc "load from files" model with no registry entry at all).
       cypHergOutput.innerHTML = '';
-      let anyCypHerg = false;
+      const cypHergRows = [];
       Object.keys(result.molecularProperties || {}).forEach(function (name) {
         const meta = propertyMeta[name];
         const registryEntry = meta && meta.modelId ? CC.GNN.getRegistryEntry(meta.modelId) : null;
         const key = registryEntry ? registryEntry.propertyKey : name;
         if (/^solv/.test(key)) return; // already shown in the Solvation free energy section
         if (/^cyp/i.test(key) || key === 'herg') {
-          cypHergOutput.appendChild(buildMolecularPropertyRow(name, meta).row);
-          anyCypHerg = true;
+          cypHergRows.push({ name: name, meta: meta, key: key });
           return;
         }
         molOutput.appendChild(buildMolecularPropertyRow(name, meta).row);
       });
+      // Insertion order here otherwise follows whatever order each
+      // engine's async load/predict happened to resolve in (the 6
+      // shared-ONNX-session inhibition models race each other on load --
+      // see js/onnx-multitask-model.js), which reshuffles isoforms
+      // between runs -- not the deterministic, scannable order a
+      // drug-discovery read wants from a panel the section's own note
+      // above already sells as "grouped together". Sort by isoform (in
+      // conventional CYP450 panel order: 1A2, 2C9, 2C19, 2D6, 2E1, 3A4),
+      // inhibition before substrate within the same isoform, hERG last
+      // (not a CYP isoform, a different mechanism entirely).
+      const CYP_ISOFORM_ORDER = ['cyp1a2', 'cyp2c9', 'cyp2c19', 'cyp2d6', 'cyp2e1', 'cyp3a4'];
+      function cypHergSortRank(key) {
+        if (key === 'herg') return [CYP_ISOFORM_ORDER.length, 0];
+        const isSubstrate = /substrate$/.test(key);
+        const isoform = isSubstrate ? key.slice(0, -'substrate'.length) : key;
+        const isoformIdx = CYP_ISOFORM_ORDER.indexOf(isoform);
+        return [isoformIdx === -1 ? CYP_ISOFORM_ORDER.length : isoformIdx, isSubstrate ? 1 : 0];
+      }
+      cypHergRows.sort(function (a, b) {
+        const ra = cypHergSortRank(a.key);
+        const rb = cypHergSortRank(b.key);
+        return ra[0] - rb[0] || ra[1] - rb[1];
+      });
+      cypHergRows.forEach(function (r) { cypHergOutput.appendChild(buildMolecularPropertyRow(r.name, r.meta).row); });
+      const anyCypHerg = cypHergRows.length > 0;
       cypHergTable.style.display = anyCypHerg ? '' : 'none';
       cypHergEmptyNote.style.display = anyCypHerg ? 'none' : '';
 

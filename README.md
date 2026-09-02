@@ -51,11 +51,17 @@ applicable model for that molecule — nothing loads until you ask for it.
 Covers logP, aqueous solubility, melting point, vapor pressure,
 polarizability, HOMO-LUMO gap, bond dissociation enthalpy (per bond),
 CYP450 inhibition/substrate liability, hERG channel inhibition liability,
-and more (49 trained models total). These are machine learning models —
+and more (52 trained models total). These are machine learning models —
 trained on real experimental or DFT-computed data, not simple rules of
 thumb — and every prediction is shown with a confidence badge (in-domain
 / borderline / out-of-domain) telling you how similar the molecule is to
-what the model was actually trained on.
+what the model was actually trained on. The hERG and CYP450-inhibition
+panel shares one encoder fine-tuned from
+[CheMeleon](https://arxiv.org/abs/2506.15792) (Burns et al. 2025), a
+foundation model pretrained on 1M PubChem molecules — a genuine
+multi-task checkpoint too large to run as hand-written JavaScript, so it
+runs through ONNX Runtime Web instead of this project's usual from-scratch
+D-MPNN implementation.
 
 ![Predicted properties with confidence badges, and the same values shown as a live heatmap on the 2D structure](docs/screenshots/properties-panel.png)
 

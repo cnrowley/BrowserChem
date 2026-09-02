@@ -48,6 +48,18 @@ CC.Citations = {};
     // ree2024pkalculator (pushed via dataset.citationKey below) already
     // covers the one paper behind both the method and its training data.
     pka: [],
+    // Same underlying chemprop D-MPNN architecture as the 'chemprop'
+    // engine (bit-exact verified against it -- see
+    // scripts/export_onnx_from_checkpoint.py), just executed via ONNX
+    // Runtime Web instead of the hand-rolled JS forward pass, so it
+    // cites the same architecture papers. The CHEMELEON foundation-model
+    // citation is NOT listed here (unlike, say, ani2x's fixed paper --
+    // every onnx-multitask model happens to be a CHEMELEON fine-tune
+    // today, but that's a fact about today's specific checkpoints, not
+    // a property of the engine itself) -- it travels with each model's
+    // own dataset.citationKey instead, same as every other per-model
+    // fact this map deliberately doesn't hardcode.
+    'onnx-multitask': ['Heid2024Chemprop', 'Yang2019DMPNN'],
   };
 
   // Always relevant once a structure has been drawn/validated at all --
