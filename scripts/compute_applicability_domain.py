@@ -149,6 +149,25 @@ def pooled_embedding(mol, model, featurizer):
     return np.sum(embeddings, axis=0) / agg_norm
 
 
+def pairwise_dists(X, C):
+    """Euclidean distance between every row of X (N,D) and every row of C
+    (K,D), returned as an (N,K) array. Uses the ||x-c||^2 = ||x||^2 +
+    ||c||^2 - 2*x.c^T expansion (one N*D-by-D*K matmul) rather than the
+    more obvious `np.linalg.norm(X[:, None, :] - C[None, :, :], axis=2)`
+    broadcast -- that broadcast briefly materializes a full (N, K, D)
+    temp array, which is harmless at this project's usual d_h=300
+    (N~19000, K~40 -> ~1.8GB) but a real, confirmed OOM kill (~27GB RSS,
+    `dmesg`'s own oom-kill log) at CHEMELEON's d_h=2048 on the same N/K --
+    caught computing AD for the cyp-herg-chemeleon-multitask models. This
+    version's peak extra memory is O(N*K) for the output plus O(N*D) for
+    one matmul operand, independent of how it's chunked internally."""
+    X_sq = np.sum(X * X, axis=1)[:, None]
+    C_sq = np.sum(C * C, axis=1)[None, :]
+    sq_dists = X_sq + C_sq - 2.0 * (X @ C.T)
+    np.maximum(sq_dists, 0, out=sq_dists)  # clip tiny negative values from float rounding
+    return np.sqrt(sq_dists)
+
+
 def kmeans(X, k, seed=0, n_restarts=3, max_iter=60):
     """Plain Lloyd's-algorithm k-means, numpy only (no sklearn dependency
     in this project's runtime scripts). Returns (centroids, best_inertia)."""
@@ -160,7 +179,7 @@ def kmeans(X, k, seed=0, n_restarts=3, max_iter=60):
     for restart in range(n_restarts):
         centroids = X[rng.choice(n, size=k, replace=False)].copy()
         for _ in range(max_iter):
-            dists = np.linalg.norm(X[:, None, :] - centroids[None, :, :], axis=2)
+            dists = pairwise_dists(X, centroids)
             assignments = np.argmin(dists, axis=1)
             new_centroids = centroids.copy()
             for c in range(k):
@@ -171,7 +190,7 @@ def kmeans(X, k, seed=0, n_restarts=3, max_iter=60):
                 centroids = new_centroids
                 break
             centroids = new_centroids
-        dists = np.linalg.norm(X[:, None, :] - centroids[None, :, :], axis=2)
+        dists = pairwise_dists(X, centroids)
         inertia = np.min(dists, axis=1).sum()
         if inertia < best_inertia:
             best_centroids, best_inertia = centroids, inertia
@@ -217,17 +236,37 @@ def main():
     entry = next((m for m in registry["models"] if m["id"] == args.model_id), None)
     if entry is None:
         sys.exit(f"no model with id {args.model_id!r} in {args.registry}")
-    if entry.get("engine", "chemprop") != "chemprop":
-        sys.exit(f"{args.model_id} has engine {entry.get('engine')!r} -- this script only supports chemprop molecule-level models")
+    engine = entry.get("engine", "chemprop")
+    # "onnx-multitask" entries (a genuinely shared-encoder multi-task
+    # checkpoint, see js/onnx-multitask-model.js) have no manifest.json/
+    # weights.bin pair at all -- ChempropDMPNNModel can't load them, and
+    # doesn't need to: with --embeddings-csv, `model` below is only ever
+    # used for pooled_embedding()'s own from-scratch D-MPNN forward pass,
+    # which is skipped entirely in that path (see fast_embeddings.py,
+    # which computes the same embeddings via chemprop's own real GPU
+    # tensor ops from the ORIGINAL .pt checkpoint instead). Element/charge
+    # vocabulary is pure RDKit parsing of the training CSV either way,
+    # completely engine-agnostic.
+    if engine not in ("chemprop", "onnx-multitask"):
+        sys.exit(f"{args.model_id} has engine {engine!r} -- this script only supports chemprop or "
+                  "onnx-multitask molecule-level models")
+    if engine == "onnx-multitask" and not args.embeddings_csv:
+        sys.exit(f"{args.model_id} has engine 'onnx-multitask' -- this script can only compute its "
+                  "embedding domain via --embeddings-csv (see fast_embeddings.py against the original "
+                  ".pt checkpoint), since there's no manifest.json/weights.bin pair to build a "
+                  "ChempropDMPNNModel from")
     if entry.get("outputLevel", "molecule") != "molecule":
         sys.exit(f"{args.model_id} is outputLevel={entry.get('outputLevel')!r} -- only molecule-level pooled embeddings are supported")
 
-    model_dir = Path(args.registry).parent / Path(entry["files"]["manifest"]).parent
-    manifest_path = Path(args.registry).parent / entry["files"]["manifest"]
-    weights_path = Path(args.registry).parent / entry["files"]["weights"]
-
-    print(f"loading {manifest_path}", file=sys.stderr)
-    model = ChempropDMPNNModel(manifest_path, weights_path)
+    if engine == "onnx-multitask":
+        model_dir = Path(args.registry).parent / Path(entry["files"]["manifest"]).parent
+        model = None
+    else:
+        model_dir = Path(args.registry).parent / Path(entry["files"]["manifest"]).parent
+        manifest_path = Path(args.registry).parent / entry["files"]["manifest"]
+        weights_path = Path(args.registry).parent / entry["files"]["weights"]
+        print(f"loading {manifest_path}", file=sys.stderr)
+        model = ChempropDMPNNModel(manifest_path, weights_path)
     featurizer = SimpleMoleculeMolGraphFeaturizer()
 
     elements = set()
@@ -347,7 +386,7 @@ def main():
     centroids, inertia = kmeans(X, args.n_centroids, seed=args.seed)
     print(f"k-means: {len(centroids)} centroids, inertia={inertia:.1f}", file=sys.stderr)
 
-    dists_to_centroids = np.linalg.norm(X[:, None, :] - centroids[None, :, :], axis=2)
+    dists_to_centroids = pairwise_dists(X, centroids)
     self_distances = np.min(dists_to_centroids, axis=1)
     p50, p90, p99 = np.percentile(self_distances, [50, 90, 99])
     print(f"self-distance percentiles: p50={p50:.3f} p90={p90:.3f} p99={p99:.3f}", file=sys.stderr)

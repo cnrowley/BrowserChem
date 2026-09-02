@@ -153,14 +153,24 @@ class CheckpointModel(nn.Module):
         hidden = torch.relu(self.ffn0(Z))
         raw = self.ffn1(hidden)
 
+        # Z (pooled, pre-FFN embedding) is returned as a second output
+        # alongside the task predictions -- exactly the same quantity
+        # compute_applicability_domain.py/fast_embeddings.py call the
+        # "pooled embedding" (message_passing -> agg, before any FFN
+        # head), so js/onnx-multitask-model.js can feed it straight into
+        # CC.AD.tierForEmbedding() for a real confidence badge without a
+        # second forward pass. Molecule-level AD centroids are the ONLY
+        # thing this buys; there's no manifest.json-based JS D-MPNN
+        # running alongside this model to compute it another way, unlike
+        # every other ("chemprop"-engine) model in this registry.
         if self.task_type == "classification":
-            return torch.sigmoid(raw)
+            return torch.sigmoid(raw), Z
         if self.task_type == "regression-mve":
             mean_raw, var_raw = raw[:, : self.n_tasks], raw[:, self.n_tasks:]
             mean = mean_raw * self.out_scale + self.out_mean
             var = torch.nn.functional.softplus(var_raw) * self.out_scale * self.out_scale
-            return torch.cat([mean, var], dim=1)
-        return raw * self.out_scale + self.out_mean
+            return torch.cat([mean, var], dim=1), Z
+        return raw * self.out_scale + self.out_mean, Z
 
 
 def main():
@@ -186,19 +196,20 @@ def main():
     args_tuple = (V, E, edge_index, rev_edge_index, batch)
 
     with torch.no_grad():
-        sanity = model(*args_tuple)
-    print(f"sanity output shape: {sanity.shape} ({model.n_tasks} tasks, task_type={model.task_type})", file=sys.stderr)
+        sanity, sanity_z = model(*args_tuple)
+    print(f"sanity output shape: {sanity.shape} ({model.n_tasks} tasks, task_type={model.task_type}), "
+          f"embedding shape: {sanity_z.shape}", file=sys.stderr)
 
     dyn_axes = {
         "V": {0: "num_atoms"}, "E": {0: "num_edges"},
         "edge_index": {1: "num_edges"}, "rev_edge_index": {0: "num_edges"},
-        "batch": {0: "num_atoms"}, "output": {0: "num_mols"},
+        "batch": {0: "num_atoms"}, "output": {0: "num_mols"}, "embedding": {0: "num_mols"},
     }
     tmp_path = args.out_onnx + ".tmp"
     torch.onnx.export(
         model, args_tuple, tmp_path,
         input_names=["V", "E", "edge_index", "rev_edge_index", "batch"],
-        output_names=["output"], dynamic_axes=dyn_axes,
+        output_names=["output", "embedding"], dynamic_axes=dyn_axes,
         opset_version=18, do_constant_folding=True,
     )
 

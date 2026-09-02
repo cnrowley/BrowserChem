@@ -136,11 +136,11 @@ CC.GNN = window.CC.GNN || {};
    * Molecule-level: { molecularProperties: { [task]: number }, propertyMeta,
    * atomIds, backend: 'onnx-multitask', modelId }, matching
    * chemprop-model.js's runOneMolecule shape so gnn-inference.js's merge
-   * logic doesn't need to special-case this engine. No confidence badge
-   * (CC.AD.tierForEmbedding needs a JS-side pooled embedding this engine
-   * doesn't compute; omitting applicabilityDomain from these registry
-   * entries already makes that degrade to "no badge" rather than a wrong
-   * one -- see model/registry.json's notes on these ids).
+   * logic doesn't need to special-case this engine. The confidence badge
+   * comes from the ONNX graph's own second output (the pooled, pre-FFN
+   * embedding -- see export_onnx_from_checkpoint.py), fed into the same
+   * CC.AD.tierForEmbedding() every other engine uses, since there's no
+   * JS-side D-MPNN forward pass here to compute it separately.
    */
   CC.GNN.predictOnnxMultitaskModel = function (molecule, id) {
     const model = models.get(id);
@@ -159,14 +159,26 @@ CC.GNN = window.CC.GNN || {};
       const value = results.output.data[model.taskIndex];
       const molecularProperties = {};
       molecularProperties[model.task] = value;
+      // The ONNX graph's second output is the pooled, pre-FFN embedding
+      // (see export_onnx_from_checkpoint.py) -- the exact same quantity
+      // chemprop-model.js's confidenceMeta() feeds CC.AD.tierForEmbedding
+      // for every other engine, just sourced from ONNX instead of a JS
+      // D-MPNN forward pass (there is no such pass for this engine).
+      const confidence = confidenceMeta(id, results.embedding && results.embedding.data);
       const propertyMeta = {};
-      propertyMeta[model.task] = { taskType: model.taskType, modelId: id, confidence: undefined, uncertainty: undefined };
+      propertyMeta[model.task] = { taskType: model.taskType, modelId: id, confidence: confidence, uncertainty: undefined };
       return {
         molecularProperties: molecularProperties, propertyMeta: propertyMeta,
         atomIds: graph.atomIds, backend: 'onnx-multitask', modelId: id,
       };
     });
   };
+
+  function confidenceMeta(modelId, embedding) {
+    if (!window.CC.AD || !CC.AD.tierForEmbedding || !embedding) return undefined;
+    const tier = CC.AD.tierForEmbedding(modelId, embedding);
+    return tier.tier === 'unknown' ? undefined : tier;
+  }
 
   CC.ModelAdapters.register('onnx-multitask', {
     kind: 'property',

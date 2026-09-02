@@ -1090,7 +1090,8 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 1A2, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP1A2 substrates include caffeine, theophylline, clozapine, tizanidine).",
       "files": {
         "manifest": "cyp-herg-chemeleon-multitask/cyp1a2-manifest.json",
-        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx"
+        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx",
+        "applicabilityDomain": "cyp-herg-chemeleon-multitask/cyp1a2-applicability-domain.json"
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP1A2 sub-readout",
@@ -1143,7 +1144,7 @@
         ],
         "dateTrained": "2026-09-02"
       },
-      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.9227 (old single-task) -> 0.9292 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1352). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data removed (not carried over) rather than left stale -- the old AD sidecar was computed in the previous, differently-shaped D-MPNN's embedding space (d_h=300 vs this checkpoint's d_h=2048) and would silently misreport confidence tiers against the new embedding space; regenerating it for the new shared encoder is a known, disclosed follow-up, not done yet.",
+      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.9227 (old single-task) -> 0.9292 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1352). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data was regenerated for the new shared encoder (not carried over from the old d_h=300 embedding space, which would have silently misreported confidence tiers) -- see this entry's own applicabilityDomain block/notes for the real training-vocabulary and embedding-domain data, computed from the union of all 6 source CSVs via fast_embeddings.py against the real checkpoint.",
       "tags": [
         "admet",
         "metabolism",
@@ -1152,7 +1153,72 @@
         "medicinal-chemistry",
         "chemeleon",
         "multi-task"
-      ]
+      ],
+      "applicabilityDomain": {
+        "trainingSetSize": 19233,
+        "elements": [
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "H",
+          "Hg",
+          "I",
+          "In",
+          "K",
+          "Li",
+          "Mg",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "Sr",
+          "Ti",
+          "V",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 7.5177,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the union of all 6 source CYP/hERG CSVs (data/cyp/cyp_herg_inhibition6_multitask.csv, 19,233 unique molecules) via scripts/fast_embeddings.py against the real shared CHEMELEON-fine-tuned checkpoint (chemprop's own batched GPU tensor ops, d_h=2048/depth=6 -- this script's own pure-numpy per-molecule forward pass is impractically slow at that scale, 39+ minutes and still unfinished on a 2500-molecule set in this project's own testing). Vocabulary/embedding-domain data is IDENTICAL across all 6 registry ids in this shared model, since they share one encoder and were all trained on the exact same molecule set (only which task's label was present per row differs, which doesn't affect what shaped the embedding space). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) with <5 occurrences out of 19,233 treated as one-off outliers, not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket. The embedding-domain distance (nearest-centroid distance in this checkpoint's own 2048-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee. Fixed a real bug in compute_applicability_domain.py while computing this: its k-means/self-distance step built a full (N, K, D) broadcast temp array for the nearest-centroid distance calculation, which OOM-killed the process at CHEMELEON's d_h=2048 (confirmed via dmesg: ~27GB RSS before being killed) despite being harmless at this project's usual d_h=300 -- fixed by computing pairwise distances via matrix multiplication instead of a broadcast, same result, no OOM risk regardless of embedding width."
+      }
     },
     {
       "id": "cyp2c9-inhibition-v1",
@@ -1167,7 +1233,8 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 2C9, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2C9 substrates include warfarin, phenytoin, most NSAIDs; a narrow-therapeutic-index isozyme where inhibition is a clinically significant concern).",
       "files": {
         "manifest": "cyp-herg-chemeleon-multitask/cyp2c9-manifest.json",
-        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx"
+        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx",
+        "applicabilityDomain": "cyp-herg-chemeleon-multitask/cyp2c9-applicability-domain.json"
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2C9 sub-readout",
@@ -1220,7 +1287,7 @@
         ],
         "dateTrained": "2026-09-02"
       },
-      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8673 (old single-task) -> 0.8960 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1321). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data removed (not carried over) rather than left stale -- the old AD sidecar was computed in the previous, differently-shaped D-MPNN's embedding space (d_h=300 vs this checkpoint's d_h=2048) and would silently misreport confidence tiers against the new embedding space; regenerating it for the new shared encoder is a known, disclosed follow-up, not done yet.",
+      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8673 (old single-task) -> 0.8960 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1321). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data was regenerated for the new shared encoder (not carried over from the old d_h=300 embedding space, which would have silently misreported confidence tiers) -- see this entry's own applicabilityDomain block/notes for the real training-vocabulary and embedding-domain data, computed from the union of all 6 source CSVs via fast_embeddings.py against the real checkpoint.",
       "tags": [
         "admet",
         "metabolism",
@@ -1229,7 +1296,72 @@
         "medicinal-chemistry",
         "chemeleon",
         "multi-task"
-      ]
+      ],
+      "applicabilityDomain": {
+        "trainingSetSize": 19233,
+        "elements": [
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "H",
+          "Hg",
+          "I",
+          "In",
+          "K",
+          "Li",
+          "Mg",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "Sr",
+          "Ti",
+          "V",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 7.5177,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the union of all 6 source CYP/hERG CSVs (data/cyp/cyp_herg_inhibition6_multitask.csv, 19,233 unique molecules) via scripts/fast_embeddings.py against the real shared CHEMELEON-fine-tuned checkpoint (chemprop's own batched GPU tensor ops, d_h=2048/depth=6 -- this script's own pure-numpy per-molecule forward pass is impractically slow at that scale, 39+ minutes and still unfinished on a 2500-molecule set in this project's own testing). Vocabulary/embedding-domain data is IDENTICAL across all 6 registry ids in this shared model, since they share one encoder and were all trained on the exact same molecule set (only which task's label was present per row differs, which doesn't affect what shaped the embedding space). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) with <5 occurrences out of 19,233 treated as one-off outliers, not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket. The embedding-domain distance (nearest-centroid distance in this checkpoint's own 2048-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee. Fixed a real bug in compute_applicability_domain.py while computing this: its k-means/self-distance step built a full (N, K, D) broadcast temp array for the nearest-centroid distance calculation, which OOM-killed the process at CHEMELEON's d_h=2048 (confirmed via dmesg: ~27GB RSS before being killed) despite being harmless at this project's usual d_h=300 -- fixed by computing pairwise distances via matrix multiplication instead of a broadcast, same result, no OOM risk regardless of embedding width."
+      }
     },
     {
       "id": "cyp2c19-inhibition-v1",
@@ -1244,7 +1376,8 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 2C19, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2C19 substrates include clopidogrel, omeprazole and other proton-pump inhibitors, several SSRIs; a well-known pharmacogenomically polymorphic isozyme).",
       "files": {
         "manifest": "cyp-herg-chemeleon-multitask/cyp2c19-manifest.json",
-        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx"
+        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx",
+        "applicabilityDomain": "cyp-herg-chemeleon-multitask/cyp2c19-applicability-domain.json"
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2C19 sub-readout",
@@ -1297,7 +1430,7 @@
         ],
         "dateTrained": "2026-09-02"
       },
-      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.9026 (old single-task) -> 0.9012 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1383). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data removed (not carried over) rather than left stale -- the old AD sidecar was computed in the previous, differently-shaped D-MPNN's embedding space (d_h=300 vs this checkpoint's d_h=2048) and would silently misreport confidence tiers against the new embedding space; regenerating it for the new shared encoder is a known, disclosed follow-up, not done yet.",
+      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.9026 (old single-task) -> 0.9012 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1383). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data was regenerated for the new shared encoder (not carried over from the old d_h=300 embedding space, which would have silently misreported confidence tiers) -- see this entry's own applicabilityDomain block/notes for the real training-vocabulary and embedding-domain data, computed from the union of all 6 source CSVs via fast_embeddings.py against the real checkpoint.",
       "tags": [
         "admet",
         "metabolism",
@@ -1306,7 +1439,72 @@
         "medicinal-chemistry",
         "chemeleon",
         "multi-task"
-      ]
+      ],
+      "applicabilityDomain": {
+        "trainingSetSize": 19233,
+        "elements": [
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "H",
+          "Hg",
+          "I",
+          "In",
+          "K",
+          "Li",
+          "Mg",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "Sr",
+          "Ti",
+          "V",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 7.5177,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the union of all 6 source CYP/hERG CSVs (data/cyp/cyp_herg_inhibition6_multitask.csv, 19,233 unique molecules) via scripts/fast_embeddings.py against the real shared CHEMELEON-fine-tuned checkpoint (chemprop's own batched GPU tensor ops, d_h=2048/depth=6 -- this script's own pure-numpy per-molecule forward pass is impractically slow at that scale, 39+ minutes and still unfinished on a 2500-molecule set in this project's own testing). Vocabulary/embedding-domain data is IDENTICAL across all 6 registry ids in this shared model, since they share one encoder and were all trained on the exact same molecule set (only which task's label was present per row differs, which doesn't affect what shaped the embedding space). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) with <5 occurrences out of 19,233 treated as one-off outliers, not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket. The embedding-domain distance (nearest-centroid distance in this checkpoint's own 2048-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee. Fixed a real bug in compute_applicability_domain.py while computing this: its k-means/self-distance step built a full (N, K, D) broadcast temp array for the nearest-centroid distance calculation, which OOM-killed the process at CHEMELEON's d_h=2048 (confirmed via dmesg: ~27GB RSS before being killed) despite being harmless at this project's usual d_h=300 -- fixed by computing pairwise distances via matrix multiplication instead of a broadcast, same result, no OOM risk regardless of embedding width."
+      }
     },
     {
       "id": "cyp2d6-inhibition-v1",
@@ -1321,7 +1519,8 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 2D6, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP2D6 substrates include codeine, tamoxifen, metoprolol, and many antidepressants/antipsychotics; the isozyme is highly pharmacogenomically polymorphic, with poor- and ultrarapid-metabolizer phenotypes common in the population).",
       "files": {
         "manifest": "cyp-herg-chemeleon-multitask/cyp2d6-manifest.json",
-        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx"
+        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx",
+        "applicabilityDomain": "cyp-herg-chemeleon-multitask/cyp2d6-applicability-domain.json"
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP2D6 sub-readout",
@@ -1374,7 +1573,7 @@
         ],
         "dateTrained": "2026-09-02"
       },
-      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8463 (old single-task) -> 0.8728 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1437). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data removed (not carried over) rather than left stale -- the old AD sidecar was computed in the previous, differently-shaped D-MPNN's embedding space (d_h=300 vs this checkpoint's d_h=2048) and would silently misreport confidence tiers against the new embedding space; regenerating it for the new shared encoder is a known, disclosed follow-up, not done yet.",
+      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8463 (old single-task) -> 0.8728 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1437). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data was regenerated for the new shared encoder (not carried over from the old d_h=300 embedding space, which would have silently misreported confidence tiers) -- see this entry's own applicabilityDomain block/notes for the real training-vocabulary and embedding-domain data, computed from the union of all 6 source CSVs via fast_embeddings.py against the real checkpoint.",
       "tags": [
         "admet",
         "metabolism",
@@ -1383,7 +1582,72 @@
         "medicinal-chemistry",
         "chemeleon",
         "multi-task"
-      ]
+      ],
+      "applicabilityDomain": {
+        "trainingSetSize": 19233,
+        "elements": [
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "H",
+          "Hg",
+          "I",
+          "In",
+          "K",
+          "Li",
+          "Mg",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "Sr",
+          "Ti",
+          "V",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 7.5177,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the union of all 6 source CYP/hERG CSVs (data/cyp/cyp_herg_inhibition6_multitask.csv, 19,233 unique molecules) via scripts/fast_embeddings.py against the real shared CHEMELEON-fine-tuned checkpoint (chemprop's own batched GPU tensor ops, d_h=2048/depth=6 -- this script's own pure-numpy per-molecule forward pass is impractically slow at that scale, 39+ minutes and still unfinished on a 2500-molecule set in this project's own testing). Vocabulary/embedding-domain data is IDENTICAL across all 6 registry ids in this shared model, since they share one encoder and were all trained on the exact same molecule set (only which task's label was present per row differs, which doesn't affect what shaped the embedding space). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) with <5 occurrences out of 19,233 treated as one-off outliers, not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket. The embedding-domain distance (nearest-centroid distance in this checkpoint's own 2048-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee. Fixed a real bug in compute_applicability_domain.py while computing this: its k-means/self-distance step built a full (N, K, D) broadcast temp array for the nearest-centroid distance calculation, which OOM-killed the process at CHEMELEON's d_h=2048 (confirmed via dmesg: ~27GB RSS before being killed) despite being harmless at this project's usual d_h=300 -- fixed by computing pairwise distances via matrix multiplication instead of a broadcast, same result, no OOM risk regardless of embedding width."
+      }
     },
     {
       "id": "cyp3a4-inhibition-v1",
@@ -1398,7 +1662,8 @@
       "description": "Predicts probability that a molecule inhibits cytochrome P450 3A4, one of the five major drug-metabolizing CYP450 isozymes -- relevant to drug-drug interaction risk assessment (CYP3A4 is the single most important human drug-metabolizing enzyme by volume, responsible for the majority of marketed small-molecule drugs' oxidative clearance, including many statins, calcium channel blockers, benzodiazepines, and macrolide antibiotics; the classic grapefruit-juice interaction is CYP3A4-mediated).",
       "files": {
         "manifest": "cyp-herg-chemeleon-multitask/cyp3a4-manifest.json",
-        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx"
+        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx",
+        "applicabilityDomain": "cyp-herg-chemeleon-multitask/cyp3a4-applicability-domain.json"
       },
       "dataset": {
         "name": "PubChem BioAssay AID 1851 (Veith et al. 2009, Nat Biotechnol) -- CYP3A4 sub-readout",
@@ -1451,7 +1716,7 @@
         ],
         "dateTrained": "2026-09-02"
       },
-      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8802 (old single-task) -> 0.8928 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1332). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data removed (not carried over) rather than left stale -- the old AD sidecar was computed in the previous, differently-shaped D-MPNN's embedding space (d_h=300 vs this checkpoint's d_h=2048) and would silently misreport confidence tiers against the new embedding space; regenerating it for the new shared encoder is a known, disclosed follow-up, not done yet.",
+      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8802 (old single-task) -> 0.8928 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=1332). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data was regenerated for the new shared encoder (not carried over from the old d_h=300 embedding space, which would have silently misreported confidence tiers) -- see this entry's own applicabilityDomain block/notes for the real training-vocabulary and embedding-domain data, computed from the union of all 6 source CSVs via fast_embeddings.py against the real checkpoint.",
       "tags": [
         "admet",
         "metabolism",
@@ -1460,7 +1725,72 @@
         "medicinal-chemistry",
         "chemeleon",
         "multi-task"
-      ]
+      ],
+      "applicabilityDomain": {
+        "trainingSetSize": 19233,
+        "elements": [
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "H",
+          "Hg",
+          "I",
+          "In",
+          "K",
+          "Li",
+          "Mg",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "Sr",
+          "Ti",
+          "V",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 7.5177,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the union of all 6 source CYP/hERG CSVs (data/cyp/cyp_herg_inhibition6_multitask.csv, 19,233 unique molecules) via scripts/fast_embeddings.py against the real shared CHEMELEON-fine-tuned checkpoint (chemprop's own batched GPU tensor ops, d_h=2048/depth=6 -- this script's own pure-numpy per-molecule forward pass is impractically slow at that scale, 39+ minutes and still unfinished on a 2500-molecule set in this project's own testing). Vocabulary/embedding-domain data is IDENTICAL across all 6 registry ids in this shared model, since they share one encoder and were all trained on the exact same molecule set (only which task's label was present per row differs, which doesn't affect what shaped the embedding space). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) with <5 occurrences out of 19,233 treated as one-off outliers, not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket. The embedding-domain distance (nearest-centroid distance in this checkpoint's own 2048-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee. Fixed a real bug in compute_applicability_domain.py while computing this: its k-means/self-distance step built a full (N, K, D) broadcast temp array for the nearest-centroid distance calculation, which OOM-killed the process at CHEMELEON's d_h=2048 (confirmed via dmesg: ~27GB RSS before being killed) despite being harmless at this project's usual d_h=300 -- fixed by computing pairwise distances via matrix multiplication instead of a broadcast, same result, no OOM risk regardless of embedding width."
+      }
     },
     {
       "id": "cyp1a2-substrate-v1",
@@ -2335,7 +2665,8 @@
       "description": "Predicts probability that a molecule blocks the hERG (KCNH2) cardiac potassium channel -- the standard early-stage cardiotoxicity liability screen in drug discovery, since hERG block prolongs the cardiac QT interval and is a leading cause of small-molecule drug attrition/withdrawal (e.g. terfenadine, cisapride). A positive prediction flags a compound for closer scrutiny, not an automatic rejection -- many marketed drugs have measurable hERG activity at some concentration.",
       "files": {
         "manifest": "cyp-herg-chemeleon-multitask/herg-manifest.json",
-        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx"
+        "weights": "cyp-herg-chemeleon-multitask/inhibition6.onnx",
+        "applicabilityDomain": "cyp-herg-chemeleon-multitask/herg-applicability-domain.json"
       },
       "dataset": {
         "name": "PubChem BioAssay AID 588834 (NIH Chemical Genomics Center / NIEHS / NTP) -- qHTS assay for small-molecule inhibitors of the human hERG channel, confirmatory tier",
@@ -2388,7 +2719,7 @@
         ],
         "dateTrained": "2026-09-02"
       },
-      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8886 (old single-task) -> 0.9502 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=286). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data removed (not carried over) rather than left stale -- the old AD sidecar was computed in the previous, differently-shaped D-MPNN's embedding space (d_h=300 vs this checkpoint's d_h=2048) and would silently misreport confidence tiers against the new embedding space; regenerating it for the new shared encoder is a known, disclosed follow-up, not done yet.",
+      "notes": "Switched from a single-task SMILES-only checkpoint to a shared-encoder multi-task fine-tune of the CHEMELEON foundation model (Burns 2025, d_h=2048/depth=6/MeanAggregation, pretrained on 1M PubChem molecules) jointly predicting all 6 of hERG-inhibition + CYP1A2/2C9/2C19/2D6/3A4-inhibition from one encoder (--target-columns, chemprop's native multi-task masking on missing per-task labels), trained on the union of the 6 source datasets (19,233 unique molecules; --class-balance was tried first and found to silently break multi-task training here -- its sampler treats NaN, this project's missing-multi-task-label placeholder, as truthy in its Y.any(1) activity check, which collapsed one run to 8 training molecules/epoch out of 19,233 -- dropped entirely rather than tuned around). Real, honest before/after on this isoform: test ROC 0.8886 (old single-task) -> 0.9502 (new shared multi-task), on chemprop's own SCAFFOLD_BALANCED test split (n=286). A companion 13-task run (this 6 plus BBBP + 6 CYP-substrate isoforms, 2 data-seeds) confirmed this same direction/magnitude for all 6 inhibition tasks with zero exceptions across both seeds, while BBBP/CYP-substrate showed no clean signal either way (much smaller, noisier training sets) -- excluded from this shared model for that reason, still served by their own separate single-task checkpoints. logP was fine-tuned separately from CHEMELEON too and came out worse than its existing model (R\u00b2 0.581 vs 0.691) -- also excluded, also unchanged. Deployed via ONNX Runtime Web (js/onnx-multitask-model.js), not the usual manifest.json/weights.bin JS engine -- convert_chemprop_checkpoint.py explicitly refuses multi-task checkpoints (n_tasks != 1), so a genuinely shared-encoder multi-task model can never be converted to this project's own format; a hand-rolled JS forward pass at CHEMELEON's scale (d_h=2048/depth=6) also separately measured 600-1300ms/molecule in this project's own benchmarking vs. ONNX Runtime Web's 15-40ms, a 20-30x difference that was the deciding factor even before the multi-task blocker. Six registry ids (this one plus the other 5 in this shared model) all point at the SAME physical .onnx file (model/cyp-herg-chemeleon-multitask/inhibition6.onnx, loaded/parsed once and shared across all 6), each with its own tiny manifest.json naming which of the 6 output columns it reads. Applicability-domain data was regenerated for the new shared encoder (not carried over from the old d_h=300 embedding space, which would have silently misreported confidence tiers) -- see this entry's own applicabilityDomain block/notes for the real training-vocabulary and embedding-domain data, computed from the union of all 6 source CSVs via fast_embeddings.py against the real checkpoint.",
       "tags": [
         "admet",
         "cardiotoxicity",
@@ -2397,7 +2728,72 @@
         "medicinal-chemistry",
         "chemeleon",
         "multi-task"
-      ]
+      ],
+      "applicabilityDomain": {
+        "trainingSetSize": 19233,
+        "elements": [
+          "Al",
+          "As",
+          "Au",
+          "B",
+          "Ba",
+          "Bi",
+          "Br",
+          "C",
+          "Ca",
+          "Cd",
+          "Cl",
+          "Co",
+          "Cr",
+          "Cu",
+          "F",
+          "Fe",
+          "H",
+          "Hg",
+          "I",
+          "In",
+          "K",
+          "Li",
+          "Mg",
+          "Mn",
+          "N",
+          "Na",
+          "Ni",
+          "O",
+          "P",
+          "Pb",
+          "Pt",
+          "Ru",
+          "S",
+          "Sb",
+          "Se",
+          "Si",
+          "Sn",
+          "Sr",
+          "Ti",
+          "V",
+          "W",
+          "Zn"
+        ],
+        "formalCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "netMolecularCharges": [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        "embeddingDomainSelfDistanceP90": 7.5177,
+        "notes": "Computed by scripts/compute_applicability_domain.py from the union of all 6 source CYP/hERG CSVs (data/cyp/cyp_herg_inhibition6_multitask.csv, 19,233 unique molecules) via scripts/fast_embeddings.py against the real shared CHEMELEON-fine-tuned checkpoint (chemprop's own batched GPU tensor ops, d_h=2048/depth=6 -- this script's own pure-numpy per-molecule forward pass is impractically slow at that scale, 39+ minutes and still unfinished on a 2500-molecule set in this project's own testing). Vocabulary/embedding-domain data is IDENTICAL across all 6 registry ids in this shared model, since they share one encoder and were all trained on the exact same molecule set (only which task's label was present per row differs, which doesn't affect what shaped the embedding space). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-2, -1, 0, 1, 2] (net charge(s) with <5 occurrences out of 19,233 treated as one-off outliers, not real training support), gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket. The embedding-domain distance (nearest-centroid distance in this checkpoint's own 2048-dim pooled-molecule-embedding space) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee. Fixed a real bug in compute_applicability_domain.py while computing this: its k-means/self-distance step built a full (N, K, D) broadcast temp array for the nearest-centroid distance calculation, which OOM-killed the process at CHEMELEON's d_h=2048 (confirmed via dmesg: ~27GB RSS before being killed) despite being harmless at this project's usual d_h=300 -- fixed by computing pairwise distances via matrix multiplication instead of a broadcast, same result, no OOM risk regardless of embedding width."
+      }
     },
     {
       "id": "solv-hexane-v1",
