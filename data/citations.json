@@ -131,13 +131,14 @@
       "key": "nmrexp2025",
       "type": "dataset",
       "authors": [
-        "et al."
+        "Wang, Jun-Jie",
+        "Zhu, Rong"
       ],
-      "title": "NMRexp",
+      "title": "NMRexp: A database of 3.37 million experimental NMR spectra",
       "publisher": "Zenodo",
       "year": 2025,
       "doi": "10.5281/zenodo.17296666",
-      "note": "Author list not yet verified -- DOI itself confirmed (already used elsewhere in this app, see model/registry.json's nmr-19f dataset.sourceUrl and NMR_INTEGRATION.md). Source of most of the 19F NMR shift model's training data (single-F molecules only)"
+      "note": "Full author list and title independently verified via a live Zenodo API lookup (zenodo.org/api/records/17296666) on 2026-09-02, CC BY 4.0, published 2025-10-09. Source of most of the 19F NMR shift model's training data (single-F molecules only) -- see model/registry.json's nmr-19f dataset.sourceUrl and NMR_INTEGRATION.md."
     },
     {
       "key": "Mansouri2018OPERA",
@@ -403,7 +404,12 @@
       "type": "article-journal",
       "authors": [
         "Devereux, Christian",
-        "et al."
+        "Smith, Justin S.",
+        "Huddleston, Kate K.",
+        "Barros, Kipton",
+        "Zubatyuk, Roman",
+        "Isayev, Olexandr",
+        "Roitberg, Adrian E."
       ],
       "title": "Extending the Applicability of the ANI Deep Learning Molecular Potential to Sulfur and Halogens",
       "journal": "Journal of Chemical Theory and Computation",
@@ -411,7 +417,7 @@
       "volume": "16",
       "pages": "4192\u20134202",
       "doi": "10.1021/acs.jctc.0c00121",
-      "note": "Verified via ACS Publications and PubMed (PMID 32543858); full author list beyond Devereux not yet verified (paper is known to include Smith, Barros, Zubatyuk, Isayev, Roitberg among others -- confirm before formal citation). The ANI-2x potential ani2x-model.js runs (via the torchani-trained weights)"
+      "note": "Full 7-author list independently verified via a live CrossRef API lookup (api.crossref.org/works/10.1021/acs.jctc.0c00121) on 2026-09-02, matching PMID 32543858 (ACS Publications). The ANI-2x potential ani2x-model.js runs (via the torchani-trained weights)."
     },
     {
       "key": "Ganea2021GeoMol",
@@ -467,7 +473,24 @@
       "type": "article-journal",
       "authors": [
         "Boothroyd, Simon",
-        "et al."
+        "Behara, Pavan Kumar",
+        "Madin, Owen C.",
+        "Hahn, David F.",
+        "Jang, Hyesu",
+        "Gapsys, Vytautas",
+        "Wagner, Jeffrey R.",
+        "Horton, Joshua T.",
+        "Dotson, David L.",
+        "Thompson, Matthew W.",
+        "Maat, Jessica",
+        "Gokey, Trevor",
+        "Wang, Lee-Ping",
+        "Cole, Daniel J.",
+        "Gilson, Michael K.",
+        "Chodera, John D.",
+        "Bayly, Christopher I.",
+        "Shirts, Michael R.",
+        "Mobley, David L."
       ],
       "title": "Development and Benchmarking of Open Force Field 2.0.0: The Sage Small Molecule Force Field",
       "journal": "Journal of Chemical Theory and Computation",
@@ -475,7 +498,7 @@
       "volume": "19",
       "pages": "3251\u20133275",
       "doi": "10.1021/acs.jctc.3c00039",
-      "note": "Verified via ACS Publications and PubMed (PMID 37167319); full author list beyond Boothroyd not yet verified (known to include Behara, Madin, and others -- confirm before formal citation). The Sage 2.1.0 force field js/openff-forcefield.js applies"
+      "note": "Full 19-author list independently verified via a live CrossRef API lookup (api.crossref.org/works/10.1021/acs.jctc.3c00039) on 2026-09-02, matching PMID 37167319 (ACS Publications). The Sage 2.1.0 force field js/openff-forcefield.js applies."
     },
     {
       "key": "Rego2015ThreeDmol",
