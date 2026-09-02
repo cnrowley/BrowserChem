@@ -1505,8 +1505,8 @@
         "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_1a2_with_descriptors.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, computed BEFORE X_d feature fusion -- see js/chemprop-model.js's getPooledEmbedding header -- so this tier is unaffected by the logP/LogD/pKa/NAGL-charge descriptors themselves) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted. Note: the training-set element vocabulary is NARROWER than the original SMILES-only checkpoint's (B, I no longer appear) -- a real, disclosed side effect of X_d feature fusion: any molecule the NAGL-MBIS charge model can't featurize (outside its own {H,C,N,O,F,P,S,Cl,Br} vocabulary, or a disconnected-salt structure) can't get the nagl_min/nagl_max/nagl_mean descriptors computed either, so those rows were dropped from THIS checkpoint's training set (scripts/join_admet_x9_descriptors.py) even though they were present in the original."
       },
       "dataset": {
-        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP1A2 substrate/non-substrate labels",
-        "citationKey": "Xu2025",
+        "name": "Curated CYP450 Interaction Dataset (Ni et al. 2025, Sci Data) -- CYP1A2 substrate/non-substrate labels",
+        "citationKey": "Ni2025CYP450",
         "size": 2275,
         "positiveCount": 544,
         "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
@@ -1609,9 +1609,9 @@
         "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_2c9_with_descriptors.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, computed BEFORE X_d feature fusion -- see js/chemprop-model.js's getPooledEmbedding header -- so this tier is unaffected by the logP/LogD/pKa/NAGL-charge descriptors themselves) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted. Note: the training-set element vocabulary is NARROWER than the original SMILES-only checkpoint's (B, I, Sn no longer appear) -- a real, disclosed side effect of X_d feature fusion: any molecule the NAGL-MBIS charge model can't featurize (outside its own {H,C,N,O,F,P,S,Cl,Br} vocabulary, or a disconnected-salt structure) can't get the nagl_min/nagl_max/nagl_mean descriptors computed either, so those rows were dropped from THIS checkpoint's training set (scripts/join_admet_x9_descriptors.py) even though they were present in the original."
       },
       "dataset": {
-        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2C9 substrate/non-substrate labels",
+        "name": "Curated CYP450 Interaction Dataset (Ni et al. 2025, Sci Data) -- CYP2C9 substrate/non-substrate labels",
         "citationKey": [
-          "Xu2025",
+          "Ni2025CYP450",
           "Burns2025Chemeleon"
         ],
         "size": 2492,
@@ -1712,8 +1712,8 @@
         "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_2c19_with_descriptors.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, computed BEFORE X_d feature fusion -- see js/chemprop-model.js's getPooledEmbedding header -- so this tier is unaffected by the logP/LogD/pKa/NAGL-charge descriptors themselves) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted. Note: the training-set element vocabulary is NARROWER than the original SMILES-only checkpoint's (B, I, Sn no longer appear) -- a real, disclosed side effect of X_d feature fusion: any molecule the NAGL-MBIS charge model can't featurize (outside its own {H,C,N,O,F,P,S,Cl,Br} vocabulary, or a disconnected-salt structure) can't get the nagl_min/nagl_max/nagl_mean descriptors computed either, so those rows were dropped from THIS checkpoint's training set (scripts/join_admet_x9_descriptors.py) even though they were present in the original."
       },
       "dataset": {
-        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2C19 substrate/non-substrate labels",
-        "citationKey": "Xu2025",
+        "name": "Curated CYP450 Interaction Dataset (Ni et al. 2025, Sci Data) -- CYP2C19 substrate/non-substrate labels",
+        "citationKey": "Ni2025CYP450",
         "size": 2230,
         "positiveCount": 396,
         "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
@@ -1816,8 +1816,8 @@
         "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_2d6_with_descriptors.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, computed BEFORE X_d feature fusion -- see js/chemprop-model.js's getPooledEmbedding header -- so this tier is unaffected by the logP/LogD/pKa/NAGL-charge descriptors themselves) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted. Note: the training-set element vocabulary is NARROWER than the original SMILES-only checkpoint's (B, I, Si no longer appear) -- a real, disclosed side effect of X_d feature fusion: any molecule the NAGL-MBIS charge model can't featurize (outside its own {H,C,N,O,F,P,S,Cl,Br} vocabulary, or a disconnected-salt structure) can't get the nagl_min/nagl_max/nagl_mean descriptors computed either, so those rows were dropped from THIS checkpoint's training set (scripts/join_admet_x9_descriptors.py) even though they were present in the original."
       },
       "dataset": {
-        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2D6 substrate/non-substrate labels",
-        "citationKey": "Xu2025",
+        "name": "Curated CYP450 Interaction Dataset (Ni et al. 2025, Sci Data) -- CYP2D6 substrate/non-substrate labels",
+        "citationKey": "Ni2025CYP450",
         "size": 2536,
         "positiveCount": 578,
         "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",
@@ -1922,9 +1922,9 @@
         "notes": "Computed by scripts/compute_applicability_domain.py from data/cyp_substrate/cyp_substrate_2e1.csv (plain SMILES, no descriptor join -- this checkpoint has no ADMET-9/NAGL dependency, unlike its previous version, so the FULL original 2175-molecule vocabulary is restored, including B and I which the NAGL-MBIS-restricted previous checkpoint had lost). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [0, 1], gets hard-blocked by the app. The embedding-domain distance is computed from this checkpoint's own (multitask-pretrained-then-fine-tuned) D-MPNN embedding space, a heuristic confidence tier, not a calibrated guarantee."
       },
       "dataset": {
-        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP2E1 substrate/non-substrate labels",
+        "name": "Curated CYP450 Interaction Dataset (Ni et al. 2025, Sci Data) -- CYP2E1 substrate/non-substrate labels",
         "citationKey": [
-          "Xu2025",
+          "Ni2025CYP450",
           "Burns2025Chemeleon"
         ],
         "size": 2171,
@@ -2026,8 +2026,8 @@
         "notes": "Computed by scripts/compute_applicability_domain.py from the exact CSV chemprop train was pointed at (data/cyp_substrate/cyp_substrate_3a4_with_descriptors.csv). A molecule containing any element/formal-charge combination outside this set, or a net molecular charge outside [-1, 0, 1], gets hard-blocked by the app rather than silently featurized into Chemprop's generic 'unknown element' pad bucket -- this is a per-model training-vocabulary check, stricter than js/chemprop-features.js's checkChempropCompatibility() which only checks the shared global featurizer vocabulary. The embedding-domain distance (nearest-centroid distance in the trained D-MPNN's own 300-dim pooled-molecule-embedding space, computed BEFORE X_d feature fusion -- see js/chemprop-model.js's getPooledEmbedding header -- so this tier is unaffected by the logP/LogD/pKa/NAGL-charge descriptors themselves) is a heuristic in-domain/borderline/out-of-domain confidence tier, not a calibrated statistical guarantee -- see compute_applicability_domain.py's docstring for why conformal calibration isn't attempted. Note: the training-set element vocabulary is NARROWER than the original SMILES-only checkpoint's (B, I, Si, Sn no longer appear) -- a real, disclosed side effect of X_d feature fusion: any molecule the NAGL-MBIS charge model can't featurize (outside its own {H,C,N,O,F,P,S,Cl,Br} vocabulary, or a disconnected-salt structure) can't get the nagl_min/nagl_max/nagl_mean descriptors computed either, so those rows were dropped from THIS checkpoint's training set (scripts/join_admet_x9_descriptors.py) even though they were present in the original."
       },
       "dataset": {
-        "name": "Curated CYP450 Interaction Dataset (Xu et al. 2025, Sci Data) -- CYP3A4 substrate/non-substrate labels",
-        "citationKey": "Xu2025",
+        "name": "Curated CYP450 Interaction Dataset (Ni et al. 2025, Sci Data) -- CYP3A4 substrate/non-substrate labels",
+        "citationKey": "Ni2025CYP450",
         "size": 2893,
         "positiveCount": 1333,
         "splitStrategy": "SCAFFOLD_BALANCED 80/10/10 train/val/test (chemprop train's own split)",

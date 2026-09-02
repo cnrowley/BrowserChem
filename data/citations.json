@@ -281,13 +281,17 @@
       "note": "Verified via figshare.com and Semantic Scholar. Source of the melting-point model's training data; DOI already used elsewhere in this app (model/registry.json's dataset.sourceUrl)"
     },
     {
-      "key": "Xu2025",
+      "key": "Ni2025CYP450",
       "type": "article-journal",
       "authors": [
         "Ni, Yu-Hao",
-        "Su, Yu-Wei",
-        "Yang, Shu-Chi",
-        "et al."
+        "Su, Yu-Wen",
+        "Yang, Shang-Chen",
+        "Hong, Jia-Cheng",
+        "Du, Po-Wen Allen",
+        "Hsu, Yu-Ting",
+        "Kuo, Tien-Chueh",
+        "Tseng, Yufeng Jane"
       ],
       "title": "Curated CYP450 Interaction Dataset: Covering the Majority of Phase I Drug Metabolism",
       "journal": "Scientific Data",
@@ -295,7 +299,7 @@
       "volume": "12",
       "pages": "1427",
       "doi": "10.1038/s41597-025-05753-8",
-      "note": "IMPORTANT NAMING MISMATCH: the registry citationKey 'Xu2025' implies a first author 'Xu', but this paper's actual first author is Ni -- confirmed via nature.com and matched by its identical figshare DOI (10.6084/m9.figshare.26630515, same as model/registry.json's dataset.sourceUrl for the cyp*-substrate-v1 models). Consider renaming the registry key to something like 'Ni2025CYP450' for accuracy; kept as 'Xu2025' here only to match the registry as-is. Full author list beyond the first three not yet verified"
+      "note": "Full 8-author list and all fields independently verified via both PMC (PMC12354672) and a live CrossRef API lookup (api.crossref.org/works/10.1038/s41597-025-05753-8) on 2026-09-02, matched by its figshare DOI (10.6084/m9.figshare.26630515, same as model/registry.json's dataset.sourceUrl for the cyp*-substrate-v1 models). Source of the cyp{1a2,2c9,2c19,2d6,2e1,3a4}-substrate-v1 models' training data. Citation key renamed from the original 'Xu2025' (which implied a first author 'Xu' -- the real first author is Ni; the mismatch was caught and documented here before this fix)."
     },
     {
       "key": "Heid2024Chemprop",
